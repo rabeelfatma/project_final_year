@@ -1,67 +1,51 @@
 const express = require("express");
 const router = express.Router();
-const bcrypt = require("bcryptjs");
 
-// Controllers - Object import
 const authController = require("../controllers/authController");
-
-// Models
-const User = require("../models/User");
-
-// ==========================================
-// AUTH ROUTES (Signup & Login)
-// ==========================================
+const { protect, authorize } = require("../middleware/authMiddleware");
+const {
+  normalizeRole,
+  isPublicAdminBootstrapAllowed,
+} = require("../utils/authPassword");
 
 /**
- * ✅ INLINE CALLS: Humne yahan functions ko direct pass karne ke bajaye 
- * wrapper function use kiya hai taake runtime par 'undefined' ka issue na aaye.
+ * Student/teacher signup: admin JWT required.
+ * Admin signup: always requires an authenticated admin.
+ * Public first-admin bootstrap is disabled pending an approved setup decision.
  */
-router.post("/signup", (req, res) => authController.registerUser(req, res));
+async function gateSignup(req, res, next) {
+  const role = normalizeRole(req.body?.role);
+
+  if (role === "student" || role === "teacher") {
+    return protect(req, res, () => authorize("admin")(req, res, next));
+  }
+
+  if (role === "admin") {
+    if (!isPublicAdminBootstrapAllowed()) {
+      // Existing admins may create additional admins with a valid admin JWT.
+      return protect(req, res, () => authorize("admin")(req, res, next));
+    }
+    return next();
+  }
+
+  return res.status(400).json({ message: "Invalid role selected" });
+}
+
+router.post("/signup", gateSignup, (req, res) => authController.registerUser(req, res));
 router.post("/login", (req, res) => authController.loginUser(req, res));
 
-// ==========================================
-// RESET PASSWORD ROUTE
-// ==========================================
-router.post("/reset-password", async (req, res) => {
-  try {
-    console.log("RESET PASSWORD ATTEMPT FOR:", req.body.email);
-
-    const { email, newPassword } = req.body;
-
-    // 1. Validation
-    if (!email || !newPassword) {
-      return res.status(400).json({
-        message: "Email and new password are required"
-      });
-    }
-
-    // 2. Find User (Normalized email check)
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found"
-      });
-    }
-
-    // 3. Hash New Password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // 4. Update & Save
-    user.password = hashedPassword;
-    await user.save();
-
-    return res.status(200).json({
-      message: "Password changed successfully ✅"
-    });
-
-  } catch (error) {
-    console.error("RESET PASSWORD ERROR:", error);
-    return res.status(500).json({
-      message: "Server error during password reset",
-      error: error.message
-    });
-  }
+/**
+ * TEMPORARY SECURITY RESTRICTION (not a completed Forgot Password feature).
+ * The previous unauthenticated reset allowed anyone who knew an email to set a
+ * new password. Blocked until Rabeel approves a verified recovery workflow.
+ * Forgot Password UI is intentionally left in place.
+ */
+router.post("/reset-password", (_req, res) => {
+  return res.status(503).json({
+    message:
+      "Password recovery is temporarily unavailable. Contact an administrator for assistance.",
+    code: "PASSWORD_RESET_DISABLED",
+  });
 });
 
 module.exports = router;

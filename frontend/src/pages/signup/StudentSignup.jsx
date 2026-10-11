@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail } from "../../utils/validators";
+import { validateEmail, validatePassword } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function StudentSignup() {
@@ -12,6 +12,7 @@ export default function StudentSignup() {
   const [form, setForm] = useState({
     name: "",
     email: "",
+    password: "",
     department: "CS",
     program: "Computer Science"
   });
@@ -19,6 +20,7 @@ export default function StudentSignup() {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [regNo, setRegNo] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -29,13 +31,21 @@ export default function StudentSignup() {
     setMsg("");
     setRegNo("");
 
-    // validation
-    if (!form.name || !form.email) {
-      return setMsg("Name and Email are required ❌");
+    if (!form.name || !form.email || !form.password) {
+      return setMsg("Name, Email and Password are required ❌");
     }
 
     if (!validateEmail(form.email)) {
       return setMsg("Invalid Email ❌");
+    }
+
+    if (!validatePassword(form.password)) {
+      return setMsg("Weak password ❌");
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return setMsg("Admin login required to add students ❌");
     }
 
     setLoading(true);
@@ -43,16 +53,17 @@ export default function StudentSignup() {
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/signup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           name: form.name,
           email: form.email,
+          password: form.password,
           role: "student",
           department: form.department,
           program: form.program,
-
-          // ✅ TEMP FIX (backend password required issue solve)
-          password: "Temp@1234"
         }),
       });
 
@@ -63,12 +74,13 @@ export default function StudentSignup() {
         return setMsg(data.message || "Failed to register ❌");
       }
 
-      setRegNo(data.regNo); // ✅ registration number show
+      setRegNo(data.regNo);
       setMsg("Student Registered Successfully ✅");
 
       setForm({
         name: "",
         email: "",
+        password: "",
         department: "CS",
         program: "Computer Science"
       });
@@ -98,7 +110,6 @@ export default function StudentSignup() {
 
         {msg && <Alert message={msg} />}
 
-        {/* ✅ REGISTRATION NUMBER DISPLAY */}
         {regNo && (
           <div className="mb-4 p-3 bg-sky-500/10 border border-sky-500 text-sky-400 rounded-xl text-center font-black">
             Registration No: {regNo}
@@ -121,7 +132,22 @@ export default function StudentSignup() {
             onChange={handleChange}
           />
 
-          {/* Department */}
+          <div className="relative">
+            <InputField
+              name="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              value={form.password}
+              onChange={handleChange}
+            />
+            <span
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-3 text-sky-400 cursor-pointer text-sm"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </span>
+          </div>
+
           <div className="flex flex-col gap-1">
             <label className="text-sky-500 text-[10px] font-bold uppercase ml-3">
               Select Department
@@ -137,7 +163,6 @@ export default function StudentSignup() {
             </select>
           </div>
 
-          {/* Program */}
           <div className="flex flex-col gap-1">
             <label className="text-sky-500 text-[10px] font-bold uppercase ml-3">
               Select Program

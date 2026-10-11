@@ -1,64 +1,78 @@
-const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const generateToken = require("../utils/tokenUtils");
+const {
+  ALLOWED_ROLES,
+  normalizeRole,
+  validatePasswordInput,
+  hashPassword,
+  passwordsMatch,
+  toPublicUser,
+  isPublicAdminBootstrapAllowed,
+} = require("../utils/authPassword");
 
 // ==========================================
 // REGISTER USER (Admin, Teacher, or Student)
 // ==========================================
 exports.registerUser = async (req, res) => {
   try {
-    console.log("Incoming Signup Data:", req.body);
-
     const { name, email, password, role, department, program, subject } = req.body;
 
-    // 1. Basic validation
     if (!name || !email) {
       return res.status(400).json({
         message: "Name and email are required"
       });
     }
 
-    // Role detection
-    const allowedRoles = ["student", "admin", "teacher"];
-    const userRole = role ? role.toLowerCase() : "student";
+    const userRole = normalizeRole(role);
 
-    // Password validation based on role (Admin must have password)
-    if (userRole === "admin" && !password) {
-      return res.status(400).json({ message: "Password is required for Admin" });
-    }
-
-    if (!allowedRoles.includes(userRole)) {
+    if (!ALLOWED_ROLES.includes(userRole)) {
       return res.status(400).json({ message: "Invalid role selected" });
     }
 
-    // 2. Normalize email
+    // Student/teacher/admin creation via this endpoint requires an authenticated admin.
+    // Public first-admin bootstrap is disabled (see isPublicAdminBootstrapAllowed).
+    if (userRole === "student" || userRole === "teacher") {
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({
+          message: "Only an authenticated admin can create student or teacher accounts"
+        });
+      }
+    }
+
+    if (userRole === "admin") {
+      const isAuthedAdmin = req.user && req.user.role === "admin";
+      if (!isAuthedAdmin && !isPublicAdminBootstrapAllowed()) {
+        return res.status(403).json({
+          message:
+            "Public administrator registration is disabled. An authenticated administrator must create admin accounts, or use an approved setup process for the first admin."
+        });
+      }
+    }
+
+    const passwordCheck = validatePasswordInput(password);
+    if (!passwordCheck.ok) {
+      return res.status(400).json({ message: passwordCheck.message });
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
 
-    // 3. Check if user already exists by email
     const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    // 4. Hash password
-    let hashedPassword = null;
-    const defaultPass = password || "User123@"; 
-    hashedPassword = await bcrypt.hash(defaultPass, 10);
+    const hashedPassword = await hashPassword(passwordCheck.password);
 
-    // 5. Create Payload Object
-    let newUserPayload = {
+    const newUserPayload = {
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
       role: userRole,
       department: department || "CS",
       program: program || null,
-      subject: subject || null 
+      subject: subject || null
     };
 
-    // ==========================================
-    // REGISTRATION NUMBER LOGIC (STUDENTS ONLY)
-    // ==========================================
     if (userRole === "student") {
       const date = new Date();
       const month = date.getMonth();
@@ -72,24 +86,23 @@ exports.registerUser = async (req, res) => {
       });
 
       const sequence = (count + 1).toString().padStart(3, "0");
-      
       newUserPayload.registrationNumber = `${season}${year}-${deptCode}-${sequence}`;
     }
 
-    // 6. CREATE USER
     const user = await User.create(newUserPayload);
+    const publicUser = toPublicUser(user);
 
     return res.status(201).json({
       message:
         userRole === "student"
           ? "Student Registered Successfully ✅"
-          : userRole === "teacher" 
-          ? "Teacher Added Successfully ✅" 
+          : userRole === "teacher"
+          ? "Teacher Added Successfully ✅"
           : "User Registered Successfully",
       regNo: user.registrationNumber || "N/A",
       token: generateToken(user._id, user.role),
       role: user.role,
-      user
+      user: publicUser
     });
 
   } catch (error) {
@@ -109,55 +122,68 @@ exports.registerUser = async (req, res) => {
 };
 
 // ==========================================
-// LOGIN USER (Fixed Dynamic Logic)
+// LOGIN USER
 // ==========================================
 exports.loginUser = async (req, res) => {
   try {
     const { email, password, name, role } = req.body;
 
-    // 1. Basic Check
-    if (!email || !role) {
-      return res.status(400).json({ message: "Email and Role are required" });
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const passwordCheck = validatePasswordInput(password);
+    if (!passwordCheck.ok) {
+      return res.status(400).json({ message: passwordCheck.message });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    let user;
+    const user = await User.findOne({ email: normalizedEmail });
 
-    // 2. Logic for Admin (Email + Password)
-    if (role === "admin") {
-      if (!password) return res.status(400).json({ message: "Password is required for Admin" });
-      
-      user = await User.findOne({ email: normalizedEmail, role: "admin" });
-      if (!user) return res.status(400).json({ message: "Admin not found" });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(400).json({ message: "Invalid password" });
-    } 
-
-    // 3. Logic for Student/Teacher (Name + Email ONLY)
-    else if (role === "student" || role === "teacher") {
-      if (!name) return res.status(400).json({ message: "Name is required for login" });
-
-      // Yahan password check nahi hoga, sirf Name aur Email match hona chahiye
-      user = await User.findOne({ 
-        email: normalizedEmail, 
-        name: name.trim(), 
-        role: role 
-      });
-
-      if (!user) {
-        return res.status(400).json({ message: `Invalid Name or Email for ${role}` });
+    // Authorization role always comes from the stored user record.
+    // A client-supplied role is only a portal hint and must match the account.
+    if (role) {
+      const requestedRole = normalizeRole(role);
+      if (requestedRole !== user.role) {
+        return res.status(400).json({
+          message: `Invalid credentials for ${requestedRole} login`
+        });
       }
     }
 
-    // 4. Send Success Response
+    if (user.role === "student" || user.role === "teacher") {
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ message: "Name is required for login" });
+      }
+      if (name.trim() !== user.name) {
+        return res.status(400).json({
+          message: `Invalid Name or Email for ${user.role}`
+        });
+      }
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        message: "This account has no password set. Contact an administrator to reset access."
+      });
+    }
+
+    const isMatch = await passwordsMatch(passwordCheck.password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
     return res.json({
       message: "Login Successful",
       token: generateToken(user._id, user.role),
       role: user.role,
       name: user.name,
       regNo: user.registrationNumber || "N/A",
-      user
+      user: toPublicUser(user)
     });
 
   } catch (error) {

@@ -29,24 +29,19 @@ export default function Login() {
     e.preventDefault();
     setMsg("");
 
-    // Common Validation
     if (!form.email) return setMsg("Email is required ❌");
     if (!validateEmail(form.email)) return setMsg("Invalid email format ❌");
+    if (!form.password) return setMsg("Password is required ❌");
 
-    // Constructing Request Body dynamically
     const loginData = {
       email: form.email,
+      password: form.password,
       role: role
     };
 
-    // Dynamic Validation and Data assignment based on Role
-    if (role === "admin") {
-      if (!form.password) return setMsg("Admin Password is required ❌");
-      loginData.password = form.password;
-    } else {
+    if (role === "student" || role === "teacher") {
       if (!form.name) return setMsg("Name is required for Login ❌");
       loginData.name = form.name;
-      // Note: Student/Teacher ke liye password nahi bheja ja raha
     }
 
     try {
@@ -112,23 +107,21 @@ export default function Login() {
             />
         </div>
 
-        {role === "admin" && (
-          <div className="relative mb-2">
-            <InputField
-              name="password"
-              type={showPass ? "text" : "password"}
-              placeholder="ENTER ADMIN PASSWORD"
-              value={form.password}
-              onChange={handleChange}
-            />
-            <span
-              onClick={() => setShowPass(!showPass)}
-              className="absolute right-3 top-3 text-sky-400 cursor-pointer text-[10px] font-bold uppercase"
-            >
-              {showPass ? "Hide" : "Show"}
-            </span>
-          </div>
-        )}
+        <div className="relative mb-2">
+          <InputField
+            name="password"
+            type={showPass ? "text" : "password"}
+            placeholder={role === "admin" ? "ENTER ADMIN PASSWORD" : "ENTER PASSWORD"}
+            value={form.password}
+            onChange={handleChange}
+          />
+          <span
+            onClick={() => setShowPass(!showPass)}
+            className="absolute right-3 top-3 text-sky-400 cursor-pointer text-[10px] font-bold uppercase"
+          >
+            {showPass ? "Hide" : "Show"}
+          </span>
+        </div>
 
         {role === "admin" && (
           <div className="text-right mb-4">

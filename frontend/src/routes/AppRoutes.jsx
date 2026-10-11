@@ -41,8 +41,22 @@ export default function AppRoutes() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
 
         {/* --- SIGNUP ROUTES --- */}
-        <Route path="/signup/student" element={<StudentSignup />} />
-        <Route path="/signup/teacher" element={<TeacherSignup />} />
+        <Route
+          path="/signup/student"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <StudentSignup />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/signup/teacher"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <TeacherSignup />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/signup/admin" element={<AdminSignup />} />
 
         {/* --- ✅ PROTECTED DASHBOARD ROUTES --- */}

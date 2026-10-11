@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
+import { validateEmail, validatePassword } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function TeacherSignup() {
@@ -11,11 +12,13 @@ export default function TeacherSignup() {
   const [form, setForm] = useState({
     name: "",
     email: "",
+    password: "",
     subject: "",
     department: "CS", 
   });
 
   const [msg, setMsg] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const subjects = [
     // --- 20 Computer Science (CS) Subjects ---
@@ -70,25 +73,44 @@ export default function TeacherSignup() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.name || !form.email || !form.subject) {
+    if (!form.name || !form.email || !form.password || !form.subject) {
       return setMsg("Please fill all fields ❌");
+    }
+
+    if (!validateEmail(form.email)) {
+      return setMsg("Invalid Email ❌");
+    }
+
+    if (!validatePassword(form.password)) {
+      return setMsg("Weak password ❌");
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return setMsg("Admin login required to add teachers ❌");
     }
 
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/signup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          ...form, 
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          subject: form.subject,
+          department: form.department,
           role: "teacher",
-          password: "defaultPassword123" 
         }),
       });
 
       const data = await res.json();
       if (res.ok) {
         setMsg("Teacher Added Successfully ✅");
-        setForm({ name: "", email: "", subject: "", department: "CS" });
+        setForm({ name: "", email: "", password: "", subject: "", department: "CS" });
       } else {
         setMsg(data.message || "Failed to add teacher ❌");
       }
@@ -122,6 +144,22 @@ export default function TeacherSignup() {
             onChange={handleChange} 
             value={form.email} 
           />
+
+          <div className="relative">
+            <InputField
+              name="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              onChange={handleChange}
+              value={form.password}
+            />
+            <span
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-3 text-sky-400 cursor-pointer text-sm"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </span>
+          </div>
 
           {/* Department Selection */}
           <div>

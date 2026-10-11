@@ -1,5 +1,10 @@
 const User = require('../models/User');
 const Assignment = require('../models/Assignment');
+const {
+    validatePasswordInput,
+    hashPassword,
+    toPublicUser,
+} = require('../utils/authPassword');
 
 /* =========================================================
    1. DASHBOARD INSIGHTS
@@ -141,10 +146,15 @@ exports.addUser = async (req, res) => {
         const exists = await User.findOne({ email });
         if (exists) return res.status(400).json({ message: "User already exists" });
 
+        const passwordCheck = validatePasswordInput(password);
+        if (!passwordCheck.ok) {
+            return res.status(400).json({ message: passwordCheck.message });
+        }
+
         const newUser = new User({
             name,
             email,
-            password,
+            password: await hashPassword(passwordCheck.password),
             role,
             subject: role === 'teacher' ? subject : undefined,
             department: department || "CS"
@@ -155,10 +165,10 @@ exports.addUser = async (req, res) => {
         }
 
         await newUser.save();
-        res.status(201).json(newUser);
+        res.status(201).json(toPublicUser(newUser));
 
     } catch (err) {
-        console.error("ADD USER ERROR:", err);
+        console.error("ADD USER ERROR:", err.message);
         res.status(400).json({ message: "User creation failed" });
     }
 };
@@ -168,9 +178,18 @@ exports.addUser = async (req, res) => {
 ========================================================= */
 exports.updateUser = async (req, res) => {
     try {
+        const update = { ...req.body };
+        if (Object.prototype.hasOwnProperty.call(update, "password")) {
+            const passwordCheck = validatePasswordInput(update.password);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ message: passwordCheck.message });
+            }
+            update.password = await hashPassword(passwordCheck.password);
+        }
+
         const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
-            { $set: req.body }, // Use $set to ensure all fields in body are updated
+            { $set: update },
             { new: true, runValidators: true }
         ).select('-password');
 
