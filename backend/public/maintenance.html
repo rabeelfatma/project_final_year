@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuickCheck Hub — Staging</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0f172a;
+        --panel: #111827;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --line: rgba(56, 189, 248, 0.35);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        font-family: Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 42%),
+          linear-gradient(160deg, #020617 0%, #0f172a 55%, #111827 100%);
+        color: var(--text);
+      }
+      main {
+        width: min(640px, 100%);
+        padding: 2.5rem 2rem;
+        border: 1px solid var(--line);
+        background: rgba(17, 24, 39, 0.88);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+      p.brand {
+        margin: 0 0 0.75rem;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        font-size: 0.8rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      h1 {
+        margin: 0 0 1rem;
+        font-size: clamp(1.8rem, 4vw, 2.4rem);
+        line-height: 1.15;
+      }
+      p {
+        margin: 0 0 0.85rem;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .badge {
+        display: inline-block;
+        margin-top: 1.25rem;
+        padding: 0.4rem 0.75rem;
+        border: 1px solid var(--line);
+        color: var(--accent);
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">QuickCheck Hub</p>
+      <h1>Staging maintenance</h1>
+      <p>
+        This academic project environment is online for hosting verification only.
+        The application, APIs, and private files are locked until security, database,
+        and functional acceptance are complete.
+      </p>
+      <p>Please check back after authorized release approval.</p>
+      <div class="badge">Maintenance mode</div>
+    </main>
+  </body>
+</html>

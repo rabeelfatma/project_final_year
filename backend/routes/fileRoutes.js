@@ -1,0 +1,11 @@
+const express = require("express");
+const router = express.Router();
+const { protect } = require("../middleware/authMiddleware");
+const ctrl = require("../controllers/fileController");
+router.use(protect);
+router.get("/assignment/:id", ctrl.assignment);
+router.get("/assignment/:id/preview", ctrl.assignmentPreview);
+router.get("/submission/:id", ctrl.submission);
+router.get("/submission/:id/preview", ctrl.submissionPreview);
+router.get("/message/:id", ctrl.message);
+module.exports = router;
