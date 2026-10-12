@@ -278,11 +278,22 @@ exports.listRegistrationRequests = async (req, res) => {
             .sort({ createdAt: -1 })
             .lean();
 
-        const pendingCount = await User.countDocuments({
+        const pendingBase = {
             role: { $in: ["teacher", "student"] },
             approvalStatus: "pending",
-            emailVerified: true,
-        });
+        };
+        const [readyForApprovalCount, awaitingVerificationCount, totalPendingCount] =
+            await Promise.all([
+                User.countDocuments({ ...pendingBase, emailVerified: true }),
+                User.countDocuments({
+                    ...pendingBase,
+                    emailVerified: { $ne: true },
+                }),
+                User.countDocuments(pendingBase),
+            ]);
+
+        // pendingCount remains "ready for Admin approval" (verified + pending).
+        const pendingCount = readyForApprovalCount;
 
         res.json({
             requests: users.map((u) => ({
@@ -291,13 +302,17 @@ exports.listRegistrationRequests = async (req, res) => {
                 email: u.email,
                 role: u.role,
                 approvalStatus: u.approvalStatus || "approved",
-                emailVerified: u.emailVerified !== false,
+                // Only proven verification — never invent VERIFIED for missing fields.
+                emailVerified: u.emailVerified === true,
                 emailVerifiedAt: u.emailVerifiedAt || null,
                 createdAt: u.createdAt,
                 approvedAt: u.approvedAt || null,
                 rejectedAt: u.rejectedAt || null,
             })),
             pendingCount,
+            readyForApprovalCount,
+            awaitingVerificationCount,
+            totalPendingCount,
         });
     } catch (err) {
         console.error("LIST REGISTRATION REQUESTS ERROR:", err);

@@ -114,9 +114,56 @@ async function verifyEmailWithToken(rawToken, deps = createDefaultDeps()) {
   );
 
   if (!consumed) {
+    // Predictable replay / Strict Mode double-submit: already-used token whose
+    // user is verified → succeed idempotently without re-notifying Admin.
+    let prior = null;
+    if (typeof deps.EmailVerificationToken.findOne === "function") {
+      const found = await deps.EmailVerificationToken.findOne({ tokenHash });
+      prior =
+        found && typeof found.toObject === "function" ? found.toObject() : found;
+    }
+    if (prior) {
+      const priorUser = await deps.User.findById(prior.user).select(
+        "email role approvalStatus emailVerified emailVerifiedAt"
+      );
+      if (priorUser && priorUser.emailVerified === true) {
+        return {
+          ok: true,
+          status: 200,
+          alreadyVerified: true,
+          message:
+            "Email already verified. Your account is awaiting Admin approval.",
+          user: {
+            email: priorUser.email,
+            role: priorUser.role,
+            emailVerified: true,
+            approvalStatus: priorUser.approvalStatus,
+          },
+        };
+      }
+      if (prior.expiresAt && prior.expiresAt <= now) {
+        return {
+          ok: false,
+          status: 400,
+          code: "TOKEN_EXPIRED",
+          message:
+            "This verification link has expired. Request a new verification email below.",
+        };
+      }
+      if (prior.usedAt) {
+        return {
+          ok: false,
+          status: 400,
+          code: "TOKEN_USED",
+          message:
+            "This verification link was already used. Request a new link only if your email is still unverified.",
+        };
+      }
+    }
     return {
       ok: false,
       status: 400,
+      code: "TOKEN_INVALID",
       message: "This verification link is invalid or has expired.",
     };
   }
@@ -220,11 +267,12 @@ async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()
       "If an unverified registration exists for that email, a new verification link will be sent shortly.",
   };
 
+  // Include legacy pending rows where emailVerified is missing/undefined.
   const user = await deps.User.findOne({
     email: normalized,
     role: { $in: ["teacher", "student"] },
     approvalStatus: "pending",
-    emailVerified: false,
+    emailVerified: { $ne: true },
   });
 
   if (!user) {

@@ -76,7 +76,15 @@ const adminService = {
         const response = await adminClient.get('/registration-requests', {
             params: { status },
         });
-        return response.data || { requests: [], pendingCount: 0 };
+        return (
+          response.data || {
+            requests: [],
+            pendingCount: 0,
+            readyForApprovalCount: 0,
+            awaitingVerificationCount: 0,
+            totalPendingCount: 0,
+          }
+        );
     },
 
     approveRegistrationRequest: async (id) => {

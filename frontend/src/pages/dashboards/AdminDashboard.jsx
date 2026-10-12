@@ -32,7 +32,21 @@ export default function AdminDashboard() {
   const [registrationFilter, setRegistrationFilter] = useState('pending');
   const [registrationRequests, setRegistrationRequests] = useState([]);
   const [pendingRegistrationCount, setPendingRegistrationCount] = useState(0);
+  const [readyForApprovalCount, setReadyForApprovalCount] = useState(0);
+  const [awaitingVerificationCount, setAwaitingVerificationCount] = useState(0);
+  const [totalPendingCount, setTotalPendingCount] = useState(0);
   const [registrationActionId, setRegistrationActionId] = useState(null);
+
+  const applyRegistrationCounts = (payload) => {
+    const ready = Number(payload?.readyForApprovalCount ?? payload?.pendingCount ?? 0) || 0;
+    const awaiting = Number(payload?.awaitingVerificationCount ?? 0) || 0;
+    const total = Number(payload?.totalPendingCount ?? ready + awaiting) || 0;
+    setReadyForApprovalCount(ready);
+    setAwaitingVerificationCount(awaiting);
+    setTotalPendingCount(total);
+    // Sidebar badge = approval-ready (verified) only.
+    setPendingRegistrationCount(ready);
+  };
 
   const COLORS = ['var(--chart-primary)', 'var(--chart-secondary)', 'var(--chart-tertiary)', 'var(--chart-quaternary)'];
 
@@ -75,14 +89,14 @@ export default function AdminDashboard() {
         }
         try {
           const pending = await adminService.getRegistrationRequests('pending');
-          setPendingRegistrationCount(pending?.pendingCount || 0);
+          applyRegistrationCounts(pending);
         } catch {
           /* non-blocking badge refresh */
         }
       } else if (activeTab === 'Registration Requests') {
         const res = await adminService.getRegistrationRequests(registrationFilter);
         setRegistrationRequests(Array.isArray(res?.requests) ? res.requests : []);
-        setPendingRegistrationCount(res?.pendingCount || 0);
+        applyRegistrationCounts(res);
       } else {
         let data = [];
         if (activeTab === 'Students') data = await adminService.getRecentUsers();
@@ -158,11 +172,11 @@ export default function AdminDashboard() {
       widthClass="w-64"
       desktopMode="fixed"
       desktopOffsetClass="md:ml-64"
-      mobileTitle="Educorre HQ"
+      mobileTitle="QuickCheck Hub"
       sidebar={
         <div className="p-6 flex flex-col flex-1 min-h-0">
           <div className="text-xl font-black mb-10 flex items-center gap-2 uppercase tracking-tighter text-white">
-            <Activity className="text-sky-500" /> EDUCORRE HQ
+            <Activity className="text-sky-500" /> QuickCheck Hub
           </div>
 
           <nav className="space-y-2">
@@ -226,7 +240,10 @@ export default function AdminDashboard() {
               >
                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-400 mb-1">Registration Requests</p>
                 <p className="text-sm font-bold text-slate-200">
-                  {pendingRegistrationCount} pending request{pendingRegistrationCount === 1 ? '' : 's'} awaiting review
+                  {readyForApprovalCount} ready for Admin approval
+                  {awaitingVerificationCount > 0
+                    ? ` · ${awaitingVerificationCount} awaiting email verification`
+                    : ''}
                 </p>
               </button>
             )}
@@ -285,9 +302,20 @@ export default function AdminDashboard() {
               <h2 className="text-xl sm:text-2xl font-black italic text-sky-500 uppercase tracking-tighter">
                 Registration Requests
               </h2>
-              <span className="text-xs font-bold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
-                {pendingRegistrationCount} Pending
-              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Total Pending</p>
+                <p className="text-lg font-black text-slate-100">{totalPendingCount}</p>
+              </div>
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-400">Awaiting Email Verification</p>
+                <p className="text-lg font-black text-amber-300">{awaitingVerificationCount}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Ready for Admin Approval</p>
+                <p className="text-lg font-black text-emerald-300">{readyForApprovalCount}</p>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               {['pending', 'approved', 'rejected'].map((status) => (
@@ -462,10 +490,12 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                   {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
                 </td>
                 <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                  {item.emailVerified ? (
+                  {item.emailVerified === true ? (
                     <span className="text-emerald-400">Verified</span>
+                  ) : item.approvalStatus === 'pending' ? (
+                    <span className="text-amber-400">Unverified</span>
                   ) : (
-                    <span className="text-amber-400">Pending</span>
+                    <span className="text-slate-500">Not recorded</span>
                   )}
                 </td>
                 <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -476,11 +506,11 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                     <div className="inline-flex items-center gap-2 justify-end">
                       <button
                         type="button"
-                        disabled={actionId === item.id || !item.emailVerified}
+                        disabled={actionId === item.id || item.emailVerified !== true}
                         onClick={() => onApprove(item.id)}
                         className="inline-flex items-center gap-1 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-400/10 rounded-xl hover:bg-emerald-400 hover:text-black transition-all disabled:opacity-50"
                         aria-label={`Approve ${item.name}`}
-                        title={!item.emailVerified ? 'Email must be verified first' : 'Approve'}
+                        title={item.emailVerified !== true ? 'Email must be verified first' : 'Approve'}
                       >
                         <Check size={14} /> Approve
                       </button>

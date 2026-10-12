@@ -65,7 +65,8 @@ const userSchema = new mongoose.Schema(
     rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
     // QC-18A email ownership verification (public signup dual-gate).
-    // Missing/undefined is treated as verified for legacy / Admin-created accounts.
+    // Login: missing/undefined treated as verified for legacy/Admin-created accounts.
+    // Admin Registration UI: only emailVerified===true is shown as Verified.
     // Public signup sets emailVerified=false until the applicant confirms.
     emailVerified: { type: Boolean },
     emailVerifiedAt: { type: Date, default: null },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
@@ -9,14 +9,18 @@ import { getApiBaseUrl } from "../../utils/apiBase";
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
   const tokenFromQuery = String(searchParams.get("token") || "").trim();
+  const emailFromQuery = String(searchParams.get("email") || "").trim();
 
   const [status, setStatus] = useState(tokenFromQuery ? "verifying" : "idle");
   const [msg, setMsg] = useState("");
-  const [resendEmail, setResendEmail] = useState("");
+  const [resendEmail, setResendEmail] = useState(emailFromQuery);
   const [resending, setResending] = useState(false);
+  const verifyStarted = useRef(false);
+  const resendLock = useRef(false);
 
   useEffect(() => {
-    if (!tokenFromQuery) return;
+    if (!tokenFromQuery || verifyStarted.current) return;
+    verifyStarted.current = true;
 
     let cancelled = false;
     (async () => {
@@ -39,10 +43,8 @@ export default function VerifyEmail() {
           return;
         }
         setStatus("success");
-        setMsg(
-          data.message ||
-            "Email verified successfully. Your account is awaiting Admin approval."
-        );
+        // Single success surface — do not also echo into Alert below.
+        setMsg("");
       } catch {
         if (!cancelled) {
           setStatus("error");
@@ -58,11 +60,12 @@ export default function VerifyEmail() {
 
   const handleResend = async (e) => {
     e.preventDefault();
-    if (resending) return;
+    if (resendLock.current || resending) return;
     setMsg("");
     if (!resendEmail || !validateEmail(resendEmail)) {
       return setMsg("Enter a valid email address.");
     }
+    resendLock.current = true;
     setResending(true);
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/resend-verification`, {
@@ -85,6 +88,7 @@ export default function VerifyEmail() {
       setMsg("Server unavailable. Please try again later.");
     } finally {
       setResending(false);
+      resendLock.current = false;
     }
   };
 
@@ -103,7 +107,7 @@ export default function VerifyEmail() {
           </p>
         </div>
 
-        {msg && <Alert message={msg} />}
+        {msg && status !== "success" && <Alert message={msg} />}
 
         {status === "verifying" && (
           <p className="text-center text-sm text-sky-400 font-bold uppercase tracking-widest animate-pulse">
@@ -113,8 +117,12 @@ export default function VerifyEmail() {
 
         {status === "success" && (
           <div className="space-y-4">
+            <p className="text-sm text-emerald-400 text-center font-semibold">
+              Email verified successfully.
+            </p>
             <p className="text-sm text-[var(--text-faint)] text-center">
-              Email verified successfully. Your account is awaiting Admin approval.
+              Your account is awaiting Admin approval. You will be able to sign in
+              after an administrator approves your request.
             </p>
             <Link to="/login">
               <Button text="Back to Login" type="button" />
@@ -125,7 +133,9 @@ export default function VerifyEmail() {
         {(status === "error" || status === "idle") && (
           <form onSubmit={handleResend} noValidate className="space-y-4">
             <p className="text-xs text-[var(--text-faint)] text-center">
-              Need a new link? Enter the email you used to register.
+              {tokenFromQuery
+                ? "Need a new link? Enter the email you used to register."
+                : "Enter the email you used to register to resend the verification link."}
             </p>
             <InputField
               name="email"
@@ -138,6 +148,7 @@ export default function VerifyEmail() {
               text={resending ? "Sending…" : "Resend Verification Email"}
               type="submit"
               disabled={resending}
+              aria-label="Resend verification email"
             />
             <p className="text-center text-[11px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
               <Link to="/login" className="text-sky-400 hover:underline">

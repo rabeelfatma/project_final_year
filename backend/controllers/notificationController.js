@@ -22,6 +22,20 @@ exports.markAllRead = async (req, res) => {
   }
 };
 
+exports.markOneRead = async (req, res) => {
+  try {
+    const updated = await Notification.findOneAndUpdate(
+      { _id: req.params.id, recipient: req.user._id },
+      { $set: { read: true } },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ message: "Notification not found." });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to update notification", error: error.message });
+  }
+};
+
 
 exports.remove = async (req, res) => {
   try {

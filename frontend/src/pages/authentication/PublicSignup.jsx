@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import InputField from "../../components/ui/InputField";
@@ -7,8 +7,38 @@ import Alert from "../../components/ui/Alert";
 import { validateEmail } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
+function messageForSignupConflict(data) {
+  const code = data?.code;
+  if (code === "PENDING_VERIFICATION") {
+    return (
+      data.message ||
+      "A registration with this email is awaiting email verification. Use Resend Verification Email if you did not receive the link."
+    );
+  }
+  if (code === "PENDING_APPROVAL") {
+    return (
+      data.message ||
+      "A registration with this email is awaiting administrator approval."
+    );
+  }
+  if (code === "ALREADY_REGISTERED") {
+    return (
+      data.message ||
+      "An account with this email already exists. Sign in or use Forgot Password."
+    );
+  }
+  if (code === "REGISTRATION_REJECTED") {
+    return (
+      data.message ||
+      "This registration request was previously declined. Contact an administrator if you need help."
+    );
+  }
+  return data?.message || "Unable to submit registration request.";
+}
+
 export default function PublicSignup() {
   const navigate = useNavigate();
+  const submitLock = useRef(false);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -18,6 +48,8 @@ export default function PublicSignup() {
   });
   const [msg, setMsg] = useState("");
   const [success, setSuccess] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
+  const [conflictCode, setConflictCode] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,8 +59,9 @@ export default function PublicSignup() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (submitting || success) return;
+    if (submitLock.current || submitting || success) return;
     setMsg("");
+    setConflictCode("");
 
     if (!form.name.trim() || form.name.trim().length < 2) {
       return setMsg("Full name is required.");
@@ -46,7 +79,9 @@ export default function PublicSignup() {
       return setMsg("Select Teacher or Student.");
     }
 
+    submitLock.current = true;
     setSubmitting(true);
+    let created = false;
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/register-request`, {
         method: "POST",
@@ -67,18 +102,20 @@ export default function PublicSignup() {
       }
 
       if (!res.ok) {
-        return setMsg(data.message || "Unable to submit registration request.");
+        setConflictCode(data.code || "");
+        return setMsg(messageForSignupConflict(data));
       }
 
+      created = true;
       setSuccess(true);
-      setMsg(
-        data.message ||
-          "Your registration request has been submitted. Please verify your email, then wait for Admin approval before logging in."
-      );
+      setSubmittedEmail(form.email.trim());
+      setMsg("");
     } catch {
       setMsg("Server unavailable. Check that the backend is running and try again.");
     } finally {
       setSubmitting(false);
+      // Keep lock after success to prevent accidental resubmits.
+      if (!created) submitLock.current = false;
     }
   };
 
@@ -101,16 +138,30 @@ export default function PublicSignup() {
 
         {success ? (
           <div className="space-y-4">
+            <p className="text-sm text-[var(--text)] text-center font-semibold">
+              Registration submitted.
+            </p>
             <p className="text-sm text-[var(--text-faint)] text-center">
-              Check your inbox for a verification link. After verifying, an administrator
+              A verification link was sent to{" "}
+              <span className="text-sky-400 break-all">{submittedEmail}</span>.
+              Open that email and click the link. After verifying, an administrator
               must approve your account before you can sign in.
             </p>
             <Button
-              text="Open Verify Email Page"
+              text="Resend Verification Email"
               type="button"
-              onClick={() => navigate("/verify-email")}
+              onClick={() =>
+                navigate(
+                  `/verify-email?email=${encodeURIComponent(submittedEmail)}`
+                )
+              }
+              aria-label="Resend verification email"
             />
-            <Button text="Back to Login" type="button" onClick={() => navigate("/login")} />
+            <Button
+              text="Back to Login"
+              type="button"
+              onClick={() => navigate("/login")}
+            />
           </div>
         ) : (
           <form onSubmit={handleSubmit} noValidate>
@@ -188,7 +239,34 @@ export default function PublicSignup() {
               text={submitting ? "Submitting…" : "Submit Registration Request"}
               type="submit"
               disabled={submitting}
+              aria-label="Submit registration request"
             />
+
+            {(conflictCode === "PENDING_VERIFICATION" ||
+              conflictCode === "PENDING_APPROVAL" ||
+              conflictCode === "ALREADY_REGISTERED") && (
+              <div className="mt-4 flex flex-col gap-2">
+                {conflictCode === "PENDING_VERIFICATION" && (
+                  <Button
+                    text="Open Resend Verification"
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        `/verify-email?email=${encodeURIComponent(form.email.trim())}`
+                      )
+                    }
+                  />
+                )}
+                {(conflictCode === "ALREADY_REGISTERED" ||
+                  conflictCode === "PENDING_APPROVAL") && (
+                  <Button
+                    text="Go to Login"
+                    type="button"
+                    onClick={() => navigate("/login")}
+                  />
+                )}
+              </div>
+            )}
 
             <p className="text-center text-[var(--text-faint)] mt-6 text-[11px] font-bold uppercase tracking-[0.2em]">
               Already registered?{" "}

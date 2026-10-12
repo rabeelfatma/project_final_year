@@ -396,7 +396,19 @@ export default function SidebarControls({ role, onRegistrationNotificationClick 
                   <button
                     type="button"
                     className="flex-1 min-w-0 text-left"
-                    onClick={() => {
+                    onClick={async () => {
+                      if (!item.read) {
+                        try {
+                          await api.put(`/notifications/${item._id}/read`);
+                          setNotifications((items) =>
+                            items.map((row) =>
+                              row._id === item._id ? { ...row, read: true } : row
+                            )
+                          );
+                        } catch {
+                          /* non-blocking — still navigate */
+                        }
+                      }
                       if (
                         item.type === "registration_pending" &&
                         typeof onRegistrationNotificationClick === "function"

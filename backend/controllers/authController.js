@@ -286,9 +286,41 @@ exports.requestPublicSignup = async (req, res) => {
 
     const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
-      // Avoid account-enumeration detail while still blocking duplicates.
-      return res.status(400).json({
-        message: "Unable to create registration request for this email.",
+      // Never overwrite password/role/identity. Guide by state without enabling
+      // silent reactivation. Admin emails stay opaque.
+      if (userExists.role === "admin") {
+        return res.status(400).json({
+          message: "Unable to create registration request for this email.",
+          code: "EMAIL_UNAVAILABLE",
+        });
+      }
+
+      const approval = userExists.approvalStatus || "approved";
+      if (approval === "rejected") {
+        return res.status(409).json({
+          message:
+            "This registration request was previously declined. Contact an administrator if you need help.",
+          code: "REGISTRATION_REJECTED",
+        });
+      }
+      if (approval === "pending" && userExists.emailVerified !== true) {
+        return res.status(409).json({
+          message:
+            "A registration with this email is awaiting email verification. Use Resend Verification Email if you did not receive the link.",
+          code: "PENDING_VERIFICATION",
+        });
+      }
+      if (approval === "pending" && userExists.emailVerified === true) {
+        return res.status(409).json({
+          message:
+            "A registration with this email is awaiting administrator approval. You will be notified when a decision is made.",
+          code: "PENDING_APPROVAL",
+        });
+      }
+      return res.status(409).json({
+        message:
+          "An account with this email already exists. Sign in or use Forgot Password if you need access.",
+        code: "ALREADY_REGISTERED",
       });
     }
 

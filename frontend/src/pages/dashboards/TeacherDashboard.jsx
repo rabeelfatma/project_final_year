@@ -446,7 +446,7 @@ export default function TeacherDashboard() {
   if (loading) return (
     <div className="h-screen theme-page flex flex-col items-center justify-center">
       <Loader2 className="animate-spin text-sky-500 mb-4" size={48} />
-      <p className="text-white font-bold tracking-[0.3em] text-[10px]">SYNCING EDUCORRE...</p>
+      <p className="text-white font-bold tracking-[0.3em] text-[10px]">SYNCING QUICKCHECK...</p>
     </div>
   );
 
@@ -455,13 +455,13 @@ export default function TeacherDashboard() {
     <DashboardNavShell
       widthClass="w-64"
       desktopMode="flow"
-      mobileTitle="Educorre Teacher"
+      mobileTitle="QuickCheck Teacher"
       sidebar={
         <>
           <div className="p-8">
             <div className="flex items-center gap-3 text-white mb-10">
               <div className="bg-sky-500 p-2 rounded-lg text-black"><ShieldCheck size={20}/></div>
-              <span className="font-black text-xl tracking-tighter">EDUCORRE</span>
+              <span className="font-black text-xl tracking-tighter">QuickCheck Hub</span>
             </div>
             <nav className="space-y-1">
               <SidebarItem icon={<Layout size={18}/>}        label="Overview"          active={activeTab==='dashboard'}    onClick={() => { setActiveTab('dashboard'); setEditingId(null); }} />

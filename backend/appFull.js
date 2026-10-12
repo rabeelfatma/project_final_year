@@ -84,6 +84,19 @@ const setCustomHeaders = (res, filePath) => {
 configureUploadStatic(app, { setHeaders: setCustomHeaders });
 
 /* ===============================
+    Health (before SPA static fallback)
+================================= */
+function sendHealth(_req, res) {
+  res.status(200).json({
+    status: "ok",
+    service: "QuickCheck Hub",
+    mode: "full",
+  });
+}
+app.get("/api/health", sendHealth);
+app.get("/health", sendHealth);
+
+/* ===============================
     API Routes
 ================================= */
 app.use("/api/auth", authRoutes);

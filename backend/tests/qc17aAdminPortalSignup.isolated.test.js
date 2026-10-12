@@ -389,9 +389,14 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
     assert.match(res.body.message, /Teacher or Student|Invalid/i);
   });
 
-  it("rejects duplicate email signup without leaking account details", async () => {
+  it("rejects duplicate email signup without creating a second account", async () => {
     const userMock = {
-      findOne: async () => ({ _id: "existing" }),
+      findOne: async () => ({
+        _id: "existing",
+        role: "student",
+        approvalStatus: "pending",
+        emailVerified: false,
+      }),
       create: async () => {
         throw new Error("should not create");
       },
@@ -410,8 +415,9 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
       },
       res
     );
-    assert.equal(res.statusCode, 400);
-    assert.doesNotMatch(res.body.message, /already exists/i);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.code, "PENDING_VERIFICATION");
+    assert.doesNotMatch(JSON.stringify(res.body), /password|token/i);
   });
 
   it("pending accounts cannot log in", async () => {
@@ -625,7 +631,11 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
           },
         ],
       }),
-      countDocuments: async () => 1,
+      countDocuments: async (filter) => {
+        if (filter.emailVerified === true) return 1;
+        if (filter.emailVerified && filter.emailVerified.$ne === true) return 0;
+        return 1;
+      },
     };
     const adminController = loadAdminController(userMock);
     const res = mockRes();
@@ -635,7 +645,10 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
     );
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.pendingCount, 1);
+    assert.equal(res.body.readyForApprovalCount, 1);
+    assert.equal(res.body.totalPendingCount, 1);
     assert.equal(res.body.requests[0].email, "pending@example.com");
     assert.equal(res.body.requests[0].password, undefined);
+    assert.equal(res.body.requests[0].emailVerified, false);
   });
 });
