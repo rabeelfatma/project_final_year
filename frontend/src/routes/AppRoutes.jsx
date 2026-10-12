@@ -12,6 +12,7 @@ import About from "../pages/landing/About";
 import Login from "../pages/authentication/Login";
 import RoleSelection from "../pages/authentication/RoleSelection";
 import ForgotPassword from "../pages/authentication/ForgotPassword";
+import ResetPassword from "../pages/authentication/ResetPassword";
 
 /* SIGNUP PAGES */
 import StudentSignup from "../pages/signup/StudentSignup";
@@ -39,6 +40,7 @@ export default function AppRoutes() {
         <Route path="/login" element={<Login />} />
         <Route path="/role-selection" element={<RoleSelection />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* --- SIGNUP ROUTES --- */}
         <Route

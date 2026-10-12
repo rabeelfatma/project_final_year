@@ -179,17 +179,26 @@ exports.addUser = async (req, res) => {
 exports.updateUser = async (req, res) => {
     try {
         const update = { ...req.body };
+        // Clients must not forge session-invalidation fields.
+        delete update.tokenVersion;
+        delete update.passwordChangedAt;
+        delete update._id;
+        delete update.id;
+
+        const updateQuery = { $set: update };
         if (Object.prototype.hasOwnProperty.call(update, "password")) {
             const passwordCheck = validatePasswordInput(update.password);
             if (!passwordCheck.ok) {
                 return res.status(400).json({ message: passwordCheck.message });
             }
             update.password = await hashPassword(passwordCheck.password);
+            update.passwordChangedAt = new Date();
+            updateQuery.$inc = { tokenVersion: 1 };
         }
 
         const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
-            { $set: update },
+            updateQuery,
             { new: true, runValidators: true }
         ).select('-password');
 

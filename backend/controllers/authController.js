@@ -100,7 +100,7 @@ exports.registerUser = async (req, res) => {
           ? "Teacher Added Successfully ✅"
           : "User Registered Successfully",
       regNo: user.registrationNumber || "N/A",
-      token: generateToken(user._id, user.role),
+      token: generateToken(user._id, user.role, user.tokenVersion || 0),
       role: user.role,
       user: publicUser
     });
@@ -179,7 +179,7 @@ exports.loginUser = async (req, res) => {
 
     return res.json({
       message: "Login Successful",
-      token: generateToken(user._id, user.role),
+      token: generateToken(user._id, user.role, user.tokenVersion || 0),
       role: user.role,
       name: user.name,
       regNo: user.registrationNumber || "N/A",

@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const authController = require("../controllers/authController");
+const passwordResetController = require("../controllers/passwordResetController");
 const { protect, authorize } = require("../middleware/authMiddleware");
 const {
   normalizeRole,
@@ -35,10 +36,8 @@ router.post("/signup", gateSignup, (req, res) => authController.registerUser(req
 router.post("/login", (req, res) => authController.loginUser(req, res));
 
 /**
- * TEMPORARY SECURITY RESTRICTION (not a completed Forgot Password feature).
- * The previous unauthenticated reset allowed anyone who knew an email to set a
- * new password. Blocked until Rabeel approves a verified recovery workflow.
- * Forgot Password UI is intentionally left in place.
+ * Legacy insecure reset (email + newPassword) remains permanently disabled.
+ * Use the tokenized email recovery endpoints below instead.
  */
 router.post("/reset-password", (_req, res) => {
   return res.status(503).json({
@@ -47,5 +46,13 @@ router.post("/reset-password", (_req, res) => {
     code: "PASSWORD_RESET_DISABLED",
   });
 });
+
+/** Secure email-based recovery (Admin / Teacher / Student). */
+router.post("/password-reset/request", (req, res) =>
+  passwordResetController.requestReset(req, res)
+);
+router.post("/password-reset/confirm", (req, res) =>
+  passwordResetController.confirmReset(req, res)
+);
 
 module.exports = router;

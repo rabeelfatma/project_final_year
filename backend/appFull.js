@@ -29,6 +29,10 @@ connectDB();
 /* ===============================
     Global Middleware
 ================================= */
+// Hostinger sits behind one reverse proxy. Required so req.ip is the client
+// hop Express trusts — password-reset rate limits must not read raw XFF.
+app.set("trust proxy", 1);
+
 app.use(cors({ exposedHeaders: ["Content-Disposition"] }));
 
 app.use(express.json({ limit: "100mb" }));

@@ -17,6 +17,19 @@ const userSchema = new mongoose.Schema(
       required: false 
     },
 
+    // Used to invalidate JWTs issued before a password change/reset.
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Server-validated session generation. Incremented on password reset.
+    // Existing JWTs without `tv` are treated as version 0 (compatible).
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
+
     role: {
       type: String,
       enum: ["student", "teacher", "admin"],

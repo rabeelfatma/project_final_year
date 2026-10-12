@@ -42,6 +42,20 @@ const protect = async (req, res, next) => {
       });
     }
 
+    // Authoritative session invalidation: DB tokenVersion must match JWT `tv`.
+    // Handles same-second resets (JWT iat is whole seconds). Legacy JWTs omit
+    // `tv` and are treated as version 0 — they remain valid until a password
+    // change increments the stored version.
+    const tokenTv = Number.isFinite(Number(decoded.tv)) ? Number(decoded.tv) : 0;
+    const userTv = Number.isFinite(Number(user.tokenVersion))
+      ? Number(user.tokenVersion)
+      : 0;
+    if (tokenTv !== userTv) {
+      return res.status(401).json({
+        message: "Session expired. Please sign in again."
+      });
+    }
+
     req.user = user;
     next();
   } catch (error) {
