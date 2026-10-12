@@ -24,7 +24,7 @@ function request(port, method, urlPath) {
 }
 
 describe("APP_RUNTIME_MODE=preview", () => {
-  it("serves preview HTML and blocks APIs/uploads without Mongo", async () => {
+  it("serves preview UI and blocks APIs/uploads without Mongo", async () => {
     const prevMode = process.env.APP_RUNTIME_MODE;
     const prevVercel = process.env.VERCEL;
     process.env.APP_RUNTIME_MODE = "preview";
@@ -44,13 +44,25 @@ describe("APP_RUNTIME_MODE=preview", () => {
 
           const page = await request(port, "GET", "/");
           assert.equal(page.status, 200);
-          assert.match(page.text, /Frontend preview mode|preview/i);
+          // Fallback preview.html OR built SPA shell — never invent academic results.
+          assert.match(
+            page.text,
+            /Frontend preview mode|preview|QuickCheck Hub|root|<!doctype html>/i
+          );
           assert.doesNotMatch(page.text, /student score|invented grade/i);
 
           const api = await request(port, "GET", "/api/auth/login");
           assert.equal(api.status, 503);
+          assert.match(api.text, /"mode":"preview"/);
+
+          const signup = await request(port, "POST", "/api/auth/register");
+          assert.equal(signup.status, 503);
+
           const uploads = await request(port, "GET", "/uploads/assignments/x.pdf");
           assert.equal(uploads.status, 503);
+
+          const files = await request(port, "GET", "/api/files/assignment/1/preview");
+          assert.equal(files.status, 503);
 
           server.close(() => {
             if (prevMode === undefined) delete process.env.APP_RUNTIME_MODE;
