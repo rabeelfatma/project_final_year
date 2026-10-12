@@ -18,9 +18,12 @@ QC-10E-P commit:
   Push: SUCCESS to origin/main (bbf3145..2f17358)
   Verified local SHA == origin/main after push
 
-Overnight coding commit (QC-10F→J), if gates pass:
+Overnight coding commit (QC-10F→J):
+  SHA: cdbf96c29b89968ecdba15cdb5f600569c13dad6
   Message: feat(academic): harden workflows and prepare evaluation handover
-  (See end of this file / git log for final SHA after release step)
+  Push: SUCCESS to origin/main (2f17358..cdbf96c)
+  Verified local SHA == origin/main; working tree clean after push
+  Staged secret scan: placeholder URI/key strings only (USER:PASS, test-key-not-real)
 
 GitHub remote: https://github.com/xohaibhsn/project_final_year.git
 Rabeel original repo: not touched
