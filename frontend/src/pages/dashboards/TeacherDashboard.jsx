@@ -518,7 +518,7 @@ export default function TeacherDashboard() {
             <h1 className="text-2xl font-black text-white mb-8 tracking-tighter uppercase">
               {editingId ? 'Update Assignment' : 'New Assignment'}
             </h1>
-            <form onSubmit={handleCreateOrUpdate} className="theme-card border p-10 rounded-3xl space-y-8 shadow-2xl">
+            <form onSubmit={handleCreateOrUpdate} className="theme-card border p-5 sm:p-10 rounded-3xl space-y-6 sm:space-y-8 shadow-2xl">
               <div>
                 <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Assignment Title</label>
                 <input type="text" className="w-full theme-input border rounded-xl p-4 text-sm outline-none" value={form.title} onChange={e => setForm({...form, title:e.target.value})} placeholder="e.g. System Design Analysis"/>
@@ -542,7 +542,7 @@ export default function TeacherDashboard() {
                 <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Description</label>
                 <textarea className="w-full theme-input border rounded-xl p-4 text-sm h-40 resize-none outline-none" value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Instructions..."/>
               </div>
-              <div className="border-2 border-dashed border-slate-800 rounded-2xl p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all" onClick={() => fileInputRef.current.click()}>
+              <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all" onClick={() => fileInputRef.current.click()}>
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange}/>
                 {form.file ? (
                   <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
@@ -575,9 +575,9 @@ export default function TeacherDashboard() {
         {/* ══ ASSIGNMENTS TAB ══ */}
         {activeTab === 'assignments' && (
           <div className="animate-in fade-in duration-500">
-            <div className="flex items-center justify-between mb-8 gap-4">
-              <h1 className="text-3xl font-black text-white tracking-tighter uppercase">My Assignments</h1>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">My Assignments</h1>
+              <div className="flex flex-wrap items-center gap-3">
                 <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2"><input type="checkbox" checked={assignments.length > 0 && selectedAssignments.length === assignments.length} onChange={(e) => setSelectedAssignments(e.target.checked ? assignments.map((a) => a._id) : [])}/> Select all</label>
                 {selectedAssignments.length > 0 && <button type="button" onClick={handleDeleteSelectedAssignments} className="bg-red-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase"><Trash2 size={13} className="inline mr-1"/> Delete selected</button>}
               </div>
@@ -588,11 +588,11 @@ export default function TeacherDashboard() {
                 const displayStatus = isOverdue ? 'deactive' : (asgn.status || 'active');
                 return (
                   // ✅ FIX: key uses _id instead of index
-                  <div key={asgn._id} className="theme-card border p-6 rounded-2xl flex justify-between items-center hover:border-sky-500/30 transition-all">
-                    <div className="flex items-center gap-4 flex-1">
+                  <div key={asgn._id} className="theme-card border p-4 sm:p-6 rounded-2xl flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
+                    <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
                       <input type="checkbox" checked={selectedAssignments.includes(asgn._id)} onChange={() => setSelectedAssignments((prev) => prev.includes(asgn._id) ? prev.filter((x) => x !== asgn._id) : [...prev, asgn._id])}/>
-                      <div className="flex-1">
-                      <h3 className="text-white font-bold text-lg">{asgn.title}</h3>
+                      <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-bold text-base sm:text-lg break-words">{asgn.title}</h3>
                       <div className="flex flex-col gap-1 mt-2">
                         <p className="text-slate-500 text-[10px] uppercase tracking-widest font-black flex items-center gap-1">
                           <Clock size={12}/> Created: {new Date(asgn.createdAt).toLocaleString()}
@@ -603,12 +603,12 @@ export default function TeacherDashboard() {
                       </div>
                     </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {asgn.file && <button onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(asgn._id), asgn.originalFileName || 'assignment');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Open inside browser"><Eye size={18}/></button>}
-                      {asgn.file && <button onClick={async()=>{try{await downloadProtectedFile(teacherService.downloadAssignment(asgn._id),asgn.originalFileName||"assignment");}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Download original reference file"><Download size={18}/></button>}
-                      <button onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400"><Edit3 size={18}/></button>
-                      <button onClick={() => handleDeleteAssignment(asgn._id)} className="p-2 text-slate-400 hover:text-red-400"><Trash2 size={18}/></button>
-                      <button onClick={() => handleStatusToggle(asgn._id, displayStatus)} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase border tracking-widest transition-all ${displayStatus==='deactive' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-sky-500/10 text-sky-500 border-sky-500/20 hover:bg-sky-500 hover:text-white'} ${isOverdue ? 'cursor-not-allowed opacity-70' : ''}`}>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
+                      {asgn.file && <button type="button" onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(asgn._id), asgn.originalFileName || 'assignment');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Open inside browser"><Eye size={18}/></button>}
+                      {asgn.file && <button type="button" onClick={async()=>{try{await downloadProtectedFile(teacherService.downloadAssignment(asgn._id),asgn.originalFileName||"assignment");}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Download original reference file"><Download size={18}/></button>}
+                      <button type="button" onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400"><Edit3 size={18}/></button>
+                      <button type="button" onClick={() => handleDeleteAssignment(asgn._id)} className="p-2 text-slate-400 hover:text-red-400"><Trash2 size={18}/></button>
+                      <button type="button" onClick={() => handleStatusToggle(asgn._id, displayStatus)} className={`px-4 sm:px-6 py-2 rounded-lg text-[10px] font-black uppercase border tracking-widest transition-all ${displayStatus==='deactive' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-sky-500/10 text-sky-500 border-sky-500/20 hover:bg-sky-500 hover:text-white'} ${isOverdue ? 'cursor-not-allowed opacity-70' : ''}`}>
                         {displayStatus === 'deactive' ? 'Deactive' : 'Active'}
                       </button>
                     </div>
@@ -624,37 +624,37 @@ export default function TeacherDashboard() {
         {activeTab === 'submissions' && (
           <div className="animate-in fade-in duration-500">
             <div className="flex flex-col gap-6 mb-8">
-              <div className="flex justify-between items-end">
+              <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4">
                 <div>
-                  <h1 className="text-3xl font-black text-white tracking-tighter uppercase">Submissions</h1>
+                  <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Submissions</h1>
                   <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">
                     Selected: <span className={selectedSubmissions.length >= 40 ? 'text-red-500' : 'text-sky-500'}>{selectedSubmissions.length}</span> / 40
                   </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-2 sm:gap-3">
                   {selectedSubmissions.length > 0 && (
                     <>
-                      <button onClick={handleAiEvaluation} disabled={aiLoading} className="bg-sky-500 hover:bg-sky-400 text-black px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-sky-500/20">
+                      <button type="button" onClick={handleAiEvaluation} disabled={aiLoading} className="bg-sky-500 hover:bg-sky-400 text-black px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-sky-500/20">
                         {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
                         AI Evaluate
                       </button>
-                      <button onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all">
+                      <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-amber-500 hover:bg-amber-400 text-black px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all">
                         {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>}
                         Check Plagiarism
                       </button>
-                      <button onClick={handlePublishBulk} disabled={isPublishing} className="bg-emerald-500 hover:bg-emerald-400 text-black px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20">
+                      <button type="button" onClick={handlePublishBulk} disabled={isPublishing} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20">
                         {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
                         Publish Marks
                       </button>
-                      <button onClick={handleResetSelectedGrades} className="bg-amber-500 hover:bg-amber-400 text-black px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><RotateCcw size={14}/> Reset grades</button>
-                      <button onClick={handleDeleteSelectedSubmissions} className="bg-red-500 hover:bg-red-400 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><Trash2 size={14}/> Delete selected</button>
+                      <button type="button" onClick={handleResetSelectedGrades} className="bg-amber-500 hover:bg-amber-400 text-black px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><RotateCcw size={14}/> Reset grades</button>
+                      <button type="button" onClick={handleDeleteSelectedSubmissions} className="bg-red-500 hover:bg-red-400 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><Trash2 size={14}/> Delete selected</button>
                     </>
                   )}
                 </div>
               </div>
 
               {/* Grading Instructions */}
-              <div className="theme-card border p-6 rounded-3xl flex flex-col gap-4">
+              <div className="theme-card border p-4 sm:p-6 rounded-3xl flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-sky-400 font-black text-[10px] uppercase tracking-widest">
                   <MessageSquare size={14}/> Grading Instructions for AI
                 </div>
@@ -665,20 +665,20 @@ export default function TeacherDashboard() {
                   placeholder="Example: Evaluate out of 30 marks. Check correctness, completeness and clarity."
                 />
                 {/* Reference file attach */}
-                <div className="flex items-center gap-4 pt-2 border-t border-slate-800">
-                  <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 pt-2 border-t border-slate-800">
+                  <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest shrink-0">
                     <FileUp size={14}/> Attach Reference File (Optional)
                   </div>
                   <div
-                    className="flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg theme-page border border-slate-700 hover:border-sky-500/50 transition-all"
+                    className="flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg theme-page border border-slate-700 hover:border-sky-500/50 transition-all min-w-0"
                     onClick={() => multimediaInputRef.current.click()}
                   >
                     <input type="file" ref={multimediaInputRef} className="hidden" accept="*/*" multiple onChange={handleMultimediaChange}/>
                     {multimediaFiles.length ? (
-                      <div className="flex items-center gap-2 text-sky-400 text-[10px] font-bold">
+                      <div className="flex items-center gap-2 text-sky-400 text-[10px] font-bold min-w-0">
                         <CheckCircle size={12}/>
-                        <span className="max-w-[220px] truncate">{multimediaFiles.length} file(s) selected</span>
-                        <X size={12} className="text-slate-500 hover:text-white" onClick={e => { e.stopPropagation(); setMultimediaFiles([]); if (multimediaInputRef.current) multimediaInputRef.current.value = null; }}/>
+                        <span className="max-w-[min(220px,50vw)] truncate">{multimediaFiles.length} file(s) selected</span>
+                        <X size={12} className="text-slate-500 hover:text-white shrink-0" onClick={e => { e.stopPropagation(); setMultimediaFiles([]); if (multimediaInputRef.current) multimediaInputRef.current.value = null; }}/>
                       </div>
                     ) : (
                       <span className="text-slate-500 text-[10px] font-bold">Choose reference files</span>
@@ -690,8 +690,8 @@ export default function TeacherDashboard() {
 
             {/* Submissions Table */}
             <div className="theme-card border rounded-3xl overflow-hidden shadow-2xl">
-              <div className="max-h-[600px] overflow-y-auto">
-                <table className="w-full text-left border-collapse">
+              <div className="max-h-[600px] overflow-auto">
+                <table className="w-full min-w-[900px] text-left border-collapse">
                   <thead className="theme-page sticky top-0 z-10 text-[10px] font-black uppercase text-slate-500 tracking-widest border-b border-slate-800">
                     <tr>
                       <th className="p-5 w-12 text-center">
@@ -766,7 +766,7 @@ export default function TeacherDashboard() {
                         {/* Scores are hidden until teacher/AI has actually checked the submission */}
                         <td className="p-5">
                           {['graded','GRADED','PUBLISHED','AI_GRADED','Graded'].includes(sub.status) ? (
-                            <div className="flex flex-col items-start gap-1 min-w-[130px]">
+                            <div className="flex flex-col items-start gap-1 min-w-0 whitespace-nowrap">
                               <span className="text-xs font-black accent-text">AI Marks: {sub.aiScore != null ? `${sub.aiScore}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
                               <span className="text-xs font-black" style={{color: 'var(--text)'}}>Teacher Marks: {sub.marks != null ? `${sub.marks}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
                             </div>
@@ -808,18 +808,18 @@ export default function TeacherDashboard() {
         {/* ══ PLAGIARISM TAB ══ */}
         {activeTab === 'plagiarism' && (
           <div className="animate-in fade-in duration-500">
-            <div className="flex items-start justify-between gap-4 mb-8">
-              <div>
-                <h1 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase">Plagiarism Check</h1>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tighter uppercase">Plagiarism Check</h1>
                 <p className="text-slate-500 text-xs max-w-2xl">Local similarity checking compares extracted text from submissions of the same assignment. It is an indicator for teacher review, not an automatic misconduct decision.</p>
               </div>
-              <button onClick={handlePlagiarismCheck} disabled={checkingPlagiarism || selectedSubmissions.length === 0} className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2">
+              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism || selectedSubmissions.length === 0} className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
                 {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>} Run Check
               </button>
             </div>
             <div className="theme-card border rounded-3xl overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full min-w-[640px] text-left">
                   <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
                     <tr><th className="p-5">Student</th><th className="p-5">Assignment</th><th className="p-5">Highest Similarity</th><th className="p-5">Compared With</th><th className="p-5">Status</th></tr>
                   </thead>
@@ -872,13 +872,13 @@ export default function TeacherDashboard() {
 
       {/* ══ REVIEW MODAL ══ */}
       {reviewModalOpen && selectedReview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="theme-card border w-full max-w-2xl rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
+          <div className="theme-card border w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 max-h-[94dvh] sm:max-h-[90vh] flex flex-col my-0 sm:my-auto">
 
-            <div className="p-8 border-b border-slate-800 flex justify-between items-center theme-surface">
-              <div>
-                <h2 className="text-white font-black text-xl tracking-tighter uppercase">Review Evaluation</h2>
-                <p className="text-sky-500 text-[10px] font-black uppercase tracking-widest">
+            <div className="p-4 sm:p-8 border-b border-slate-800 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 theme-surface shrink-0">
+              <div className="min-w-0">
+                <h2 className="text-white font-black text-lg sm:text-xl tracking-tighter uppercase">Review Evaluation</h2>
+                <p className="text-sky-500 text-[10px] font-black uppercase tracking-widest break-words">
                  {selectedReview.student?.name || selectedReview.studentName || 'Unknown'}
 
                {/* ✅ FIXED: Safe regNo fallback */}
@@ -888,33 +888,33 @@ export default function TeacherDashboard() {
               </span>
                 )}
                 </p>
-                <div className="mt-3 flex gap-4">
-                  <button onClick={async () => { try { await openProtectedPreview(teacherService.previewSubmission(selectedReview._id), selectedReview.originalFileName || 'student-submission'); } catch (error) { alert(error.message); } }} className="text-[10px] font-black uppercase accent-text flex items-center gap-2"><Eye size={14}/> Open file</button>
-                  <button onClick={async () => { try { await downloadProtectedFile(teacherService.downloadSubmission(selectedReview._id), selectedReview.originalFileName || 'student-submission'); } catch (error) { alert(error.message); } }} className="text-[10px] font-black uppercase accent-text flex items-center gap-2"><Download size={14}/> Download file</button>
+                <div className="mt-3 flex flex-wrap gap-3 sm:gap-4">
+                  <button type="button" onClick={async () => { try { await openProtectedPreview(teacherService.previewSubmission(selectedReview._id), selectedReview.originalFileName || 'student-submission'); } catch (error) { alert(error.message); } }} className="text-[10px] font-black uppercase accent-text flex items-center gap-2"><Eye size={14}/> Open file</button>
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(teacherService.downloadSubmission(selectedReview._id), selectedReview.originalFileName || 'student-submission'); } catch (error) { alert(error.message); } }} className="text-[10px] font-black uppercase accent-text flex items-center gap-2"><Download size={14}/> Download file</button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
               <button type="button" onClick={() => handleResetSubmissionGrade(selectedReview._id)} className="rounded-lg border border-amber-500/40 px-3 py-2 text-[9px] font-black uppercase text-amber-400 hover:bg-amber-500/10" title="Clear current grading to allow regrading">Reset grade</button>
-              <button onClick={() => setReviewModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white">
+              <button type="button" onClick={() => setReviewModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white" aria-label="Close review dialog">
                 <X size={24}/>
               </button>
               </div>
             </div>
 
-            <div className="p-8 max-h-[70vh] overflow-y-auto space-y-6">
+            <div className="p-4 sm:p-8 overflow-y-auto space-y-6 min-h-0 flex-1">
               {/* AI Feedback */}
-              <div className="theme-page p-6 rounded-2xl border border-slate-800">
+              <div className="theme-page p-4 sm:p-6 rounded-2xl border border-slate-800">
                 <h4 className="text-slate-500 font-black text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
                   <Sparkles size={14} className="text-sky-500"/> AI Feedback & Mistakes
                 </h4>
-                <p className="text-white text-sm leading-relaxed italic">
+                <p className="text-white text-sm leading-relaxed italic break-words">
                   {selectedReview.aiFeedback || 'No AI feedback available yet'}
                 </p>
               </div>
 
               {/* Scores */}
               <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Maximum marks: {selectedReview.totalMarks || selectedReview.assignment?.points || 'Not set'}</p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="theme-page p-4 rounded-2xl border border-slate-800 text-center">
                   <p className="theme-muted font-black text-[10px] uppercase tracking-widest mb-1">AI Marks</p>
                   <p className="text-2xl font-black text-sky-500">
@@ -930,7 +930,7 @@ export default function TeacherDashboard() {
                     onChange={e => setManualScore(e.target.value)}
                     min="0"
                     max={selectedReview.totalMarks || selectedReview.assignment?.points || undefined}
-                    className="w-24 bg-transparent text-center text-2xl font-black accent-text outline-none border-b"
+                    className="w-24 max-w-full bg-transparent text-center text-2xl font-black accent-text outline-none border-b"
                     style={{borderColor: 'var(--accent)'}}
                     placeholder="Enter marks"
                   />
@@ -949,8 +949,9 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            <div className="p-8 theme-surface border-t border-slate-800 flex gap-4">
+            <div className="p-4 sm:p-8 theme-surface border-t border-slate-800 flex gap-4 shrink-0">
               <button
+                type="button"
                 onClick={() => handleSaveEvaluation(true)}
                 disabled={savingEval}
                 className="flex-1 bg-emerald-500 text-black font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-emerald-400 transition-all disabled:opacity-60 flex items-center justify-center gap-2"

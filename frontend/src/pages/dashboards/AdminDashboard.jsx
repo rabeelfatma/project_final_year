@@ -154,15 +154,15 @@ export default function AdminDashboard() {
           <div className="h-64 flex items-center justify-center font-bold text-sky-500 animate-pulse uppercase tracking-widest">Fetching System Data...</div>
         ) : activeTab === 'Dashboard' ? (
           <div className="space-y-10 animate-in fade-in duration-700">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
               <StatBox label="Total Users" value={systemStats.totalUsers} icon={<UsersRound size={20}/>} />
               <StatBox label="Teachers" value={systemStats.totalTeachers} icon={<GraduationCap size={20}/>} />
               <StatBox label="Students" value={systemStats.totalStudents} icon={<UserRound size={20}/>} />
               <StatBox label="Assignments" value={systemStats.totalAssignments} icon={<ClipboardList size={20}/>} />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="p-8 rounded-[2rem] border theme-card">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+              <div className="p-4 sm:p-8 rounded-[2rem] border theme-card">
                 <h3 className="mb-2 font-black uppercase text-slate-500 text-xs tracking-widest">Total Users</h3>
                 <p className="text-[10px] text-slate-600 mb-5">User growth over the latest six months</p>
                 <div style={{ width: '100%', height: 300 }}>
@@ -178,7 +178,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="p-8 rounded-[2rem] border theme-card">
+              <div className="p-4 sm:p-8 rounded-[2rem] border theme-card">
                 <h3 className="mb-2 font-black uppercase text-slate-500 text-xs tracking-widest">Total Assignments</h3>
                 <p className="text-[10px] text-slate-600 mb-5">Assignments created over the latest six months</p>
                 <div style={{ width: '100%', height: 300 }}>
@@ -194,7 +194,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="p-8 rounded-[2rem] border theme-card lg:col-span-2">
+              <div className="p-4 sm:p-8 rounded-[2rem] border theme-card lg:col-span-2">
                 <h3 className="mb-6 font-black uppercase text-slate-500 text-xs tracking-widest">Department Distribution</h3>
                 <div style={{ width: '100%', height: 300 }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -211,8 +211,8 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex justify-between items-end">
-                <h2 className="text-2xl font-black italic text-sky-500 uppercase tracking-tighter">LISTING: {activeTab}</h2>
+            <div className="flex flex-wrap justify-between items-end gap-3">
+                <h2 className="text-xl sm:text-2xl font-black italic text-sky-500 uppercase tracking-tighter">LISTING: {activeTab}</h2>
                 <span className="text-xs font-bold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">{viewData.length} Records found</span>
             </div>
             <DataTable data={viewData} onDelete={handleDelete} onEdit={handleEditClick} type={activeTab} />
@@ -223,14 +223,14 @@ export default function AdminDashboard() {
 
       {/* --- EDIT MODAL (FIXED WITH EMAIL AND DROPDOWN) --- */}
       {isEditModalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="theme-card border w-full max-w-md rounded-[2rem] p-8 relative shadow-2xl">
-            <button onClick={() => setIsEditModalOpen(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
+          <div className="theme-card border w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-5 sm:p-8 relative shadow-2xl max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto my-0 sm:my-auto">
+            <button type="button" onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 sm:top-6 sm:right-6 text-slate-500 hover:text-white p-2" aria-label="Close edit dialog">
               <X size={24}/>
             </button>
-            <h2 className="text-2xl font-black text-white italic uppercase mb-6 tracking-tighter">Edit {activeTab.slice(0,-1)}</h2>
+            <h2 className="text-xl sm:text-2xl font-black text-white italic uppercase mb-6 tracking-tighter pr-10">Edit {activeTab.slice(0,-1)}</h2>
             
-            <form onSubmit={handleUpdate} className="space-y-4 overflow-y-auto max-h-[75vh] pr-2 custom-scrollbar">
+            <form onSubmit={handleUpdate} className="space-y-4 custom-scrollbar">
               <div>
                 <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Full Name</label>
                 <input 
@@ -330,7 +330,7 @@ function StatBox({ label, value, icon }) {
       type="button"
       onClick={() => setSelected((current) => !current)}
       aria-pressed={selected}
-      className={`w-full text-left p-8 rounded-[2rem] border theme-card shadow-lg transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent)] ${selected ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/20' : ''}`}
+      className={`w-full text-left p-5 sm:p-8 rounded-[2rem] border theme-card shadow-lg transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent)] ${selected ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/20' : ''}`}
     >
       <div className="flex items-start justify-between mb-4">
         <span className={`p-3 rounded-xl border transition-colors ${selected ? 'accent-soft accent-text' : 'theme-page theme-muted'}`} style={{borderColor: selected ? 'var(--accent)' : 'var(--border)'}}>{icon}</span>
@@ -347,42 +347,46 @@ function DataTable({ data, onDelete, onEdit, type }) {
 
   return (
     <div className="rounded-3xl border theme-card overflow-hidden shadow-2xl">
-      <table className="w-full text-left">
-        <thead className="theme-surface text-[10px] uppercase text-slate-500 font-black tracking-widest border-b border-slate-800">
-          <tr>
-            <th className="p-5">{isAssignment ? 'Title' : 'Full Name'}</th>
-            <th className="p-5">{isStudent ? 'Reg #' : (isAssignment ? 'Teacher' : 'Subject')}</th>
-            <th className="p-5">{isAssignment ? 'Due Date' : 'Dept'}</th>
-            <th className="p-5 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800">
-          {data.length > 0 ? data.map((item) => (
-            <tr key={item._id} className="hover:bg-sky-500/5 transition-colors group">
-              <td className="p-5 font-bold text-sm text-slate-200">
-                {isAssignment ? item.title : item.name}
-                {!isAssignment && <div className="text-[10px] text-slate-500 font-normal">{item.email}</div>}
-              </td>
-              <td className="p-5 text-slate-400 text-sm">
-                {isStudent ? (item.registrationNumber || 'N/A') : (isAssignment ? (item.teacherName || "Admin") : (item.subject || 'Not Assigned'))}
-              </td>
-              <td className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                {isAssignment ? (item.deadline ? new Date(item.deadline).toLocaleDateString() : 'N/A') : (item.department || 'CS')}
-              </td>
-              <td className="p-5 text-right space-x-2">
-                {!isAssignment && <button onClick={() => onEdit(item)} className="p-2 text-sky-400 bg-sky-400/10 rounded-xl hover:bg-sky-400 hover:text-black transition-all group-hover:opacity-100">
-                  <Edit2 size={16}/>
-                </button>}
-                <button onClick={() => onDelete(item._id)} className="p-2 text-red-500 bg-red-500/10 rounded-xl hover:bg-red-500 hover:text-white transition-all group-hover:opacity-100">
-                  <Trash2 size={16}/>
-                </button>
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-left">
+          <thead className="theme-surface text-[10px] uppercase text-slate-500 font-black tracking-widest border-b border-slate-800">
+            <tr>
+              <th className="p-3 sm:p-5">{isAssignment ? 'Title' : 'Full Name'}</th>
+              <th className="p-3 sm:p-5">{isStudent ? 'Reg #' : (isAssignment ? 'Teacher' : 'Subject')}</th>
+              <th className="p-3 sm:p-5">{isAssignment ? 'Due Date' : 'Dept'}</th>
+              <th className="p-3 sm:p-5 text-right">Actions</th>
             </tr>
-          )) : (
-            <tr><td colSpan="4" className="p-20 text-center italic text-slate-500 uppercase tracking-widest text-xs font-bold">No {type} found.</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {data.length > 0 ? data.map((item) => (
+              <tr key={item._id} className="hover:bg-sky-500/5 transition-colors group">
+                <td className="p-3 sm:p-5 font-bold text-sm text-slate-200">
+                  {isAssignment ? item.title : item.name}
+                  {!isAssignment && <div className="text-[10px] text-slate-500 font-normal break-all">{item.email}</div>}
+                </td>
+                <td className="p-3 sm:p-5 text-slate-400 text-sm whitespace-nowrap">
+                  {isStudent ? (item.registrationNumber || 'N/A') : (isAssignment ? (item.teacherName || "Admin") : (item.subject || 'Not Assigned'))}
+                </td>
+                <td className="p-3 sm:p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">
+                  {isAssignment ? (item.deadline ? new Date(item.deadline).toLocaleDateString() : 'N/A') : (item.department || 'CS')}
+                </td>
+                <td className="p-3 sm:p-5 text-right whitespace-nowrap">
+                  <div className="inline-flex items-center gap-2 justify-end">
+                    {!isAssignment && <button type="button" onClick={() => onEdit(item)} className="p-2 text-sky-400 bg-sky-400/10 rounded-xl hover:bg-sky-400 hover:text-black transition-all" aria-label="Edit record">
+                      <Edit2 size={16}/>
+                    </button>}
+                    <button type="button" onClick={() => onDelete(item._id)} className="p-2 text-red-500 bg-red-500/10 rounded-xl hover:bg-red-500 hover:text-white transition-all" aria-label="Delete record">
+                      <Trash2 size={16}/>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )) : (
+              <tr><td colSpan="4" className="p-10 sm:p-20 text-center italic text-slate-500 uppercase tracking-widest text-xs font-bold">No {type} found.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

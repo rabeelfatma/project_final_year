@@ -484,7 +484,7 @@ export default function StudentDashboard() {
 
           <div className="space-y-8 animate-in fade-in duration-700">
 
-             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
 
                 <StatCard label="Total Allotted" value={totalCount} color="text-blue-400" icon={<FileText size={16}/>} sub="Active Tasks" />
 
@@ -500,7 +500,7 @@ export default function StudentDashboard() {
 
 
 
-             <div className="theme-card border p-8 rounded-[2rem]">
+             <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
 
                 <h2 className="text-lg font-black uppercase italic text-white flex items-center gap-2 mb-6"><FileUp size={18} className="text-emerald-500"/> Recent Assignments</h2>
 
@@ -544,7 +544,7 @@ export default function StudentDashboard() {
 
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
 
                 <label className="flex items-center gap-2 text-xs theme-muted">
 
@@ -564,15 +564,15 @@ export default function StudentDashboard() {
 
               return (
 
-                <div key={asgn.submissionId || asgn._id} className="theme-card border p-6 rounded-3xl flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                <div key={asgn.submissionId || asgn._id} className="theme-card border p-4 sm:p-6 rounded-3xl flex flex-col md:flex-row md:items-center md:justify-between gap-5">
 
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
 
                     <input aria-label={`Select ${asgn.title || 'result'}`} type="checkbox" checked={selectedResultIds.includes(asgn.submissionId || asgn._id)} onChange={() => toggleResultSelection(asgn.submissionId || asgn._id)} className="mt-2" />
 
-                    <div>
+                    <div className="min-w-0">
 
-                    <h3 className="font-black text-lg">{asgn.title}</h3>
+                    <h3 className="font-black text-lg break-words">{asgn.title}</h3>
 
                     <p className="theme-muted text-[10px] uppercase tracking-widest mt-1">{asgn.subject || 'Assignment'} · {asgn.resultStatus || asgn.status}</p>
 
@@ -582,9 +582,9 @@ export default function StudentDashboard() {
 
                   </div>
 
-                  <div className="flex items-center gap-5">
+                  <div className="flex items-center gap-4 sm:gap-5 shrink-0">
 
-                    <div className="text-left space-y-2 min-w-[150px]">
+                    <div className="text-left space-y-2 min-w-0">
 
                       <div>
 
@@ -626,7 +626,7 @@ export default function StudentDashboard() {
 
              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
 
-                <div className="theme-card border p-8 rounded-[2rem]">
+                <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
 
                     <h2 className="text-lg font-black uppercase italic text-white mb-6">Workload Distribution</h2>
 
@@ -656,7 +656,7 @@ export default function StudentDashboard() {
 
 
 
-                <div className="theme-card border p-8 rounded-[2rem]">
+                <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
 
                     <h2 className="text-lg font-black uppercase italic text-white mb-6">Real Score Trend</h2>
 
@@ -690,7 +690,7 @@ export default function StudentDashboard() {
 
 
 
-                <div className="theme-card border p-8 rounded-[2rem]">
+                <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
 
                     <h2 className="text-lg font-black uppercase italic text-white mb-6">Grading Progress</h2>
 
@@ -764,13 +764,17 @@ export default function StudentDashboard() {
 
              {assignments.filter(a => a.title?.toLowerCase().includes(searchTerm.toLowerCase())).map(asgn => (
 
-               <div key={asgn._id} className="flex items-start gap-3">
+               <div key={asgn._id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
 
-                 <input type="checkbox" aria-label={`Select submission for ${asgn.title}`} className="mt-6" disabled={!asgn.submissionId} checked={Boolean(asgn.submissionId && selectedAssignmentSubmissionIds.includes(asgn.submissionId))} onChange={() => asgn.submissionId && toggleAssignmentSubmission(asgn.submissionId)} />
+                 <div className="flex items-start gap-3 min-w-0 flex-1">
+
+                 <input type="checkbox" aria-label={`Select submission for ${asgn.title}`} className="mt-6 shrink-0" disabled={!asgn.submissionId} checked={Boolean(asgn.submissionId && selectedAssignmentSubmissionIds.includes(asgn.submissionId))} onChange={() => asgn.submissionId && toggleAssignmentSubmission(asgn.submissionId)} />
 
                  <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} /></div>
 
-                 {asgn.submissionId && <button type="button" onClick={async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } }} className="mt-5 rounded-lg border border-red-500/40 px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10">Delete</button>}
+                 </div>
+
+                 {asgn.submissionId && <button type="button" onClick={async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } }} className="sm:mt-5 self-stretch sm:self-auto rounded-lg border border-red-500/40 px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10">Delete</button>}
 
                </div>
 
@@ -786,13 +790,13 @@ export default function StudentDashboard() {
 
         {selectedAsgn && (
 
-          <div className="fixed inset-0 bg-[#020617]/90 backdrop-blur-md z-50 flex items-center justify-center p-6">
+          <div className="fixed inset-0 bg-[#020617]/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 overflow-y-auto">
 
-             <div className="theme-card border w-full max-w-2xl rounded-[2.5rem] p-10 relative max-h-[90vh] overflow-y-auto">
+             <div className="theme-card border w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 relative max-h-[94dvh] sm:max-h-[90vh] overflow-y-auto my-0 sm:my-auto">
 
-                <button onClick={() => setSelectedAsgn(null)} className="absolute top-8 right-8 text-slate-500 hover:text-white transition-all"><X size={24}/></button>
+                <button type="button" onClick={() => setSelectedAsgn(null)} className="absolute top-4 right-4 sm:top-8 sm:right-8 text-slate-500 hover:text-white transition-all p-2" aria-label="Close assignment details"><X size={24}/></button>
 
-                <h2 className="text-2xl font-black text-white italic uppercase mb-2">{selectedAsgn.title}</h2>
+                <h2 className="text-xl sm:text-2xl font-black text-white italic uppercase mb-2 pr-10 break-words">{selectedAsgn.title}</h2>
 
 
 
@@ -800,17 +804,17 @@ export default function StudentDashboard() {
 
                 <p className="text-blue-400 text-[10px] font-bold uppercase mb-6 tracking-widest">
 
-                  Instructions: <span className="text-slate-300 normal-case italic font-medium ml-2">{selectedAsgn.description || "No instructions provided."}</span>
+                  Instructions: <span className="text-slate-300 normal-case italic font-medium ml-2 break-words">{selectedAsgn.description || "No instructions provided."}</span>
 
                 </p>
 
 
 
-                <div className="grid grid-cols-2 gap-6 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
 
                     {/* Marks */}
 
-                    <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[120px]">
+                    <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[100px] sm:min-h-[120px]">
 
                        <p className="text-[8px] uppercase font-black text-blue-500 mb-2">Marks Obtained</p>
 
@@ -830,11 +834,11 @@ export default function StudentDashboard() {
 
                     {/* Feedback */}
 
-                    <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[120px]">
+                    <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[100px] sm:min-h-[120px]">
 
                        <p className="text-[8px] uppercase font-black accent-text mb-2">Teacher Feedback</p>
 
-                       <p className="text-sm text-slate-300 italic leading-relaxed">
+                       <p className="text-sm text-slate-300 italic leading-relaxed break-words">
 
                          {selectedAsgn.feedback || "No teacher feedback yet."}
 
@@ -850,7 +854,7 @@ export default function StudentDashboard() {
 
                 {(selectedAsgn.aiScore !== undefined && selectedAsgn.aiScore !== null || selectedAsgn.aiFeedback) && (
 
-                  <div className="theme-page border border-sky-500/20 rounded-2xl p-6 mb-6">
+                  <div className="theme-page border border-sky-500/20 rounded-2xl p-4 sm:p-6 mb-6">
 
                     <div className="flex items-center gap-2 mb-4">
 
@@ -890,19 +894,19 @@ export default function StudentDashboard() {
 
 
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
-                  <button onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open Instructions</button>
+                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open Instructions</button>
 
-                  <button onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
 
                 </div>
 
-                {selectedAsgn.submissionId && <div className="grid grid-cols-2 gap-3 mt-3">
+                {selectedAsgn.submissionId && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
 
-                  <button onClick={async () => { try { await openProtectedPreview(studentService.previewSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || 'my-submission'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open my file</button>
+                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || 'my-submission'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open my file</button>
 
-                  <button onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Download size={16}/> Download my file</button>
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Download size={16}/> Download my file</button>
 
                 </div>}
 
@@ -992,19 +996,19 @@ const status = asgn.status?.toLowerCase();
 
   return (
 
-    <div className="flex items-center justify-between p-5 bg-slate-900/60 border border-slate-800/80 rounded-2xl hover:bg-slate-900 transition-all border-l-4 border-l-transparent hover:border-l-blue-500">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 bg-slate-900/60 border border-slate-800/80 rounded-2xl hover:bg-slate-900 transition-all border-l-4 border-l-transparent hover:border-l-blue-500">
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
 
-          <div className={`p-3 rounded-xl ${isDone ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>
+          <div className={`p-3 rounded-xl shrink-0 ${isDone ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>
 
             <FileText size={18}/>
 
           </div>
 
-          <div>
+          <div className="min-w-0">
 
-             <h4 className="font-black text-white text-sm uppercase italic tracking-tight">{asgn.title}</h4>
+             <h4 className="font-black text-white text-sm uppercase italic tracking-tight break-words">{asgn.title}</h4>
 
              <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Due: {asgn.deadline?.split('T')[0] || 'N/A'}</p>
 
@@ -1012,9 +1016,9 @@ const status = asgn.status?.toLowerCase();
 
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
 
-          <button onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all"><Eye size={16}/></button>
+          <button type="button" onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all" aria-label="View assignment"><Eye size={16}/></button>
 
           <label className={`px-4 py-2.5 rounded-lg font-black text-[9px] uppercase cursor-pointer transition-all ${isDone ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
 

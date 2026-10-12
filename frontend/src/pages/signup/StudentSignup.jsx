@@ -93,11 +93,11 @@ export default function StudentSignup() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-start justify-center bg-[#0F172A] py-10 overflow-y-auto">
+    <div className="min-h-screen w-full flex items-start justify-center bg-[#0F172A] py-6 sm:py-10 px-4 overflow-y-auto">
 
       <form
         onSubmit={handleSubmit}
-        className="bg-[#020617] p-8 w-full max-w-md border border-sky-400 rounded-3xl shadow-2xl"
+        className="bg-[#020617] p-5 sm:p-8 w-full max-w-md border border-sky-400 rounded-3xl shadow-2xl"
       >
 
         <button type="button" onClick={() => navigate("/dashboard/admin")} className="mb-5 flex items-center gap-2 text-slate-400 hover:text-sky-400 text-xs font-black uppercase tracking-widest transition-colors">

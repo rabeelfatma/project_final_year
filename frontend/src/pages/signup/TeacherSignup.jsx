@@ -120,8 +120,8 @@ export default function TeacherSignup() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A] p-4">
-      <form className="bg-[#020617] p-8 w-full max-w-md border border-sky-400 rounded-xl shadow-lg" onSubmit={handleSubmit}>
+    <div className="min-h-screen flex items-start sm:items-center justify-center bg-[#0F172A] p-4 py-6 sm:py-10 overflow-y-auto">
+      <form className="bg-[#020617] p-5 sm:p-8 w-full max-w-md border border-sky-400 rounded-xl shadow-lg" onSubmit={handleSubmit}>
         <button type="button" onClick={() => navigate("/dashboard/admin")} className="mb-5 flex items-center gap-2 text-slate-400 hover:text-sky-400 text-xs font-black uppercase tracking-widest transition-colors">
           <ArrowLeft size={16}/> Back to Admin Dashboard
         </button>
