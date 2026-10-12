@@ -39,14 +39,17 @@ app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
 /* ===============================
-    Serve Uploaded Files
+    Upload storage (not publicly browsable for academic files)
 ================================= */
-const uploadsPath = path.join(__dirname, "uploads");
+const {
+  getUploadsRoot,
+  ensureUploadSubdirs,
+  configureUploadStatic,
+} = require("./utils/uploadsPath");
 
+let uploadsPath = getUploadsRoot();
 try {
-  if (!fs.existsSync(uploadsPath)) {
-    fs.mkdirSync(uploadsPath, { recursive: true });
-  }
+  uploadsPath = ensureUploadSubdirs();
 } catch (error) {
   console.log("⚠️ Notice: Skipping local folder creation on read-only file system:", error.message);
 }
@@ -76,7 +79,9 @@ const setCustomHeaders = (res, filePath) => {
   }
 };
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads"), { setHeaders: setCustomHeaders }));
+// Profile avatars only via static URL (img tags). Assignments/submissions/messages
+// require authenticated /api/files/* routes — guessing /uploads/... no longer works.
+configureUploadStatic(app, { setHeaders: setCustomHeaders });
 
 /* ===============================
     API Routes
@@ -117,15 +122,10 @@ const shouldListen = process.env.VERCEL !== "1";
 if (shouldListen) {
   app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
-    console.log(`📂 Serving uploads from: ${uploadsPath}`);
+    console.log(`📂 Upload storage root: ${uploadsPath}`);
+    console.log("🔒 Academic uploads require authenticated /api/files routes.");
     if (fs.existsSync(frontendDist)) {
       console.log(`🌐 Serving frontend build from: ${frontendDist}`);
-    }
-    try {
-      const folders = fs.readdirSync(uploadsPath);
-      console.log("📁 Available Folders:", folders);
-    } catch (error) {
-      console.log("❌ Upload folder read error:", error.message);
     }
   });
 }

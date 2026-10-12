@@ -9,7 +9,8 @@ const PptxGenJS = require("pptxgenjs");
 const { Document, Packer, Paragraph, HeadingLevel } = require("docx");
 const XLSX = require("xlsx");
 
-const generatedDir = path.join(__dirname, "..", "uploads", "generated");
+const { getUploadsRoot } = require("../utils/uploadsPath");
+const generatedDir = path.join(getUploadsRoot(), "generated");
 if (!fs.existsSync(generatedDir)) fs.mkdirSync(generatedDir, { recursive: true });
 
 function safeName(name, fallback = "generated-file.txt") {

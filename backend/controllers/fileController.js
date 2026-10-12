@@ -5,12 +5,10 @@ const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
 const Message = require("../models/Message");
 const { extractText } = require("../services/plagiarismService");
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
 
 function safePath(stored) {
-  const root = path.resolve(__dirname, "..");
-  const target = path.resolve(root, String(stored || "").replace(/^[/\\]+/, ""));
-  if (!target.startsWith(root + path.sep)) throw new Error("Invalid file path.");
-  return target;
+  return resolveStoredUploadPath(stored);
 }
 function escapeHtml(value) {
   return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -71,9 +69,9 @@ async function previewFile(res, stored, originalName, mimeType) {
       if (ext === ".pdf") return sendFile(res, stored, originalName, mimeType || "application/pdf", true);
       return res.status(422).type("html").send(htmlPage(originalName || "File preview",
         "This file opened, but no readable text could be extracted. Download the original file to view its complete layout.", true));
-    } catch (error) {
+    } catch (_error) {
       return res.status(422).type("html").send(htmlPage(originalName || "File preview",
-        `Preview/text extraction failed: ${error.message}. Download the original file to open it in a compatible application.`));
+        "Preview/text extraction failed. Download the original file to open it in a compatible application."));
     }
   }
 
@@ -91,39 +89,76 @@ async function previewFile(res, stored, originalName, mimeType) {
 async function getAssignment(req) {
   const a = await Assignment.findById(req.params.id);
   if (!a) return { error: [404, "Assignment not found."] };
-  const allowed = req.user.role === "admin" || String(a.teacher) === String(req.user._id) || req.user.role === "student";
-  if (!allowed) return { error: [403, "Access denied."] };
+  const isAdmin = req.user.role === "admin";
+  const isOwnerTeacher = String(a.teacher) === String(req.user._id);
+  const isStudentActive =
+    req.user.role === "student" && String(a.status || "active") === "active";
+  if (!(isAdmin || isOwnerTeacher || isStudentActive)) {
+    return { error: [403, "Access denied."] };
+  }
   if (!a.file) return { error: [404, "This assignment has no attached file."] };
   return { row: a };
 }
 async function getSubmission(req) {
   const s = await Submission.findById(req.params.id);
   if (!s) return { error: [404, "Submission not found."] };
-  const allowed = req.user.role === "admin" || String(s.student) === String(req.user._id) || String(s.teacherId) === String(req.user._id);
+  const allowed =
+    req.user.role === "admin" ||
+    String(s.student) === String(req.user._id) ||
+    String(s.teacherId) === String(req.user._id);
   if (!allowed) return { error: [403, "Access denied."] };
   return { row: s };
 }
 exports.assignment = async (req, res) => {
-  try { const r = await getAssignment(req); if (r.error) return res.status(r.error[0]).json({ message: r.error[1] }); return sendFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType); }
-  catch (e) { return res.status(500).json({ message: "Unable to download assignment file.", error: e.message }); }
+  try {
+    const r = await getAssignment(req);
+    if (r.error) return res.status(r.error[0]).json({ message: r.error[1] });
+    return sendFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType);
+  } catch (e) {
+    console.error("assignment download error:", e.message);
+    return res.status(500).json({ message: "Unable to download assignment file." });
+  }
 };
 exports.assignmentPreview = async (req, res) => {
-  try { const r = await getAssignment(req); if (r.error) return res.status(r.error[0]).send(r.error[1]); return await previewFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType); }
-  catch (e) { return res.status(500).send("Unable to preview assignment file: " + e.message); }
+  try {
+    const r = await getAssignment(req);
+    if (r.error) return res.status(r.error[0]).send(r.error[1]);
+    return await previewFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType);
+  } catch (e) {
+    console.error("assignment preview error:", e.message);
+    return res.status(500).send("Unable to preview assignment file.");
+  }
 };
 exports.submission = async (req, res) => {
-  try { const r = await getSubmission(req); if (r.error) return res.status(r.error[0]).json({ message: r.error[1] }); return sendFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType); }
-  catch (e) { return res.status(500).json({ message: "Unable to download submission file.", error: e.message }); }
+  try {
+    const r = await getSubmission(req);
+    if (r.error) return res.status(r.error[0]).json({ message: r.error[1] });
+    return sendFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType);
+  } catch (e) {
+    console.error("submission download error:", e.message);
+    return res.status(500).json({ message: "Unable to download submission file." });
+  }
 };
 exports.submissionPreview = async (req, res) => {
-  try { const r = await getSubmission(req); if (r.error) return res.status(r.error[0]).send(r.error[1]); return await previewFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType); }
-  catch (e) { return res.status(500).send("Unable to preview submission file: " + e.message); }
+  try {
+    const r = await getSubmission(req);
+    if (r.error) return res.status(r.error[0]).send(r.error[1]);
+    return await previewFile(res, r.row.file, r.row.originalFileName, r.row.fileMimeType);
+  } catch (e) {
+    console.error("submission preview error:", e.message);
+    return res.status(500).send("Unable to preview submission file.");
+  }
 };
 exports.message = async (req, res) => {
   try {
     const m = await Message.findById(req.params.id);
     if (!m) return res.status(404).json({ message: "Message not found." });
-    if (String(m.sender) !== String(req.user._id) && String(m.recipient) !== String(req.user._id)) return res.status(403).json({ message: "Access denied." });
+    if (String(m.sender) !== String(req.user._id) && String(m.recipient) !== String(req.user._id)) {
+      return res.status(403).json({ message: "Access denied." });
+    }
     return sendFile(res, m.voiceFile, m.originalFileName, m.mimeType);
-  } catch (e) { return res.status(500).json({ message: "Unable to load voice message.", error: e.message }); }
+  } catch (e) {
+    console.error("message file error:", e.message);
+    return res.status(500).json({ message: "Unable to load voice message." });
+  }
 };

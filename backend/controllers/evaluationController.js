@@ -1,8 +1,9 @@
 const Submission = require("../models/Submission");
 const { checkAssignment } = require("../services/geminiService");
-const mammoth = require("mammoth"); 
+const mammoth = require("mammoth");
 const path = require("path");
 const fs = require("fs");
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
 
 exports.evaluateAssignment = async (req, res) => {
   try {
@@ -23,12 +24,17 @@ exports.evaluateAssignment = async (req, res) => {
         if (!sub) return null;
 
         try {
-          // File path logic - adjust based on your structure
-          const filePath = path.join(__dirname, "..", "..", sub.file); 
-          
+          let filePath;
+          try {
+            filePath = resolveStoredUploadPath(sub.file);
+          } catch (_) {
+            console.error("Invalid stored submission file path");
+            return sub;
+          }
+
           if (!fs.existsSync(filePath)) {
-            console.error("File not found at:", filePath);
-            return sub; 
+            console.error("Submission file not found on disk");
+            return sub;
           }
 
           // Support for multiple file types

@@ -40,10 +40,14 @@ function extractTotalMarks(instructions) {
 
 
 
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+
 function normalizeFilePath(file) {
-
-  return path.join(__dirname, "..", String(file || "").replace(/^[/\\\\]+/, ""));
-
+  try {
+    return resolveStoredUploadPath(file);
+  } catch (_) {
+    return null;
+  }
 }
 
 

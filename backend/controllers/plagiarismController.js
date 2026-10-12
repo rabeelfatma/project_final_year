@@ -1,7 +1,15 @@
 const Submission = require("../models/Submission");
-const path = require("path");
 const fs = require("fs");
 const { extractText, compareTexts } = require("../services/plagiarismService");
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+
+function resolveAcademicFile(stored) {
+  try {
+    return resolveStoredUploadPath(stored);
+  } catch (_) {
+    return null;
+  }
+}
 
 exports.check = async (req, res) => {
   try {
@@ -20,13 +28,13 @@ exports.check = async (req, res) => {
         _id: { $ne: submission._id },
       }).populate("student", "name email registrationNumber");
 
-      const currentPath = path.join(__dirname, "..", String(submission.file || "").replace(/^[/\\]+/, ""));
-      const currentText = fs.existsSync(currentPath) ? await extractText(currentPath) : "";
+      const currentPath = resolveAcademicFile(submission.file);
+      const currentText = currentPath && fs.existsSync(currentPath) ? await extractText(currentPath) : "";
 
       const comparisons = [];
       for (const other of sameAssignment) {
-        const otherPath = path.join(__dirname, "..", String(other.file || "").replace(/^[/\\]+/, ""));
-        const otherText = fs.existsSync(otherPath) ? await extractText(otherPath) : "";
+        const otherPath = resolveAcademicFile(other.file);
+        const otherText = otherPath && fs.existsSync(otherPath) ? await extractText(otherPath) : "";
         comparisons.push({
           submissionId: other._id,
           student: other.student?.name || "Student",

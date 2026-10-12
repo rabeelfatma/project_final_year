@@ -1,8 +1,16 @@
 const Message = require("../models/Message");
-const path = require("path");
 const fs = require("fs");
 const User = require("../models/User");
 const { create: createNotification } = require("./notificationController");
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+
+function resolveMessageFile(stored) {
+  try {
+    return resolveStoredUploadPath(stored);
+  } catch (_) {
+    return null;
+  }
+}
 
 exports.users = async (req,res) => {
   try {
@@ -97,8 +105,8 @@ exports.removeMany = async (req, res) => {
 
     for (const message of rows) {
       if (message.voiceFile) {
-        const filePath = path.join(__dirname, "..", String(message.voiceFile).replace(/^[/\\]+/, ""));
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        const filePath = resolveMessageFile(message.voiceFile);
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
       }
     }
 
@@ -114,8 +122,8 @@ exports.clearAll = async (req, res) => {
     const rows = await Message.find({ $or: [{ sender: req.user._id }, { recipient: req.user._id }] });
     for (const message of rows) {
       if (message.voiceFile) {
-        const filePath = path.join(__dirname, "..", String(message.voiceFile).replace(/^[/\\]+/, ""));
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        const filePath = resolveMessageFile(message.voiceFile);
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
       }
     }
     await Message.deleteMany({ $or: [{ sender: req.user._id }, { recipient: req.user._id }] });
@@ -133,8 +141,8 @@ exports.remove = async (req,res) => {
     });
     if (!message) return res.status(404).json({message:"Message not found."});
     if (message.voiceFile) {
-      const filePath = path.join(__dirname, "..", String(message.voiceFile).replace(/^[/\\]+/, ""));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      const filePath = resolveMessageFile(message.voiceFile);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     await message.deleteOne();
     res.json({success:true,message:"Message deleted."});

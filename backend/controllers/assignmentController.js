@@ -1,7 +1,10 @@
+const fs = require("fs");
 const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
 const User = require("../models/User");
 const { checkAssignment } = require("../services/geminiService");
+const { extractText } = require("../services/plagiarismService");
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
 
 // 1. TEACHER: Create Assignment
 exports.teacherCreateAssignment = async (req, res) => {
@@ -60,7 +63,13 @@ exports.evaluateWithGemini = async (req, res) => {
       try {
         const submission = await Submission.findById(id).populate("assignment", "title points");
         if (!submission) { results.push({ id, status: "Not Found" }); continue; }
-        const filePath = path.join(__dirname, "..", String(submission.file || "").replace(/^[/\\]+/, ""));
+        let filePath;
+        try {
+          filePath = resolveStoredUploadPath(submission.file);
+        } catch (_) {
+          results.push({ id, status: "Failed", error: "Submitted file was not found." });
+          continue;
+        }
         if (!fs.existsSync(filePath)) { results.push({ id, status: "Failed", error: "Submitted file was not found." }); continue; }
         const text = await extractText(filePath);
         const totalMarks = Number(submission.totalMarks || submission.assignment?.points);

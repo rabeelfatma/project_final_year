@@ -1,6 +1,6 @@
 const User = require("../models/User");
-const path = require("path");
 const fs = require("fs");
+const { resolveStoredUploadPath } = require("../utils/uploadsPath");
 
 exports.getProfile = async (req, res) => {
   try {
@@ -26,8 +26,12 @@ exports.updateProfile = async (req, res) => {
     if (req.file) {
       update.profilePicture = `uploads/profilePictures/${req.file.filename}`;
       if (currentUser?.profilePicture) {
-        const oldPath = path.join(__dirname, "..", String(currentUser.profilePicture).replace(/^[/\\]+/, ""));
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        try {
+          const oldPath = resolveStoredUploadPath(currentUser.profilePicture);
+          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        } catch (_) {
+          /* ignore unsafe/missing prior avatar path */
+        }
       }
     }
     const user = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true, runValidators: true }).select("-password");

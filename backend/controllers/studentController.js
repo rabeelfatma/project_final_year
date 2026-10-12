@@ -8,20 +8,16 @@ const Submission = require("../models/Submission");
 const { protect } = require("../middleware/authMiddleware");
 const upload = require("../middleware/multerMiddleware");
 const { create: createNotification } = require("../controllers/notificationController");
+const { resolveStoredUploadPath, getUploadsRoot } = require("../utils/uploadsPath");
 
 const GRADED = ["graded", "GRADED", "AI_GRADED", "PUBLISHED", "Graded"];
 
 const resolveStoredPath = (stored) => {
-  const uploadsRoot = path.resolve(__dirname, "..", "uploads");
-  const normalized = String(stored || "").replace(/^[/\\]+/, "");
-  const filePath = path.resolve(__dirname, "..", normalized);
-
-  // Prevent deleting files outside the backend uploads directory.
-  if (filePath !== uploadsRoot && !filePath.startsWith(uploadsRoot + path.sep)) {
+  try {
+    return resolveStoredUploadPath(stored);
+  } catch (_) {
     return null;
   }
-
-  return filePath;
 };
 
 async function removeSubmissionFile(row) {
@@ -269,7 +265,7 @@ router.post(
       if (exists) {
         // Remove newly uploaded file when duplicate submission is rejected.
         const uploadedPath = path.resolve(req.file.path);
-        const uploadsRoot = path.resolve(__dirname, "..", "uploads");
+        const uploadsRoot = path.resolve(getUploadsRoot());
 
         if (
           uploadedPath.startsWith(uploadsRoot + path.sep) &&
