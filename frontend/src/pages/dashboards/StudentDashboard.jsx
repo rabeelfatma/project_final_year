@@ -24,6 +24,8 @@ import studentService from '../../services/studentService';
 
 import SidebarControls from '../../components/common/SidebarControls';
 
+import DashboardNavShell from '../../components/common/DashboardNavShell';
+
 import AIChatbot from '../../components/common/AIChatbot';
 
 import MessagePanel from '../../components/common/MessagePanel';
@@ -412,57 +414,65 @@ export default function StudentDashboard() {
 
   return (
 
-    <div className="student-dashboard flex h-screen theme-page overflow-hidden font-sans">
+    <DashboardNavShell
 
-      <aside className="w-72 theme-card border-r border-slate-800/50 p-6 flex flex-col overflow-y-auto custom-scrollbar">
+      widthClass="w-72"
 
-        <div className="flex items-center gap-3 mb-10">
+      desktopMode="flow"
 
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg">
+      mobileTitle="EduCore Student"
 
-            <BookOpen size={20} className="text-white"/>
+      sidebar={
+
+        <div className="p-6 flex flex-col flex-1 min-h-0">
+
+          <div className="flex items-center gap-3 mb-10">
+
+            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg">
+
+              <BookOpen size={20} className="text-white"/>
+
+            </div>
+
+            <span className="text-xl font-black text-white uppercase italic tracking-tighter">EduCore<span className="text-blue-500 text-2xl">.</span></span>
 
           </div>
 
-          <span className="text-xl font-black text-white uppercase italic tracking-tighter">EduCore<span className="text-blue-500 text-2xl">.</span></span>
+
+
+          <nav className="space-y-2 flex-1">
+
+            <NavItem icon={<Layout size={18}/>} label="Overview" active={activeTab === 'Overview'} onClick={() => setActiveTab('Overview')} />
+
+            <NavItem icon={<FileText size={18}/>} label="My Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
+
+            <NavItem icon={<CheckCircle size={18}/>} label="Checked Results" active={activeTab === 'Checked'} onClick={() => setActiveTab('Checked')} />
+
+            <NavItem icon={<TrendingUp size={18}/>} label="Performance" active={activeTab === 'Analytics'} onClick={() => setActiveTab('Analytics')} />
+
+          </nav>
+
+
+
+          <SidebarControls role="student" />
+
+          <button type="button" onClick={handleLogout} className="mt-3 w-full py-2.5 bg-red-500/10 text-red-500 rounded-lg text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
+
+            <LogOut size={12}/> Sign Out
+
+          </button>
 
         </div>
 
+      }
 
-
-        <nav className="space-y-2 flex-1">
-
-          <NavItem icon={<Layout size={18}/>} label="Overview" active={activeTab === 'Overview'} onClick={() => setActiveTab('Overview')} />
-
-          <NavItem icon={<FileText size={18}/>} label="My Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
-
-          <NavItem icon={<CheckCircle size={18}/>} label="Checked Results" active={activeTab === 'Checked'} onClick={() => setActiveTab('Checked')} />
-
-          <NavItem icon={<TrendingUp size={18}/>} label="Performance" active={activeTab === 'Analytics'} onClick={() => setActiveTab('Analytics')} />
-
-        </nav>
+    >
 
 
 
-        <SidebarControls role="student" />
+        <header className="mb-6 md:mb-10 flex flex-wrap items-end justify-between gap-4">
 
-        <button onClick={handleLogout} className="mt-3 w-full py-2.5 bg-red-500/10 text-red-500 rounded-lg text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
-
-          <LogOut size={12}/> Sign Out
-
-        </button>
-
-      </aside>
-
-
-
-      <main className="flex-1 overflow-y-auto p-10 theme-page relative">
-
-
-
-        <header className="mb-10 flex items-end justify-between gap-4">
-
-            <div><h1 className="text-3xl font-black uppercase italic tracking-tighter text-white">Dashboard</h1><div className="h-1 w-16 bg-blue-600 mt-1 rounded-full"></div></div>
+            <div><h1 className="text-2xl sm:text-3xl font-black uppercase italic tracking-tighter text-white">Dashboard</h1><div className="h-1 w-16 bg-blue-600 mt-1 rounded-full"></div></div>
 
             <div className="text-right"><p className="theme-muted text-[9px] font-black uppercase tracking-widest">Roll Number</p><p className="accent-text font-black">{studentData.regNo || userRegNo}</p></div>
 
@@ -906,9 +916,7 @@ export default function StudentDashboard() {
 
         <MessagePanel role="student" showTrigger={false} />
 
-      </main>
-
-    </div>
+    </DashboardNavShell>
 
   );
 
@@ -920,7 +928,7 @@ function NavItem({ icon, label, active, onClick }) {
 
   return (
 
-    <button onClick={onClick} className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all ${active ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-80'}`}>
+    <button type="button" onClick={onClick} className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all ${active ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-80'}`}>
 
         {icon} <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
 

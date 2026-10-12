@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import teacherService from '../../services/teacherService';
 import SidebarControls from '../../components/common/SidebarControls';
+import DashboardNavShell from '../../components/common/DashboardNavShell';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
@@ -20,11 +21,15 @@ import api from '../../utils/api';
 // ─── Sub-components ───────────────────────────────────────────
 function SidebarItem({ icon, label, active, onClick }) {
   return (
-    <div onClick={onClick} className={`flex items-center gap-3 p-3.5 rounded-xl cursor-pointer transition-all ${
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 p-3.5 rounded-xl cursor-pointer transition-all text-left ${
       active ? 'bg-sky-500 text-black font-black shadow-lg shadow-sky-500/20' : 'text-slate-500 hover:bg-slate-800/50 hover:text-white font-bold'
-    }`}>
+    }`}
+    >
       {icon} <span className="text-[10px] uppercase tracking-widest font-black">{label}</span>
-    </div>
+    </button>
   );
 }
 
@@ -412,40 +417,40 @@ export default function TeacherDashboard() {
 
   // ─── Render ────────────────────────────────────────────────
   return (
-    <div className="flex h-screen theme-page font-sans overflow-hidden">
-
-      {/* ── Sidebar ── */}
-      <aside className="w-64 theme-card border-r border-slate-800 flex flex-col overflow-y-auto custom-scrollbar">
-        <div className="p-8">
-          <div className="flex items-center gap-3 text-white mb-10">
-            <div className="bg-sky-500 p-2 rounded-lg text-black"><ShieldCheck size={20}/></div>
-            <span className="font-black text-xl tracking-tighter">EDUCORRE</span>
+    <DashboardNavShell
+      widthClass="w-64"
+      desktopMode="flow"
+      mobileTitle="Educorre Teacher"
+      sidebar={
+        <>
+          <div className="p-8">
+            <div className="flex items-center gap-3 text-white mb-10">
+              <div className="bg-sky-500 p-2 rounded-lg text-black"><ShieldCheck size={20}/></div>
+              <span className="font-black text-xl tracking-tighter">EDUCORRE</span>
+            </div>
+            <nav className="space-y-1">
+              <SidebarItem icon={<Layout size={18}/>}        label="Overview"          active={activeTab==='dashboard'}    onClick={() => { setActiveTab('dashboard'); setEditingId(null); }} />
+              <SidebarItem icon={<PlusCircle size={18}/>}    label={editingId ? 'Editing Mode' : 'Create Assignment'} active={activeTab==='create'} onClick={() => setActiveTab('create')} />
+              <SidebarItem icon={<BookOpen size={18}/>}      label="My Assignments"    active={activeTab==='assignments'}  onClick={() => { setActiveTab('assignments'); setEditingId(null); }} />
+              <SidebarItem icon={<ClipboardCheck size={18}/>} label="Submissions"      active={activeTab==='submissions'}  onClick={() => setActiveTab('submissions')} />
+              <SidebarItem icon={<ShieldAlert size={18}/>} label="Plagiarism"       active={activeTab==='plagiarism'}   onClick={() => setActiveTab('plagiarism')} />
+              <SidebarItem icon={<Users size={18}/>}         label="Students"          active={activeTab==='students'}     onClick={() => setActiveTab('students')} />
+            </nav>
           </div>
-          <nav className="space-y-1">
-            <SidebarItem icon={<Layout size={18}/>}        label="Overview"          active={activeTab==='dashboard'}    onClick={() => { setActiveTab('dashboard'); setEditingId(null); }} />
-            <SidebarItem icon={<PlusCircle size={18}/>}    label={editingId ? 'Editing Mode' : 'Create Assignment'} active={activeTab==='create'} onClick={() => setActiveTab('create')} />
-            <SidebarItem icon={<BookOpen size={18}/>}      label="My Assignments"    active={activeTab==='assignments'}  onClick={() => { setActiveTab('assignments'); setEditingId(null); }} />
-            <SidebarItem icon={<ClipboardCheck size={18}/>} label="Submissions"      active={activeTab==='submissions'}  onClick={() => setActiveTab('submissions')} />
-            <SidebarItem icon={<ShieldAlert size={18}/>} label="Plagiarism"       active={activeTab==='plagiarism'}   onClick={() => setActiveTab('plagiarism')} />
-            <SidebarItem icon={<Users size={18}/>}         label="Students"          active={activeTab==='students'}     onClick={() => setActiveTab('students')} />
-          </nav>
-        </div>
-        <div className="px-6"><SidebarControls role="teacher" /></div>
-        <button onClick={() => { localStorage.clear(); navigate('/login'); }} className="mt-auto p-8 flex items-center gap-3 text-slate-500 hover:text-red-400 border-t border-slate-800 transition-colors">
-          <LogOut size={18}/> <span className="font-bold text-xs uppercase">Disconnect</span>
-        </button>
-      </aside>
-
-      {/* ── Main ── */}
-      <main className="flex-1 overflow-y-auto p-10 theme-page relative">
-        
+          <div className="px-6"><SidebarControls role="teacher" /></div>
+          <button type="button" onClick={() => { localStorage.clear(); navigate('/login'); }} className="mt-auto p-8 flex items-center gap-3 text-slate-500 hover:text-red-400 border-t border-slate-800 transition-colors">
+            <LogOut size={18}/> <span className="font-bold text-xs uppercase">Disconnect</span>
+          </button>
+        </>
+      }
+    >
 
         {/* ══ DASHBOARD TAB ══ */}
         {activeTab === 'dashboard' && (
           <div className="animate-in fade-in slide-in-from-top-4 duration-700">
-            <header className="mb-10 flex items-start justify-between gap-4">
+            <header className="mb-6 md:mb-10 flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Teacher Dashboard</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tighter">Teacher Dashboard</h1>
                 <p className="text-slate-400 text-sm mt-1">Live analytics and classroom performance.</p>
               </div>
             </header>
@@ -864,7 +869,6 @@ export default function TeacherDashboard() {
         )}
         <AIChatbot role="teacher" showTrigger={false} />
         <MessagePanel role="teacher" showTrigger={false} />
-      </main>
 
       {/* ══ REVIEW MODAL ══ */}
       {reviewModalOpen && selectedReview && (
@@ -960,6 +964,6 @@ export default function TeacherDashboard() {
         </div>
       )}
 
-    </div>
+    </DashboardNavShell>
   );
 }

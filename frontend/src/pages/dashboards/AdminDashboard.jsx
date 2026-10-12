@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import adminService from '../../services/adminService';
 import SidebarControls from '../../components/common/SidebarControls';
+import DashboardNavShell from '../../components/common/DashboardNavShell';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 
@@ -111,33 +112,38 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="flex min-h-screen theme-page">
-      <aside className="w-64 border-r p-6 flex flex-col fixed h-screen z-20 overflow-y-auto custom-scrollbar theme-card">
-        <div className="text-xl font-black mb-10 flex items-center gap-2 uppercase tracking-tighter text-white">
-          <Activity className="text-sky-500" /> EDUCORRE HQ
+    <DashboardNavShell
+      widthClass="w-64"
+      desktopMode="fixed"
+      desktopOffsetClass="md:ml-64"
+      mobileTitle="Educorre HQ"
+      sidebar={
+        <div className="p-6 flex flex-col flex-1 min-h-0">
+          <div className="text-xl font-black mb-10 flex items-center gap-2 uppercase tracking-tighter text-white">
+            <Activity className="text-sky-500" /> EDUCORRE HQ
+          </div>
+
+          <nav className="space-y-2">
+            <AdminLink icon={<Layout/>} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
+            <AdminLink icon={<Users/>} label="Students" active={activeTab === 'Students'} onClick={() => setActiveTab('Students')} />
+            <AdminLink icon={<GraduationCap/>} label="Teachers" active={activeTab === 'Teachers'} onClick={() => setActiveTab('Teachers')} />
+            <AdminLink icon={<FileText/>} label="Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
+          </nav>
+
+          <SidebarControls role="admin" />
+          <button type="button" onClick={() => {localStorage.clear(); navigate('/login');}} className="mt-auto flex items-center gap-2 p-3 text-red-500 font-bold hover:bg-red-500/10 rounded-xl transition-all">
+              <LogOut size={20}/> LOGOUT
+          </button>
         </div>
-        
-        <nav className="space-y-2">
-          <AdminLink icon={<Layout/>} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
-          <AdminLink icon={<Users/>} label="Students" active={activeTab === 'Students'} onClick={() => setActiveTab('Students')} />
-          <AdminLink icon={<GraduationCap/>} label="Teachers" active={activeTab === 'Teachers'} onClick={() => setActiveTab('Teachers')} />
-          <AdminLink icon={<FileText/>} label="Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
-        </nav>
-
-        <SidebarControls role="admin" />
-        <button onClick={() => {localStorage.clear(); navigate('/login');}} className="mt-auto flex items-center gap-2 p-3 text-red-500 font-bold hover:bg-red-500/10 rounded-xl transition-all">
-            <LogOut size={20}/> LOGOUT
-        </button>
-      </aside>
-
-      <main className="flex-1 ml-64 p-10 min-w-0">
-        <header className="flex justify-between items-center mb-10">
-          <h1 className="text-4xl font-black italic tracking-tighter uppercase">{activeTab}</h1>
+      }
+    >
+        <header className="flex flex-wrap justify-between items-center gap-3 mb-6 md:mb-10">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black italic tracking-tighter uppercase">{activeTab}</h1>
           
           {(activeTab === 'Students' || activeTab === 'Teachers') && (
             <button 
               onClick={() => navigate(activeTab === 'Students' ? '/signup/student' : '/signup/teacher')} 
-              className="bg-sky-500 text-black px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/20 text-xs tracking-widest"
+              className="bg-sky-500 text-black px-4 sm:px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/20 text-xs tracking-widest"
             >
               <Plus size={18}/> ADD {activeTab.slice(0, -1).toUpperCase()}
             </button>
@@ -214,7 +220,6 @@ export default function AdminDashboard() {
         )}
         <AIChatbot role="admin" showTrigger={false} />
         <MessagePanel role="admin" showTrigger={false} />
-      </main>
 
       {/* --- EDIT MODAL (FIXED WITH EMAIL AND DROPDOWN) --- */}
       {isEditModalOpen && editingItem && (
@@ -301,16 +306,20 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-    </div>
+    </DashboardNavShell>
   );
 }
 
 // Sub-components
 function AdminLink({ icon, label, active, onClick }) {
   return (
-    <div onClick={onClick} className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer font-black transition-all ${active ? 'bg-sky-500 text-black shadow-lg shadow-sky-500/30' : 'text-slate-500 hover:bg-slate-800 hover:text-white'}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 p-4 rounded-2xl cursor-pointer font-black transition-all text-left ${active ? 'bg-sky-500 text-black shadow-lg shadow-sky-500/30' : 'text-slate-500 hover:bg-slate-800 hover:text-white'}`}
+    >
       {icon} <span className="text-[10px] uppercase tracking-widest">{label}</span>
-    </div>
+    </button>
   );
 }
 
