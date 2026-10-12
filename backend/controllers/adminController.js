@@ -4,6 +4,7 @@ const {
     validatePasswordInput,
     hashPassword,
     toPublicUser,
+    normalizeRole,
 } = require('../utils/authPassword');
 
 /* =========================================================
@@ -142,6 +143,15 @@ exports.getAllAssignments = async (req, res) => {
 exports.addUser = async (req, res) => {
     try {
         const { name, email, password, role, subject, department, registrationNumber } = req.body;
+        const userRole = normalizeRole(role);
+
+        // Admin dashboard CRUD path may only create students/teachers.
+        // Additional admins use /auth/signup with an authenticated admin JWT.
+        if (userRole !== "student" && userRole !== "teacher") {
+            return res.status(400).json({
+                message: "Only student or teacher accounts can be created here",
+            });
+        }
 
         const exists = await User.findOne({ email });
         if (exists) return res.status(400).json({ message: "User already exists" });
@@ -155,12 +165,12 @@ exports.addUser = async (req, res) => {
             name,
             email,
             password: await hashPassword(passwordCheck.password),
-            role,
-            subject: role === 'teacher' ? subject : undefined,
+            role: userRole,
+            subject: userRole === "teacher" ? subject : undefined,
             department: department || "CS"
         });
 
-        if (role === "student" && registrationNumber) {
+        if (userRole === "student" && registrationNumber) {
             newUser.registrationNumber = registrationNumber;
         }
 

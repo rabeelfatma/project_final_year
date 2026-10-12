@@ -44,11 +44,18 @@ export default function AdminSignup() {
       return setMsg("Passwords do not match ❌");
     }
 
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return setMsg("Admin login required to add administrators ❌");
+    }
+
     try {
-      // Note: Hum sirf zaroori data bhej rahe hain (confirmPassword ko exclude kar diya)
       const res = await fetch(`${getApiBaseUrl()}/auth/signup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           name: form.name,
           email: form.email,
@@ -60,13 +67,10 @@ export default function AdminSignup() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Backend se aane wala exact error message dikhayen
-        return setMsg(data.message || data.error || "Signup failed ❌");
+        return setMsg(data.message || data.error || "Unable to add admin ❌");
       }
 
-      setMsg("Admin registered successfully ✅");
-      
-      // Optional: Form clear kar dein success par
+      setMsg("Admin added successfully ✅");
       setForm({ name: "", email: "", password: "", confirmPassword: "" });
 
     } catch (err) {
@@ -80,7 +84,7 @@ export default function AdminSignup() {
       <form className="bg-[#020617] p-8 w-96 border border-sky-400 rounded-xl" onSubmit={handleSubmit}>
 
         <h2 className="text-sky-400 text-center mb-5 text-xl font-bold">
-          Admin Signup
+          Add Admin
         </h2>
 
         {msg && <Alert message={msg} />}
@@ -132,12 +136,11 @@ export default function AdminSignup() {
           </span>
         </div>
 
-        <Button text="Signup" type="submit" />
+        <Button text="Add Admin" type="submit" />
 
         <p className="text-center text-gray-400 mt-4 text-sm">
-          Already have an account?{" "}
-          <Link to="/login" className="text-sky-400 font-bold">
-            Login
+          <Link to="/dashboard/admin" className="text-sky-400 font-bold">
+            Back to Admin Dashboard
           </Link>
         </p>
       </form>

@@ -59,7 +59,14 @@ export default function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        <Route path="/signup/admin" element={<AdminSignup />} />
+        <Route
+          path="/signup/admin"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AdminSignup />
+            </ProtectedRoute>
+          }
+        />
 
         {/* --- ✅ PROTECTED DASHBOARD ROUTES --- */}
         

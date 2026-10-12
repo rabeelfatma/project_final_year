@@ -123,13 +123,14 @@ export default function Login() {
           </span>
         </div>
 
-        {role === "admin" && (
-          <div className="text-right mb-4">
-            <Link to="/forgot-password" size="small" className="text-sky-400 text-[11px] font-bold hover:underline opacity-80">
-              Forgot Password?
-            </Link>
-          </div>
-        )}
+        <div className="text-right mb-4">
+          <Link
+            to="/forgot-password"
+            className="text-sky-400 text-[11px] font-bold hover:underline opacity-80"
+          >
+            Forgot Password?
+          </Link>
+        </div>
 
         <div className="mt-8">
           <Button text={`Login as ${role}`} type="submit" />
