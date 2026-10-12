@@ -16,17 +16,19 @@
 
 :root[data-theme="dark"] {
 
-  --bg: #0d1117;
+  /* Navy dashboard canvas — matches sidebar (not pure black). */
 
-  --bg-alt: #161b22;
+  --bg: #0f172a;
+
+  --bg-alt: #13233f;
 
   --bg-secondary: #0f172a;
 
 
 
-  --surface: #0f172a;
+  --surface: #152746;
 
-  --surface-2: #020617;
+  --surface-2: #0b1526;
 
 
 
@@ -1272,11 +1274,21 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 
 
-.sidebar-tool:hover {
+.sidebar-tool:hover,
+
+.sidebar-tool.is-active {
 
   background: var(--accent-soft);
 
   color: var(--accent);
+
+}
+
+.sidebar-tool:focus-visible {
+
+  outline: 2px solid var(--accent);
+
+  outline-offset: 2px;
 
 }
 
@@ -1373,6 +1385,50 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   box-shadow:
 
     0 25px 70px rgba(0, 0, 0, 0.35);
+
+}
+
+/* Portal overlays escape transformed sidebars (fixed-position containing blocks). */
+
+.qc-utility-overlay {
+
+  position: fixed;
+
+  inset: 0;
+
+  z-index: 220;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  padding: 1rem;
+
+  background: rgba(2, 6, 23, 0.55);
+
+}
+
+.qc-utility-panel {
+
+  width: min(420px, 100%);
+
+  max-height: min(80vh, 640px);
+
+  overflow: auto;
+
+  background: var(--surface);
+
+  color: var(--text);
+
+  border: 1px solid var(--border);
+
+  border-radius: 18px;
+
+  padding: 14px 16px 16px;
+
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.45);
 
 }
 
@@ -2252,11 +2308,81 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 }
 
-.theme-page [class*="hover:bg-"]:hover,
+/* Soft hover only for opacity-tint utilities (…/10), never solid CTAs. */
 
-.theme-card [class*="hover:bg-"]:hover {
+.theme-page [class*="hover:bg-"][class*="/"]:hover,
+
+.theme-card [class*="hover:bg-"][class*="/"]:hover {
 
   background-color: var(--accent-soft) !important;
+
+}
+
+/* Yellow / amber action buttons: white background + black text on hover/active. */
+
+.theme-page [class~="bg-amber-500"]:hover,
+
+.theme-page [class~="bg-amber-500"]:active,
+
+.theme-page [class~="bg-amber-400"]:hover,
+
+.theme-page [class~="bg-amber-400"]:active,
+
+.theme-card [class~="bg-amber-500"]:hover,
+
+.theme-card [class~="bg-amber-500"]:active,
+
+.theme-card [class~="bg-amber-400"]:hover,
+
+.theme-card [class~="bg-amber-400"]:active,
+
+.theme-page button.bg-amber-500:hover,
+
+.theme-page button.bg-amber-500:active {
+
+  background-color: #ffffff !important;
+
+  color: #000000 !important;
+
+  border-color: #ffffff !important;
+
+  filter: none !important;
+
+}
+
+.theme-page [class~="bg-amber-500"]:focus-visible,
+
+.theme-card [class~="bg-amber-500"]:focus-visible,
+
+.theme-page [class~="bg-sky-500"]:focus-visible,
+
+.theme-card [class~="bg-sky-500"]:focus-visible {
+
+  outline: 2px solid var(--accent);
+
+  outline-offset: 2px;
+
+}
+
+/* Solid sky/blue CTAs keep light text contrast on navy; avoid near-black flash. */
+
+.theme-page [class~="bg-sky-500"]:hover,
+
+.theme-page [class~="bg-sky-400"]:hover,
+
+.theme-card [class~="bg-sky-500"]:hover,
+
+.theme-card [class~="bg-sky-400"]:hover,
+
+.theme-page [class~="bg-sky-500"]:active,
+
+.theme-card [class~="bg-sky-500"]:active {
+
+  background-color: color-mix(in srgb, var(--accent) 82%, #ffffff) !important;
+
+  color: #07111a !important;
+
+  filter: none !important;
 
 }
 

@@ -70,7 +70,24 @@ const adminService = {
 
     getRecentUsers: async () => {
         return handleResponse(adminClient.get('/users/recent'), []);
-    }
+    },
+
+    getRegistrationRequests: async (status = 'pending') => {
+        const response = await adminClient.get('/registration-requests', {
+            params: { status },
+        });
+        return response.data || { requests: [], pendingCount: 0 };
+    },
+
+    approveRegistrationRequest: async (id) => {
+        const response = await adminClient.post(`/registration-requests/${id}/approve`);
+        return response.data;
+    },
+
+    rejectRegistrationRequest: async (id) => {
+        const response = await adminClient.post(`/registration-requests/${id}/reject`);
+        return response.data;
+    },
 };
 
 export default adminService;

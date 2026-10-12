@@ -176,7 +176,6 @@ describe("authController register/login (isolated mocks)", () => {
         body: {
           email: "student1@example.com",
           password: "StudentPass12!",
-          name: "Student One",
           role: "student",
         },
       },
@@ -210,7 +209,6 @@ describe("authController register/login (isolated mocks)", () => {
         body: {
           email: "teacher1@example.com",
           password: "TeacherPass12!",
-          name: "Teacher One",
           role: "teacher",
         },
       },
@@ -218,6 +216,38 @@ describe("authController register/login (isolated mocks)", () => {
     );
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.role, "teacher");
+  });
+
+  it("login succeeds with email and password only (name not required)", async () => {
+    const { hashPassword } = require("../utils/authPassword");
+    const hash = await hashPassword("StudentPass12!");
+    const userMock = {
+      findOne: async () => ({
+        _id: "stu1",
+        name: "Student One",
+        email: "student1@example.com",
+        password: hash,
+        role: "student",
+        isAllowedLogin: true,
+        toObject() {
+          return { ...this };
+        },
+      }),
+    };
+    const authController = loadController(userMock);
+    const res = mockRes();
+    await authController.loginUser(
+      {
+        body: {
+          email: "student1@example.com",
+          password: "StudentPass12!",
+          role: "student",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.name, "Student One");
   });
 
   it("rejects wrong password", async () => {
@@ -242,7 +272,6 @@ describe("authController register/login (isolated mocks)", () => {
         body: {
           email: "student1@example.com",
           password: "WrongPass99!",
-          name: "Student One",
           role: "student",
         },
       },
@@ -257,7 +286,7 @@ describe("authController register/login (isolated mocks)", () => {
     const authController = loadController(userMock);
     const res = mockRes();
     await authController.loginUser(
-      { body: { email: "student1@example.com", role: "student", name: "Student One" } },
+      { body: { email: "student1@example.com", role: "student" } },
       res
     );
     assert.equal(res.statusCode, 400);
@@ -286,13 +315,44 @@ describe("authController register/login (isolated mocks)", () => {
         body: {
           email: "student1@example.com",
           password: "StudentPass12!",
-          name: "Student One",
           role: "admin",
         },
       },
       res
     );
     assert.equal(res.statusCode, 400);
+  });
+
+  it("rejects login when isAllowedLogin is false", async () => {
+    const { hashPassword } = require("../utils/authPassword");
+    const hash = await hashPassword("StudentPass12!");
+    const userMock = {
+      findOne: async () => ({
+        _id: "stu1",
+        name: "Student One",
+        email: "student1@example.com",
+        password: hash,
+        role: "student",
+        isAllowedLogin: false,
+        toObject() {
+          return { ...this };
+        },
+      }),
+    };
+    const authController = loadController(userMock);
+    const res = mockRes();
+    await authController.loginUser(
+      {
+        body: {
+          email: "student1@example.com",
+          password: "StudentPass12!",
+          role: "student",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 403);
+    assert.match(res.body.message, /not allowed/i);
   });
 
   it("admin login remains intact", async () => {
@@ -348,7 +408,6 @@ describe("authController register/login (isolated mocks)", () => {
         body: {
           email: "legacy@example.com",
           password: "Anything1!",
-          name: "Legacy",
           role: "student",
         },
       },

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Layout, Users, GraduationCap, FileText, Activity, LogOut, 
-  Trash2, Plus, Edit2, X, UserRound, UsersRound, ClipboardList
+  Trash2, Plus, Edit2, X, UserRound, UsersRound, ClipboardList,
+  UserPlus, Check, Ban
 } from 'lucide-react';
 import { 
   AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, 
@@ -28,6 +29,10 @@ export default function AdminDashboard() {
     chartData: [], assignmentBarData: [], pieData: [] 
   });
   const [viewData, setViewData] = useState([]);
+  const [registrationFilter, setRegistrationFilter] = useState('pending');
+  const [registrationRequests, setRegistrationRequests] = useState([]);
+  const [pendingRegistrationCount, setPendingRegistrationCount] = useState(0);
+  const [registrationActionId, setRegistrationActionId] = useState(null);
 
   const COLORS = ['var(--chart-primary)', 'var(--chart-secondary)', 'var(--chart-tertiary)', 'var(--chart-quaternary)'];
 
@@ -50,7 +55,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchContent();
-  }, [activeTab]);
+  }, [activeTab, registrationFilter]);
 
   const fetchContent = async () => {
     setLoading(true);
@@ -68,6 +73,16 @@ export default function AdminDashboard() {
             pieData: res.pieData || []
           });
         }
+        try {
+          const pending = await adminService.getRegistrationRequests('pending');
+          setPendingRegistrationCount(pending?.pendingCount || 0);
+        } catch {
+          /* non-blocking badge refresh */
+        }
+      } else if (activeTab === 'Registration Requests') {
+        const res = await adminService.getRegistrationRequests(registrationFilter);
+        setRegistrationRequests(Array.isArray(res?.requests) ? res.requests : []);
+        setPendingRegistrationCount(res?.pendingCount || 0);
       } else {
         let data = [];
         if (activeTab === 'Students') data = await adminService.getRecentUsers();
@@ -79,8 +94,26 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error("Fetch Error:", err);
       setViewData([]);
+      if (activeTab === 'Registration Requests') setRegistrationRequests([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRegistrationAction = async (id, action) => {
+    if (!id || registrationActionId) return;
+    setRegistrationActionId(id);
+    try {
+      if (action === 'approve') {
+        await adminService.approveRegistrationRequest(id);
+      } else {
+        await adminService.rejectRegistrationRequest(id);
+      }
+      await fetchContent();
+    } catch (err) {
+      alert(err?.response?.data?.message || `Failed to ${action} registration request.`);
+    } finally {
+      setRegistrationActionId(null);
     }
   };
 
@@ -90,7 +123,16 @@ export default function AdminDashboard() {
         if (activeTab === 'Assignments') await adminService.deleteAssignment(id);
         else await adminService.deleteUser(id);
         fetchContent();
-      } catch (err) { alert("Delete failed"); }
+      } catch (err) {
+        const status = err?.response?.status;
+        if (!err?.response) {
+          alert("Server unavailable. Nothing was deleted. Connect the API/database and try again.");
+        } else if (status === 401 || status === 403) {
+          alert(err.response?.data?.message || "Not authorized to delete this record.");
+        } else {
+          alert(err.response?.data?.message || "Delete failed");
+        }
+      }
     }
   };
 
@@ -106,7 +148,7 @@ export default function AdminDashboard() {
         setIsEditModalOpen(false);
         fetchContent();
         alert("Updated Successfully!");
-    } catch (err) {
+    } catch {
         alert("Update failed");
     }
   };
@@ -128,10 +170,23 @@ export default function AdminDashboard() {
             <AdminLink icon={<Users/>} label="Students" active={activeTab === 'Students'} onClick={() => setActiveTab('Students')} />
             <AdminLink icon={<GraduationCap/>} label="Teachers" active={activeTab === 'Teachers'} onClick={() => setActiveTab('Teachers')} />
             <AdminLink icon={<FileText/>} label="Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
+            <AdminLink
+              icon={<UserPlus/>}
+              label="Registration Requests"
+              active={activeTab === 'Registration Requests'}
+              onClick={() => setActiveTab('Registration Requests')}
+              badge={pendingRegistrationCount > 0 ? pendingRegistrationCount : null}
+            />
           </nav>
 
-          <SidebarControls role="admin" />
-          <button type="button" onClick={() => {localStorage.clear(); navigate('/login');}} className="mt-auto flex items-center gap-2 p-3 text-red-500 font-bold hover:bg-red-500/10 rounded-xl transition-all">
+          <SidebarControls
+            role="admin"
+            onRegistrationNotificationClick={() => {
+              setRegistrationFilter('pending');
+              setActiveTab('Registration Requests');
+            }}
+          />
+          <button type="button" onClick={() => {localStorage.clear(); navigate('/admin');}} className="mt-auto flex items-center gap-2 p-3 text-red-500 font-bold hover:bg-red-500/10 rounded-xl transition-all">
               <LogOut size={20}/> LOGOUT
           </button>
         </div>
@@ -160,6 +215,21 @@ export default function AdminDashboard() {
               <StatBox label="Students" value={systemStats.totalStudents} icon={<UserRound size={20}/>} />
               <StatBox label="Assignments" value={systemStats.totalAssignments} icon={<ClipboardList size={20}/>} />
             </div>
+            {pendingRegistrationCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRegistrationFilter('pending');
+                  setActiveTab('Registration Requests');
+                }}
+                className="w-full text-left p-4 sm:p-5 rounded-2xl border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 transition-colors"
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-400 mb-1">Registration Requests</p>
+                <p className="text-sm font-bold text-slate-200">
+                  {pendingRegistrationCount} pending request{pendingRegistrationCount === 1 ? '' : 's'} awaiting review
+                </p>
+              </button>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
               <div className="p-4 sm:p-8 rounded-[2rem] border theme-card">
@@ -208,6 +278,40 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+          </div>
+        ) : activeTab === 'Registration Requests' ? (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="flex flex-wrap justify-between items-end gap-3">
+              <h2 className="text-xl sm:text-2xl font-black italic text-sky-500 uppercase tracking-tighter">
+                Registration Requests
+              </h2>
+              <span className="text-xs font-bold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
+                {pendingRegistrationCount} Pending
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {['pending', 'approved', 'rejected'].map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setRegistrationFilter(status)}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    registrationFilter === status
+                      ? 'bg-sky-500 text-black'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {status === 'pending' ? 'Pending Requests' : status}
+                </button>
+              ))}
+            </div>
+            <RegistrationRequestsTable
+              data={registrationRequests}
+              filter={registrationFilter}
+              actionId={registrationActionId}
+              onApprove={(id) => handleRegistrationAction(id, 'approve')}
+              onReject={(id) => handleRegistrationAction(id, 'reject')}
+            />
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
@@ -311,15 +415,99 @@ export default function AdminDashboard() {
 }
 
 // Sub-components
-function AdminLink({ icon, label, active, onClick }) {
+function AdminLink({ icon, label, active, onClick, badge = null }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={`w-full flex items-center gap-3 p-4 rounded-2xl cursor-pointer font-black transition-all text-left ${active ? 'bg-sky-500 text-black shadow-lg shadow-sky-500/30' : 'text-slate-500 hover:bg-slate-800 hover:text-white'}`}
     >
-      {icon} <span className="text-[10px] uppercase tracking-widest">{label}</span>
+      {icon}
+      <span className="text-[10px] uppercase tracking-widest flex-1">{label}</span>
+      {badge != null && (
+        <span className={`min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] flex items-center justify-center ${active ? 'bg-black/20 text-black' : 'bg-sky-500 text-black'}`}>
+          {badge}
+        </span>
+      )}
     </button>
+  );
+}
+
+function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject }) {
+  const colSpan = filter === 'pending' ? 7 : 6;
+  return (
+    <div className="rounded-3xl border theme-card overflow-hidden shadow-2xl">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[780px] text-left">
+          <thead className="theme-surface text-[10px] uppercase text-slate-500 font-black tracking-widest border-b border-slate-800">
+            <tr>
+              <th className="p-3 sm:p-5">Full Name</th>
+              <th className="p-3 sm:p-5">Email</th>
+              <th className="p-3 sm:p-5">Requested Role</th>
+              <th className="p-3 sm:p-5">Registration Date</th>
+              <th className="p-3 sm:p-5">Email Verified</th>
+              <th className="p-3 sm:p-5">Status</th>
+              {filter === 'pending' && <th className="p-3 sm:p-5 text-right">Actions</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {data.length > 0 ? data.map((item) => (
+              <tr key={item.id} className="hover:bg-sky-500/5 transition-colors">
+                <td className="p-3 sm:p-5 font-bold text-sm text-slate-200">{item.name}</td>
+                <td className="p-3 sm:p-5 text-slate-400 text-sm break-all">{item.email}</td>
+                <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest text-sky-400">
+                  {item.role}
+                </td>
+                <td className="p-3 sm:p-5 text-slate-400 text-sm whitespace-nowrap">
+                  {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+                </td>
+                <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                  {item.emailVerified ? (
+                    <span className="text-emerald-400">Verified</span>
+                  ) : (
+                    <span className="text-amber-400">Pending</span>
+                  )}
+                </td>
+                <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {item.approvalStatus}
+                </td>
+                {filter === 'pending' && (
+                  <td className="p-3 sm:p-5 text-right whitespace-nowrap">
+                    <div className="inline-flex items-center gap-2 justify-end">
+                      <button
+                        type="button"
+                        disabled={actionId === item.id || !item.emailVerified}
+                        onClick={() => onApprove(item.id)}
+                        className="inline-flex items-center gap-1 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-400/10 rounded-xl hover:bg-emerald-400 hover:text-black transition-all disabled:opacity-50"
+                        aria-label={`Approve ${item.name}`}
+                        title={!item.emailVerified ? 'Email must be verified first' : 'Approve'}
+                      >
+                        <Check size={14} /> Approve
+                      </button>
+                      <button
+                        type="button"
+                        disabled={actionId === item.id}
+                        onClick={() => onReject(item.id)}
+                        className="inline-flex items-center gap-1 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-400 bg-red-400/10 rounded-xl hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
+                        aria-label={`Reject ${item.name}`}
+                      >
+                        <Ban size={14} /> Reject
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={colSpan} className="p-10 sm:p-20 text-center italic text-slate-500 uppercase tracking-widest text-xs font-bold">
+                  No {filter} registration requests.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

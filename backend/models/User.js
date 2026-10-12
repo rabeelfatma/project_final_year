@@ -52,6 +52,26 @@ const userSchema = new mongoose.Schema(
 
     isAllowedLogin: { type: Boolean, default: true },
 
+    // Public Teacher/Student signup approval (QC-17A).
+    // Legacy users without this field are treated as approved when login is allowed.
+    approvalStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "approved",
+    },
+    approvedAt: { type: Date, default: null },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    rejectedAt: { type: Date, default: null },
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
+    // QC-18A email ownership verification (public signup dual-gate).
+    // Missing/undefined is treated as verified for legacy / Admin-created accounts.
+    // Public signup sets emailVerified=false until the applicant confirms.
+    emailVerified: { type: Boolean },
+    emailVerifiedAt: { type: Date, default: null },
+    // Idempotent Admin notify-after-verify marker (email + dashboard notification).
+    adminNotifiedAt: { type: Date, default: null },
+
     subject: { type: String },
     profilePicture: { type: String, default: "" },
     notificationPreferences: {

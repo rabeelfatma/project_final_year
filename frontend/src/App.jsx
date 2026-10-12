@@ -8,11 +8,14 @@ import About from "./pages/landing/About";
 
 /* AUTH */
 import Login from "./pages/authentication/Login";
+import AdminLogin from "./pages/authentication/AdminLogin";
+import PublicSignup from "./pages/authentication/PublicSignup";
+import VerifyEmail from "./pages/authentication/VerifyEmail";
 import ForgotPassword from "./pages/authentication/ForgotPassword";
 import ResetPassword from "./pages/authentication/ResetPassword";
 import RoleSelection from "./pages/authentication/RoleSelection";
 
-/* SIGNUP */
+/* SIGNUP (Admin-managed create forms) */
 import StudentSignup from "./pages/signup/StudentSignup";
 import TeacherSignup from "./pages/signup/TeacherSignup";
 import AdminSignup from "./pages/signup/AdminSignup";
@@ -20,7 +23,8 @@ import AdminSignup from "./pages/signup/AdminSignup";
 /* DASHBOARDS */
 import AdminDashboard from "./pages/dashboards/AdminDashboard"; 
 import TeacherDashboard from "./pages/dashboards/TeacherDashboard"; 
-import StudentDashboard from "./pages/dashboards/StudentDashboard"; 
+import StudentDashboard from "./pages/dashboards/StudentDashboard";
+import ProtectedRoute from "./components/common/ProtectedRoute"; 
 
 /* 404 */
 function NotFound() {
@@ -43,14 +47,17 @@ function App() {
         <Route path="/about" element={<About />} />
 
         {/* AUTH */}
+        <Route path="/admin" element={<AdminLogin />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<PublicSignup />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* ROLE */}
         <Route path="/role-selection" element={<RoleSelection />} />
 
-        {/* SIGNUP & ADD USER ROUTES */}
+        {/* Admin-managed account create forms (authenticated admin workflows) */}
         <Route path="/signup/student" element={<StudentSignup />} />
         <Route path="/add-student" element={<StudentSignup />} /> 
         
@@ -60,9 +67,30 @@ function App() {
         <Route path="/signup/admin" element={<AdminSignup />} />
 
         {/* DASHBOARD ROUTES */}
-        <Route path="/dashboard/admin" element={<AdminDashboard />} /> 
-        <Route path="/dashboard/teacher" element={<TeacherDashboard />} /> 
-        <Route path="/dashboard/student" element={<StudentDashboard />} /> 
+        <Route
+          path="/dashboard/admin"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard/teacher"
+          element={
+            <ProtectedRoute allowedRoles={["teacher"]}>
+              <TeacherDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard/student"
+          element={
+            <ProtectedRoute allowedRoles={["student"]}>
+              <StudentDashboard />
+            </ProtectedRoute>
+          }
+        /> 
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />

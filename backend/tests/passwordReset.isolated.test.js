@@ -740,10 +740,12 @@ describe("JWT invalidation after password change", () => {
   });
 
   it("same-second boundary: pre-reset JWT rejected; post-reset JWT with new tv accepted", async () => {
-    // Reset at .500; new login JWT iat is whole seconds (same second as reset).
-    const resetAt = new Date("2026-10-12T10:30:15.500Z");
-    const iatSec = Math.floor(new Date("2026-10-12T10:30:15.800Z").getTime() / 1000);
-    assert.equal(iatSec, Math.floor(resetAt.getTime() / 1000));
+    // Deterministic relative clock: reset at .500 of the current UTC second;
+    // post-reset JWT iat is that same whole second (JWT iat has second precision).
+    // Hardcoded calendar timestamps previously expired after ~1h and failed later the same day.
+    const iatSec = Math.floor(Date.now() / 1000);
+    const resetAt = new Date(iatSec * 1000 + 500);
+    assert.equal(Math.floor(resetAt.getTime() / 1000), iatSec);
 
     const protectAfterReset = loadProtectWithUser({
       _id: "u1",
@@ -765,17 +767,13 @@ describe("JWT invalidation after password change", () => {
     assert.equal(oldNext, false);
     assert.equal(oldRes.statusCode, 401);
 
-    const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
-      "base64url"
+    // Sign with jsonwebtoken (same library as production) and fixed iat/exp —
+    // invalidation remains tokenVersion-based; this proves same-second iat is accepted.
+    const newSameSecondJwt = jwt.sign(
+      { id: "u1", role: "student", tv: 1, iat: iatSec, exp: iatSec + 3600 },
+      process.env.JWT_SECRET,
+      { algorithm: "HS256", noTimestamp: true }
     );
-    const body = Buffer.from(
-      JSON.stringify({ id: "u1", role: "student", tv: 1, iat: iatSec, exp: iatSec + 3600 })
-    ).toString("base64url");
-    const sig = crypto
-      .createHmac("sha256", process.env.JWT_SECRET)
-      .update(`${header}.${body}`)
-      .digest("base64url");
-    const newSameSecondJwt = `${header}.${body}.${sig}`;
 
     const newRes = mockAuthRes();
     let newNext = false;

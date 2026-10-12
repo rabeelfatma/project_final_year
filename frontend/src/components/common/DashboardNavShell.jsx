@@ -31,8 +31,13 @@ export default function DashboardNavShell({
     const onKey = (event) => {
       if (event.key === "Escape") setOpen(false);
     };
+    const closeDrawer = () => setOpen(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("quickcheck:close-drawer", closeDrawer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("quickcheck:close-drawer", closeDrawer);
+    };
   }, []);
 
   useEffect(() => {

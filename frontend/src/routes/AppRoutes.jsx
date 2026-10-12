@@ -10,11 +10,14 @@ import About from "../pages/landing/About";
 
 /* AUTH & ROLE SELECTION */
 import Login from "../pages/authentication/Login";
+import AdminLogin from "../pages/authentication/AdminLogin";
+import PublicSignup from "../pages/authentication/PublicSignup";
+import VerifyEmail from "../pages/authentication/VerifyEmail";
 import RoleSelection from "../pages/authentication/RoleSelection";
 import ForgotPassword from "../pages/authentication/ForgotPassword";
 import ResetPassword from "../pages/authentication/ResetPassword";
 
-/* SIGNUP PAGES */
+/* SIGNUP PAGES (Admin-managed create forms) */
 import StudentSignup from "../pages/signup/StudentSignup";
 import TeacherSignup from "../pages/signup/TeacherSignup";
 import AdminSignup from "../pages/signup/AdminSignup";
@@ -37,12 +40,15 @@ export default function AppRoutes() {
         <Route path="/about" element={<About />} />
 
         {/* --- AUTH ROUTES --- */}
+        <Route path="/admin" element={<AdminLogin />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<PublicSignup />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/role-selection" element={<RoleSelection />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* --- SIGNUP ROUTES --- */}
+        {/* --- Admin-managed account create forms --- */}
         <Route
           path="/signup/student"
           element={
@@ -51,6 +57,11 @@ export default function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route path="/add-student" element={
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <StudentSignup />
+          </ProtectedRoute>
+        } />
         <Route
           path="/signup/teacher"
           element={
@@ -59,6 +70,11 @@ export default function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route path="/add-teacher" element={
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <TeacherSignup />
+          </ProtectedRoute>
+        } />
         <Route
           path="/signup/admin"
           element={

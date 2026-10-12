@@ -259,3 +259,158 @@ exports.deleteAssignment = async (req, res) => {
         res.status(400).json({ message: "Assignment delete failed" });
     }
 };
+
+/* =========================================================
+   QC-17A — PUBLIC REGISTRATION REQUESTS (Admin only)
+========================================================= */
+exports.listRegistrationRequests = async (req, res) => {
+    try {
+        const status = String(req.query.status || "pending").toLowerCase().trim();
+        const filter = { role: { $in: ["teacher", "student"] } };
+        if (["pending", "approved", "rejected"].includes(status)) {
+            filter.approvalStatus = status;
+        } else if (status !== "all") {
+            filter.approvalStatus = "pending";
+        }
+
+        const users = await User.find(filter)
+            .select("name email role approvalStatus createdAt approvedAt rejectedAt isAllowedLogin emailVerified emailVerifiedAt")
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const pendingCount = await User.countDocuments({
+            role: { $in: ["teacher", "student"] },
+            approvalStatus: "pending",
+            emailVerified: true,
+        });
+
+        res.json({
+            requests: users.map((u) => ({
+                id: String(u._id),
+                name: u.name,
+                email: u.email,
+                role: u.role,
+                approvalStatus: u.approvalStatus || "approved",
+                emailVerified: u.emailVerified !== false,
+                emailVerifiedAt: u.emailVerifiedAt || null,
+                createdAt: u.createdAt,
+                approvedAt: u.approvedAt || null,
+                rejectedAt: u.rejectedAt || null,
+            })),
+            pendingCount,
+        });
+    } catch (err) {
+        console.error("LIST REGISTRATION REQUESTS ERROR:", err);
+        res.status(500).json({ message: "Failed to load registration requests" });
+    }
+};
+
+exports.approveRegistrationRequest = async (req, res) => {
+    try {
+        const existing = await User.findById(req.params.id)
+            .select("role approvalStatus emailVerified")
+            .lean();
+        if (!existing || !["teacher", "student"].includes(existing.role)) {
+            return res.status(409).json({
+                message: "Request not found or is no longer pending.",
+            });
+        }
+        if (existing.approvalStatus !== "pending") {
+            return res.status(409).json({
+                message: "Request not found or is no longer pending.",
+            });
+        }
+        if (existing.emailVerified !== true) {
+            return res.status(409).json({
+                message: "Applicant must verify their email before Admin approval.",
+            });
+        }
+
+        const updated = await User.findOneAndUpdate(
+            {
+                _id: req.params.id,
+                role: { $in: ["teacher", "student"] },
+                approvalStatus: "pending",
+                emailVerified: true,
+            },
+            {
+                $set: {
+                    approvalStatus: "approved",
+                    isAllowedLogin: true,
+                    approvedAt: new Date(),
+                    approvedBy: req.user._id,
+                    rejectedAt: null,
+                    rejectedBy: null,
+                },
+            },
+            { new: true }
+        ).select("name email role approvalStatus isAllowedLogin emailVerified approvedAt");
+
+        if (!updated) {
+            return res.status(409).json({
+                message: "Request not found or is no longer pending.",
+            });
+        }
+
+        try {
+            const {
+                sendApplicantDecisionEmail,
+            } = require("../services/registrationNotificationService");
+            await sendApplicantDecisionEmail(updated, "approved");
+        } catch (_) {
+            /* email failure must not undo approval */
+        }
+
+        res.json({
+            message: "Registration approved. The user may now log in.",
+            user: toPublicUser(updated),
+        });
+    } catch (err) {
+        console.error("APPROVE REGISTRATION ERROR:", err);
+        res.status(400).json({ message: "Failed to approve registration request" });
+    }
+};
+
+exports.rejectRegistrationRequest = async (req, res) => {
+    try {
+        const updated = await User.findOneAndUpdate(
+            {
+                _id: req.params.id,
+                role: { $in: ["teacher", "student"] },
+                approvalStatus: "pending",
+            },
+            {
+                $set: {
+                    approvalStatus: "rejected",
+                    isAllowedLogin: false,
+                    rejectedAt: new Date(),
+                    rejectedBy: req.user._id,
+                },
+            },
+            { new: true }
+        ).select("name email role approvalStatus isAllowedLogin emailVerified rejectedAt");
+
+        if (!updated) {
+            return res.status(409).json({
+                message: "Request not found or is no longer pending.",
+            });
+        }
+
+        try {
+            const {
+                sendApplicantDecisionEmail,
+            } = require("../services/registrationNotificationService");
+            await sendApplicantDecisionEmail(updated, "rejected");
+        } catch (_) {
+            /* email failure must not undo rejection */
+        }
+
+        res.json({
+            message: "Registration rejected. The user cannot log in.",
+            user: toPublicUser(updated),
+        });
+    } catch (err) {
+        console.error("REJECT REGISTRATION ERROR:", err);
+        res.status(400).json({ message: "Failed to reject registration request" });
+    }
+};

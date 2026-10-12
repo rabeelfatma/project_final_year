@@ -54,7 +54,8 @@ async function assertWithinRateLimit(
           },
         },
       ],
-      { upsert: true, new: true }
+      // Mongoose 9+ requires updatePipeline when the update is an aggregation pipeline.
+      { upsert: true, new: true, updatePipeline: true }
     );
   } catch (_) {
     return { ok: false, message: "Rate limit unavailable." };

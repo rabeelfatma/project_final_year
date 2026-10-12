@@ -55,9 +55,40 @@ function toPublicUser(user) {
   return obj;
 }
 
+const APPROVAL_STATUSES = ["pending", "approved", "rejected"];
+
+/**
+ * Login eligibility (dual-gate for public signup accounts):
+ * - emailVerified === false blocks (missing/undefined treated as verified for legacy).
+ * - approvalStatus pending/rejected blocks (missing treated as approved for legacy).
+ * - Explicit isAllowedLogin=false always blocks.
+ */
+function getLoginDenialReason(user) {
+  if (!user) return "Invalid email or password";
+  if (user.emailVerified === false) {
+    return "Please verify your email address before logging in. Check your inbox for the verification link.";
+  }
+  const status = user.approvalStatus;
+  if (status === "pending") {
+    return "Your registration is pending Admin approval. Please wait before logging in.";
+  }
+  if (status === "rejected") {
+    return "Your registration request was rejected. Contact an administrator.";
+  }
+  if (user.isAllowedLogin === false) {
+    return "This account is not allowed to log in. Contact an administrator.";
+  }
+  return null;
+}
+
+function canUserLogin(user) {
+  return getLoginDenialReason(user) == null;
+}
+
 module.exports = {
   MIN_PASSWORD_LENGTH,
   ALLOWED_ROLES,
+  APPROVAL_STATUSES,
   normalizeRole,
   isBcryptHash,
   isPublicAdminBootstrapAllowed,
@@ -65,4 +96,6 @@ module.exports = {
   hashPassword,
   passwordsMatch,
   toPublicUser,
+  getLoginDenialReason,
+  canUserLogin,
 };

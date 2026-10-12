@@ -33,6 +33,15 @@ async function gateSignup(req, res, next) {
 }
 
 router.post("/signup", gateSignup, (req, res) => authController.registerUser(req, res));
+/** Public Teacher/Student registration requests (pending Admin approval). Never issues JWT. */
+router.post("/register-request", (req, res) =>
+  authController.requestPublicSignup(req, res)
+);
+router.post("/verify-email", (req, res) => authController.verifyEmail(req, res));
+router.get("/verify-email", (req, res) => authController.verifyEmail(req, res));
+router.post("/resend-verification", (req, res) =>
+  authController.resendVerificationEmail(req, res)
+);
 router.post("/login", (req, res) => authController.loginUser(req, res));
 
 /**

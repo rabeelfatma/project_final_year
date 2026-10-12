@@ -17,6 +17,11 @@ import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
 import api from '../../utils/api';
+import {
+  normalizeAssignmentId,
+  toggleAssignmentSelection,
+  isAssignmentSelected,
+} from '../../utils/assignmentSelection';
 
 // ─── Sub-components ───────────────────────────────────────────
 function SidebarItem({ icon, label, active, onClick }) {
@@ -304,16 +309,46 @@ export default function TeacherDashboard() {
     } catch { alert('❌ Failed to change status.'); }
   };
 
+  const describeDeleteError = (error) => {
+    const status = error?.response?.status;
+    if (!error?.response) {
+      return 'Server unavailable. Assignment was not deleted. Connect MongoDB/API and try again.';
+    }
+    if (status === 401 || status === 403) {
+      return error.response?.data?.message || 'Not authorized to delete this assignment.';
+    }
+    if (status === 404) {
+      return error.response?.data?.message || 'Assignment not found (or already deleted).';
+    }
+    if (status === 503) {
+      return error.response?.data?.message || 'Service unavailable. Assignment was not deleted.';
+    }
+    return error.response?.data?.message || error.message || 'Failed to delete.';
+  };
+
   const handleDeleteAssignment = async (id) => {
     if (!window.confirm('Delete this assignment?')) return;
-    try { await teacherService.deleteAssignment(id); fetchAllData(); }
-    catch { alert('❌ Failed to delete.'); }
+    try {
+      await teacherService.deleteAssignment(normalizeAssignmentId(id));
+      setSelectedAssignments((prev) =>
+        prev.filter((value) => normalizeAssignmentId(value) !== normalizeAssignmentId(id))
+      );
+      fetchAllData();
+    } catch (error) {
+      alert(describeDeleteError(error));
+    }
   };
 
   const handleDeleteSelectedAssignments = async () => {
     if (!selectedAssignments.length || !window.confirm(`Delete ${selectedAssignments.length} selected assignments?`)) return;
-    try { await teacherService.deleteAssignmentsBulk(selectedAssignments); setSelectedAssignments([]); fetchAllData(); }
-    catch { alert('❌ Failed to delete selected assignments.'); }
+    try {
+      const ids = selectedAssignments.map(normalizeAssignmentId).filter(Boolean);
+      await teacherService.deleteAssignmentsBulk(ids);
+      setSelectedAssignments([]);
+      fetchAllData();
+    } catch (error) {
+      alert(describeDeleteError(error));
+    }
   };
 
   const handleResetSubmissionGrade = async (id) => {
@@ -578,7 +613,23 @@ export default function TeacherDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
               <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">My Assignments</h1>
               <div className="flex flex-wrap items-center gap-3">
-                <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2"><input type="checkbox" checked={assignments.length > 0 && selectedAssignments.length === assignments.length} onChange={(e) => setSelectedAssignments(e.target.checked ? assignments.map((a) => a._id) : [])}/> Select all</label>
+                <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={
+                      assignments.length > 0 &&
+                      assignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
+                    }
+                    onChange={(e) =>
+                      setSelectedAssignments(
+                        e.target.checked
+                          ? assignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
+                          : []
+                      )
+                    }
+                  />
+                  Select all
+                </label>
                 {selectedAssignments.length > 0 && <button type="button" onClick={handleDeleteSelectedAssignments} className="bg-red-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase"><Trash2 size={13} className="inline mr-1"/> Delete selected</button>}
               </div>
             </div>
@@ -586,11 +637,22 @@ export default function TeacherDashboard() {
               {assignments.map((asgn) => {
                 const isOverdue = new Date(asgn.deadline) < new Date();
                 const displayStatus = isOverdue ? 'deactive' : (asgn.status || 'active');
+                const assignmentId = normalizeAssignmentId(asgn._id);
                 return (
                   // ✅ FIX: key uses _id instead of index
-                  <div key={asgn._id} className="theme-card border p-4 sm:p-6 rounded-2xl flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
+                  <div key={assignmentId || asgn._id} className="theme-card border p-4 sm:p-6 rounded-2xl flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
                     <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
-                      <input type="checkbox" checked={selectedAssignments.includes(asgn._id)} onChange={() => setSelectedAssignments((prev) => prev.includes(asgn._id) ? prev.filter((x) => x !== asgn._id) : [...prev, asgn._id])}/>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select assignment ${asgn.title || assignmentId}`}
+                        checked={isAssignmentSelected(selectedAssignments, assignmentId)}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() =>
+                          setSelectedAssignments((prev) =>
+                            toggleAssignmentSelection(prev, assignmentId)
+                          )
+                        }
+                      />
                       <div className="flex-1 min-w-0">
                       <h3 className="text-white font-bold text-base sm:text-lg break-words">{asgn.title}</h3>
                       <div className="flex flex-col gap-1 mt-2">

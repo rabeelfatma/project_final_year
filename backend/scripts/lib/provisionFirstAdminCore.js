@@ -145,6 +145,9 @@ async function provisionFirstAdmin(options) {
   let connected = false;
 
   try {
+    // Same Atlas SRV DNS workaround used by backend/config/db.js (QC-15C / QC-16B).
+    const { ensureSrvDnsResolvers } = require("../../config/mongoDns");
+    ensureSrvDnsResolvers(uri);
     await mongoose.connect(uri);
     connected = true;
 
@@ -185,6 +188,10 @@ async function provisionFirstAdmin(options) {
       role: "admin",
       department: "CS",
       isAllowedLogin: true,
+      approvalStatus: "approved",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+      approvedAt: new Date(),
     });
 
     return {

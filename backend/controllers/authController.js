@@ -8,7 +8,15 @@ const {
   passwordsMatch,
   toPublicUser,
   isPublicAdminBootstrapAllowed,
+  getLoginDenialReason,
 } = require("../utils/authPassword");
+const AuthRateLimit = require("../models/AuthRateLimit");
+const { assertWithinRateLimit, DEFAULT_WINDOW_MS } = require("../services/authRateLimit");
+
+function clientIp(req) {
+  const resolved = req.ip || req.socket?.remoteAddress || "unknown";
+  return String(resolved).replace(/^::ffff:/i, "");
+}
 
 // ==========================================
 // REGISTER USER (Admin, Teacher, or Student)
@@ -64,13 +72,20 @@ exports.registerUser = async (req, res) => {
     const hashedPassword = await hashPassword(passwordCheck.password);
 
     const newUserPayload = {
-      name: name.trim(),
+      name: name.trim().slice(0, 120),
       email: normalizedEmail,
       password: hashedPassword,
       role: userRole,
       department: department || "CS",
       program: program || null,
-      subject: subject || null
+      subject: subject || null,
+      // Admin-created accounts are immediately eligible to log in.
+      approvalStatus: "approved",
+      isAllowedLogin: true,
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+      approvedAt: new Date(),
+      approvedBy: req.user?._id || null,
     };
 
     if (userRole === "student") {
@@ -126,7 +141,7 @@ exports.registerUser = async (req, res) => {
 // ==========================================
 exports.loginUser = async (req, res) => {
   try {
-    const { email, password, name, role } = req.body;
+    const { email, password, role } = req.body;
 
     if (!email) {
       return res.status(400).json({ message: "Email is required" });
@@ -155,15 +170,13 @@ exports.loginUser = async (req, res) => {
       }
     }
 
-    if (user.role === "student" || user.role === "teacher") {
-      if (!name || !String(name).trim()) {
-        return res.status(400).json({ message: "Name is required for login" });
-      }
-      if (name.trim() !== user.name) {
-        return res.status(400).json({
-          message: `Invalid Name or Email for ${user.role}`
-        });
-      }
+    // Login is email + password only. Profile names stay on the user record
+    // and are returned after successful authentication (never used as a factor).
+
+    const denial = getLoginDenialReason(user);
+    if (denial) {
+      const status = user.approvalStatus === "pending" || user.approvalStatus === "rejected" ? 403 : 403;
+      return res.status(status).json({ message: denial });
     }
 
     if (!user.password) {
@@ -191,6 +204,197 @@ exports.loginUser = async (req, res) => {
     return res.status(500).json({
       message: "Server internal error",
       error: error.message
+    });
+  }
+};
+
+// ==========================================
+// PUBLIC TEACHER/STUDENT REGISTRATION REQUEST
+// Creates pending accounts only — never issues a session/JWT.
+// QC-18A: sends email verification; Admin approval is a separate gate.
+// ==========================================
+exports.requestPublicSignup = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body || {};
+    const {
+      getEmailConfig,
+    } = require("../services/transactionalEmail");
+    const {
+      issueEmailVerificationToken,
+      sendSignupVerificationEmail,
+    } = require("../services/emailVerificationService");
+
+    const emailConfig = getEmailConfig();
+    if (!emailConfig.configured) {
+      return res.status(503).json({
+        message:
+          "Registration email verification is temporarily unavailable. Please try again later.",
+        code: "EMAIL_NOT_CONFIGURED",
+      });
+    }
+
+    const trimmedName = typeof name === "string" ? name.trim().slice(0, 120) : "";
+    if (!trimmedName || trimmedName.length < 2) {
+      return res.status(400).json({ message: "Full name is required" });
+    }
+
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const userRole = normalizeRole(role);
+    if (userRole !== "teacher" && userRole !== "student") {
+      return res.status(400).json({
+        message: "Only Teacher or Student registration requests are accepted",
+      });
+    }
+
+    const passwordCheck = validatePasswordInput(password);
+    if (!passwordCheck.ok) {
+      return res.status(400).json({ message: passwordCheck.message });
+    }
+
+    const ip = clientIp(req);
+    const ipLimit = await assertWithinRateLimit(
+      AuthRateLimit,
+      `signup:ip:${ip}`,
+      8,
+      DEFAULT_WINDOW_MS
+    );
+    if (!ipLimit.ok) {
+      return res.status(429).json({
+        message: "Too many registration attempts. Please try again later.",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim().slice(0, 254);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
+    const emailLimit = await assertWithinRateLimit(
+      AuthRateLimit,
+      `signup:email:${normalizedEmail}`,
+      3,
+      DEFAULT_WINDOW_MS
+    );
+    if (!emailLimit.ok) {
+      return res.status(429).json({
+        message: "Too many registration attempts for this email. Please try again later.",
+      });
+    }
+
+    const userExists = await User.findOne({ email: normalizedEmail });
+    if (userExists) {
+      // Avoid account-enumeration detail while still blocking duplicates.
+      return res.status(400).json({
+        message: "Unable to create registration request for this email.",
+      });
+    }
+
+    const hashedPassword = await hashPassword(passwordCheck.password);
+
+    const newUserPayload = {
+      name: trimmedName,
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: userRole,
+      department: "CS",
+      approvalStatus: "pending",
+      isAllowedLogin: false,
+      emailVerified: false,
+      emailVerifiedAt: null,
+      adminNotifiedAt: null,
+      approvedAt: null,
+      approvedBy: null,
+      rejectedAt: null,
+      rejectedBy: null,
+    };
+
+    if (userRole === "student") {
+      const date = new Date();
+      const month = date.getMonth();
+      const year = date.getFullYear().toString().slice(-2);
+      const season = month < 6 ? "SP" : "FA";
+      const count = await User.countDocuments({ role: "student", department: "CS" });
+      const sequence = (count + 1).toString().padStart(3, "0");
+      newUserPayload.registrationNumber = `${season}${year}-BCS-${sequence}`;
+    }
+
+    const created = await User.create(newUserPayload);
+
+    const issued = await issueEmailVerificationToken(created);
+    const sent = await sendSignupVerificationEmail(created, issued.rawToken);
+    if (!sent.ok) {
+      // Account stays pending/unverified; applicant can use resend later when email recovers.
+      return res.status(201).json({
+        message:
+          "Your registration was saved, but the verification email could not be sent. Use Resend verification later or contact an administrator.",
+        status: "pending_verification",
+        verificationEmailSent: false,
+      });
+    }
+
+    return res.status(201).json({
+      message:
+        "Your registration request has been submitted. Please verify your email, then wait for Admin approval before logging in.",
+      status: "pending_verification",
+      verificationEmailSent: true,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: "Unable to create registration request for this email.",
+      });
+    }
+    console.error("SERVER ERROR DURING PUBLIC SIGNUP:", error.message);
+    return res.status(500).json({ message: "Database or server error" });
+  }
+};
+
+exports.verifyEmail = async (req, res) => {
+  try {
+    const {
+      verifyEmailWithToken,
+      createDefaultDeps,
+    } = require("../services/emailVerificationService");
+    const {
+      notifyAdminsOfVerifiedRegistration,
+    } = require("../services/registrationNotificationService");
+
+    const deps = createDefaultDeps();
+    deps.notifyAdminsOfVerifiedRegistration = notifyAdminsOfVerifiedRegistration;
+
+    const result = await verifyEmailWithToken(req.body?.token || req.query?.token, deps);
+    return res.status(result.status).json({
+      message: result.message,
+      ...(result.user ? { user: result.user } : {}),
+    });
+  } catch (error) {
+    console.error("VERIFY EMAIL ERROR:", error.message);
+    return res.status(500).json({ message: "Unable to verify email" });
+  }
+};
+
+exports.resendVerificationEmail = async (req, res) => {
+  try {
+    const {
+      resendVerificationEmail,
+    } = require("../services/emailVerificationService");
+    const result = await resendVerificationEmail({
+      email: req.body?.email,
+      ip: clientIp(req),
+    });
+    return res.status(result.status).json({
+      message: result.message,
+      ...(result.code ? { code: result.code } : {}),
+    });
+  } catch (error) {
+    console.error("RESEND VERIFICATION ERROR:", error.message);
+    return res.status(503).json({
+      message:
+        "Email verification is temporarily unavailable. Please try again later.",
+      code: "EMAIL_UNAVAILABLE",
     });
   }
 };

@@ -95,7 +95,7 @@ function HomeSection() {
   const navigate = useNavigate();
 
   const handleGetStarted = () => {
-    navigate("/role-selection");
+    navigate("/login");
   };
 
   return (
