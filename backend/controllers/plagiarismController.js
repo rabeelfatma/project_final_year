@@ -16,17 +16,33 @@ exports.check = async (req, res) => {
     const ids = Array.isArray(req.body.submissionIds) ? req.body.submissionIds.slice(0, 50) : [];
     if (!ids.length) return res.status(400).json({ message: "Select at least one submission." });
 
-    const selected = await Submission.find({ _id: { $in: ids }, teacherId: req.user._id })
+    // Teachers are scoped to their own submissions; admins may inspect by id.
+    const scope =
+      req.user.role === "admin"
+        ? { _id: { $in: ids } }
+        : { _id: { $in: ids }, teacherId: req.user._id };
+
+    const selected = await Submission.find(scope)
       .populate("student", "name email registrationNumber")
       .populate("assignment", "title points");
 
     const results = [];
     for (const submission of selected) {
-      const sameAssignment = await Submission.find({
-        assignment: submission.assignment?._id || submission.assignment,
-        teacherId: req.user._id,
-        _id: { $ne: submission._id },
-      }).populate("student", "name email registrationNumber");
+      const peerScope =
+        req.user.role === "admin"
+          ? {
+              assignment: submission.assignment?._id || submission.assignment,
+              _id: { $ne: submission._id },
+            }
+          : {
+              assignment: submission.assignment?._id || submission.assignment,
+              teacherId: req.user._id,
+              _id: { $ne: submission._id },
+            };
+      const sameAssignment = await Submission.find(peerScope).populate(
+        "student",
+        "name email registrationNumber"
+      );
 
       const currentPath = resolveAcademicFile(submission.file);
       const currentText = currentPath && fs.existsSync(currentPath) ? await extractText(currentPath) : "";

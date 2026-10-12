@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const teacherController = require('../controllers/teacherController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 const upload = require('../middleware/multerMiddleware');
 
 // ==========================================
 // MIDDLEWARE
 // ==========================================
-// Sabhi routes ko protect karne ke liye authentication middleware
-router.use(protect);
+// Authenticated teachers only — ownership checks remain in controller handlers.
+router.use(protect, authorize('teacher'));
 
 // ==========================================
 // 1. DASHBOARD & LISTING ROUTES

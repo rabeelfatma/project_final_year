@@ -29,7 +29,10 @@ async function generateJson(parts, maxAttempts = 4) {
         contents: [{ role: "user", parts }],
         generationConfig: { responseMimeType: "application/json" },
       });
-      return parseJsonResponse((await result.response).text());
+      const response = await result.response;
+      const raw =
+        typeof response.text === "function" ? await response.text() : response.text;
+      return parseJsonResponse(raw);
     } catch (error) {
       lastError = error;
       const message = error?.message || String(error);

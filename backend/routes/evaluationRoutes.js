@@ -5,15 +5,11 @@ const {
   publishResults, 
   updateTeacherGrading 
 } = require("../controllers/evaluationController");
-const { protect } = require("../middleware/authMiddleware");
+const { protect, authorize } = require("../middleware/authMiddleware");
 
-// Purana route (same functionality)
-router.post("/evaluate", protect, evaluateAssignment);
-
-// Naya route teacher ke marks update karne ke liye
-router.post("/update-grading", protect, updateTeacherGrading);
-
-// Results publish karne ka route
-router.post("/publish", protect, publishResults);
+// Legacy evaluation API — teachers only; ownership enforced in controller.
+router.post("/evaluate", protect, authorize("teacher"), evaluateAssignment);
+router.post("/update-grading", protect, authorize("teacher"), updateTeacherGrading);
+router.post("/publish", protect, authorize("teacher"), publishResults);
 
 module.exports = router;

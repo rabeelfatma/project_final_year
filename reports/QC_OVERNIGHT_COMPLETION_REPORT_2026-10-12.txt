@@ -1,0 +1,296 @@
+QUICKCHECK HUB — OVERNIGHT AUTONOMOUS COMPLETION REPORT
+Date: 2026-10-12
+Operator mode: Professor unavailable; authorized safe local coding + conditional GitHub releases
+Working repository: xohaibhsn/project_final_year (main)
+Original Rabeel repository: rabeelfatma/final_year_project (NOT modified)
+Local workspace: C:\Users\LENOVO\quickcheck-hub-final
+
+================================================================================
+A. SOURCE / GIT
+================================================================================
+Starting branch: main
+Starting HEAD (expected): bbf31453406da3e9a4a23765df1b29aa7cb686b2
+Starting uncommitted work: QC-10E protected uploads (14 paths), clean otherwise
+
+QC-10E-P commit:
+  SHA: 2f17358ffe1eac9949423bd1ff1591364f0ec7f2
+  Message: fix(files): protect academic uploads and harden storage paths
+  Push: SUCCESS to origin/main (bbf3145..2f17358)
+  Verified local SHA == origin/main after push
+
+Overnight coding commit (QC-10F→J), if gates pass:
+  Message: feat(academic): harden workflows and prepare evaluation handover
+  (See end of this file / git log for final SHA after release step)
+
+GitHub remote: https://github.com/xohaibhsn/project_final_year.git
+Rabeel original repo: not touched
+
+================================================================================
+B. QC-10E / QC-10E-P
+================================================================================
+Security fixes released:
+- Removed public express.static for academic uploads
+- Profile pictures remain on narrow /uploads/profilePictures static mount
+- Authenticated /api/files/* with role checks
+- Uploads-root path confinement + traversal rejection (UPLOADS_DIR aware)
+- Sanitized file API errors
+- Existing relative path compatibility (uploads/<folder>/<file>)
+- Gemini/plagiarism/message/profile path resolvers aligned
+
+Original upload inventory (untouched throughout overnight run): 87 files
+  assignments=45, submissions=40, profilePictures=1, generated=1
+
+QC-10E tests at release: 17 file-access PASS; full suite then 98 PASS
+Frontend build at QC-10E-P: PASS
+
+Hosted deployment (read-only Hostinger evidence at overnight inspection):
+- Panel URL: duke.com.pk Node Deployments
+- Banner/state: "Git provider is not connected"; Redeploy button disabled
+- Latest detailed deployment inspected: Completed, commit bbf31453
+  (admin-only registration), deployed 2026-10-12 08:47, Node 20.x
+- No Hostinger evidence yet that 2f17358 became Current during this session
+- No Hostinger env changes, no manual redeploy, no unlock performed
+- Public GET https://duke.com.pk/health returned HTTP 500 during overnight check
+  (DNS responds enough to hit an origin; site not healthy/evaluation-ready)
+
+================================================================================
+C. QC-10F — CORE ACADEMIC CODING
+================================================================================
+Workflows reviewed: Admin / Teacher / Student / AI grading / Plagiarism
+
+Confirmed bugs found + fixed:
+1. Teacher routes lacked authorize('teacher') — students could hit teacher APIs
+2. Student routes lacked authorize('student')
+3. Student UI could see AI_GRADED marks before publish — now PUBLISHED-only
+4. Submit had no deadline/startDate enforcement — added
+5. Live studentRoutes still used unsafe path joins — switched to uploadsPath helper
+6. Legacy /api/evaluation lacked teacher ownership — role + teacherId scoping
+7. evaluationController marked AI_GRADED even on failure — fail without fake grade
+8. plagiarism admin scope incorrectly forced teacherId=admin — admin can inspect by id
+9. geminiService did not await response.text() Promise — JSON parse failed for async text
+10. Student analytics counted unpublished grades — publish-gated
+
+Files modified (QC-10F+): see section H
+Tests: academicWorkflows.isolated.test.js + geminiService.isolated.test.js added
+Real Mongo/Gemini E2E: NOT performed (authorized prohibition)
+
+Unverified live requirements:
+- Real Gemini model catalog acceptance for configured GEMINI_MODEL
+- Real assignment/submit/grade cycle against Atlas
+- Hostinger full-mode academic E2E
+
+================================================================================
+D. QC-10G — DEMO MONGODB READINESS
+================================================================================
+Demo DB name: quickcheck_hub_demo
+Tools added:
+- backend/scripts/seedDemoData.js
+- backend/scripts/lib/demoSeedCore.js
+
+Behavior:
+- Default help/dry-run: NO DB connection
+- Execute requires --execute + --confirm DEMO_SEED_OK + MONGO_URI with DB name
+  quickcheck_hub_demo + admin email + password prompt/env
+- No collection drop/deleteMany
+- Duplicate-safe skip for existing emails/assignments
+- Does not overwrite existing Admin documents
+- Does not invent Rabeel's email (operator supplies --admin-email)
+- Fictional demo emails use @demo.quickcheck.local
+- No submission files created; never uses the 87 original uploads
+
+Planned accounts (future execute only):
+- Admin display name: Rabeel Ramzan (email operator-supplied)
+- Teacher 1 / Teacher 2
+- Student 1 / Student 2 / Student 3
+- Sample assignments A1 (Teacher1) and B1 (Teacher2)
+
+Tests: demoSeed.isolated.test.js PASS
+CONFIRMATION: No real MongoDB was connected or modified during this overnight run.
+
+PATH A: Professor configures Atlas demo URI
+PATH B: Rabeel configures Mongo on laptop — same source works via MONGO_URI
+
+================================================================================
+E. QC-10H — SUPPORTING MODULES
+================================================================================
+Reports/analytics: student scores publish-gated; role authorize already present
+Messaging: server sets sender; recipient validation present
+Notifications: recipient-scoped list/delete
+Plagiarism: protected path resolver + admin/teacher scope fix
+AI chat: left intact; requires Gemini key; no fake success
+Profile: path-safe avatar replacement retained
+
+Outstanding / BLOCKED items:
+- BLOCKED — durable Hostinger upload persistence (infra volume / approved object storage)
+- BLOCKED — live Resend sender ownership + delivery proof
+- BLOCKED — live Gemini model catalog verification on Google AI Studio
+- BLOCKED — class roster schema (no teacher↔student enrollment model; subject used in demo)
+- Orphan unmounted assignmentRoutes/submissionRoutes remain in tree but not mounted in appFull
+
+================================================================================
+F. QC-10I — PORTABLE WINDOWS / USB HANDOVER
+================================================================================
+Docs created:
+- docs/RABEEL_LAPTOP_SETUP.md
+- docs/RABEEL_EVALUATION_DEMO.md
+- docs/QUICKCHECK_INTEGRATION_CHECKLIST.md
+
+USB ZIP:
+  C:\Users\LENOVO\quickcheck-hub-handover\QuickCheck-Hub-Rabeel-Handover-2026-10-12.zip
+  Size ~2.21 MB, 172 entries
+  Includes source, lockfiles, docs, tests, .env.example files, HANDOVER_README.txt
+  Excludes: real .env, node_modules, .git, backend/uploads academic files, dumps
+  Danger scan for real .env / node_modules / uploads / .git: 0 hits
+
+Missing external data (intentional):
+- Real academic uploads
+- Real MongoDB dump
+- Production secrets
+
+Rabeel can clone GitHub (collaborator) OR extract USB ZIP and configure local .env.
+
+================================================================================
+G. QC-10J — SECURITY, PREVIEW, ACCEPTANCE
+================================================================================
+Security retained/hardened:
+- Maintenance default preserved
+- Optional APP_RUNTIME_MODE=preview (static product page only; APIs/uploads 503; no Mongo)
+- preview.html + tests added; disabled by default
+- File auth, admin-only registration, password reset stack preserved
+- npm audit findings observed in Hostinger logs historically (backend/frontend vuln counts);
+  no blind npm audit fix --force performed
+
+DNS/SSL/public:
+- duke.com.pk reachable enough to return HTTP 500 on /health overnight
+- Not accepted as healthy evaluation endpoint
+- No DNS/SSL modifications made
+
+Hostinger deployed SHA (evidence): bbf31453 Completed (Current detail page)
+GitHub HEAD after QC-10E-P: 2f17358 (may not yet be deployed; Git provider disconnected / Redeploy disabled)
+
+Maintenance/full-mode status: Hostinger left in maintenance; no unlock
+
+================================================================================
+H. OVERALL QUALITY
+================================================================================
+Backend automated tests (final overnight suite): 118 PASS / 0 FAIL
+  Prior overnight baseline after QC-10E: 98 PASS
+  New coverage: academic roles/publish visibility, demo seed safety, preview mode, Gemini mock bounds
+
+Frontend production build: PASS (vite) — re-run at final gate before second push
+Backend syntax checks: node --check on critical entry/controllers — PASS at gates
+git diff --check: PASS (CRLF warnings only)
+
+Changed/new file list for overnight coding (post-2f17358), expected:
+  backend/server.js
+  backend/public/preview.html
+  backend/package.json
+  backend/routes/teacherRoutes.js
+  backend/routes/studentRoutes.js
+  backend/routes/evaluationRoutes.js
+  backend/controllers/evaluationController.js
+  backend/controllers/plagiarismController.js
+  backend/controllers/analyticsController.js
+  backend/services/geminiService.js
+  backend/scripts/seedDemoData.js
+  backend/scripts/lib/demoSeedCore.js
+  backend/tests/academicWorkflows.isolated.test.js
+  backend/tests/demoSeed.isolated.test.js
+  backend/tests/previewMode.isolated.test.js
+  backend/tests/geminiService.isolated.test.js
+  docs/RABEEL_LAPTOP_SETUP.md
+  docs/RABEEL_EVALUATION_DEMO.md
+  docs/QUICKCHECK_INTEGRATION_CHECKLIST.md
+  reports/QC_OVERNIGHT_COMPLETION_REPORT_2026-10-12.txt
+
+Mocked vs genuine:
+- Mocked: route/controller isolation, Gemini provider responses in unit tests, demo seed execute with fake mongoose
+- Genuine local: path confinement, preview/maintenance HTTP behavior, build, auth/file suites already shipped
+- NOT genuine: hosted Mongo E2E, live Gemini, live Resend, Hostinger deploy of overnight commits
+
+================================================================================
+I. REMAINING HUMAN TASKS
+================================================================================
+1) Professor:
+   - Review overnight commits and this report
+   - Decide Hostinger deploy path (Git reconnect / Redeploy) for 2f17358 + overnight SHA
+   - Decide whether APP_RUNTIME_MODE stays maintenance, switches to preview, or later full
+   - Arrange Atlas demo URI and Rabeel email ownership confirmation
+   - Do not unlock full until Mongo + secrets ready
+
+2) Rabeel:
+   - Clone or USB extract project
+   - Create/enter MONGO_URI for quickcheck_hub_demo
+   - Run first-admin CLI with her real email
+   - Optional demo seed execute
+   - Practice evaluation demo locally
+
+3) MongoDB Atlas:
+   - Create quickcheck_hub_demo
+   - Network access + DB user
+   - Provide URI to laptop and/or Hostinger env
+
+4) Hostinger:
+   - Ensure deploy tracks intended SHA
+   - Set env vars when ready (never commit them)
+   - Durable uploads volume if needed
+   - Keep maintenance until approved
+
+5) Gemini:
+   - Verify GEMINI_MODEL against live Google AI Studio catalog
+   - Place GEMINI_API_KEY server-only
+
+6) Resend:
+   - Verified sender + RESEND_API_KEY + PUBLIC_APP_URL for recovery emails
+
+7) Public production readiness blockers:
+   - Healthy DNS/SSL + /health
+   - Full mode approval
+   - Real E2E with Mongo
+   - Upload durability plan
+
+================================================================================
+J. FINAL ACCEPTANCE MATRIX
+================================================================================
+Module                         | Status
+-------------------------------|------------------------------------------
+Auth login/JWT/tokenVersion    | IMPLEMENTED / TESTED WITH MOCKS
+Password reset (Resend adapter)| IMPLEMENTED / TESTED WITH MOCKS (live email NOT TESTED)
+Admin-only registration        | IMPLEMENTED / TESTED WITH MOCKS
+First-admin offline CLI        | IMPLEMENTED / TESTED WITH MOCKS
+Protected academic files       | IMPLEMENTED / TESTED WITH MOCKS
+Teacher assignment CRUD        | IMPLEMENTED / TESTED WITH MOCKS
+Student submit + deadlines     | IMPLEMENTED / TESTED WITH MOCKS
+Publish-gated student marks    | IMPLEMENTED / TESTED WITH MOCKS
+Gemini grading service         | IMPLEMENTED / TESTED WITH MOCKS (live provider NOT TESTED)
+Plagiarism local similarity    | IMPLEMENTED / TESTED WITH MOCKS
+Messaging / notifications      | IMPLEMENTED / TESTED WITH MOCKS
+Demo DB seeder                 | IMPLEMENTED / TESTED WITH MOCKS (execute NOT run)
+Preview mode                   | IMPLEMENTED / TESTED WITH MOCKS
+Hostinger production E2E       | NOT TESTED / BLOCKED (maintenance + Mongo)
+Real Mongo persistence         | NOT TESTED / BLOCKED
+DNS/SSL health                 | NOT TESTED as healthy (HTTP 500 observed on /health)
+
+================================================================================
+K. EXACT NEXT ACTION
+================================================================================
+When Professor wakes up:
+  1) Verify GitHub SHAs (QC-10E-P 2f17358 + overnight feat commit if pushed).
+  2) On Hostinger, confirm whether a newer deployment appeared; if still on bbf3145,
+     use an authorized deploy method (Git connect / Redeploy) — automation left Redeploy disabled
+     and did not change Hostinger settings.
+  3) Highest priority for evaluation readiness: configure Atlas quickcheck_hub_demo +
+     provision Rabeel's Admin via offline CLI, then run the local demo script.
+
+If Rabeel configures Mongo on her laptop:
+  USB/GitHub extract → npm install → backend/.env → MONGO_URI → first-admin CLI →
+  optional seedDemoData --execute → npm run dev → follow RABEEL_EVALUATION_DEMO.md
+
+CONFIRMATIONS:
+- No original academic uploads deleted/modified (count remains 87).
+- No real MongoDB writes.
+- No Resend/Gemini live calls in overnight automation.
+- No Hostinger env/DNS/SSL/runtime unlock changes.
+- Rabeel original GitHub repository not modified.
+================================================================================
+END OF REPORT

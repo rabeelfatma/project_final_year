@@ -3,6 +3,7 @@
  *
  * Locked staging/maintenance is the DEFAULT for `npm start` / Hostinger.
  * Full academic application loads ONLY when APP_RUNTIME_MODE=full (exact).
+ * Optional APP_RUNTIME_MODE=preview serves a static product page only — no Mongo/APIs/uploads.
  * Local development: use `npm run dev` (via dev-start.js) which sets full mode.
  */
 const path = require("path");
@@ -14,6 +15,7 @@ const RUNTIME_MODE = String(process.env.APP_RUNTIME_MODE || "")
   .trim()
   .toLowerCase();
 const isFullMode = RUNTIME_MODE === "full";
+const isPreviewMode = RUNTIME_MODE === "preview";
 
 if (isFullMode) {
   module.exports = require("./appFull");
@@ -25,10 +27,17 @@ if (isFullMode) {
   const PORT = Number(process.env.PORT) || 5000;
 
   const maintenanceHtmlPath = path.join(__dirname, "public", "maintenance.html");
+  const previewHtmlPath = path.join(__dirname, "public", "preview.html");
+
   let maintenanceHtml =
     "<!doctype html><html><head><meta charset='utf-8'><title>QuickCheck Hub</title></head>" +
     "<body style='font-family:system-ui;padding:2rem'><h1>QuickCheck Hub</h1>" +
     "<p>Staging maintenance mode. The application is not publicly available.</p></body></html>";
+
+  let previewHtml =
+    "<!doctype html><html><head><meta charset='utf-8'><title>QuickCheck Hub Preview</title></head>" +
+    "<body style='font-family:system-ui;padding:2rem'><h1>QuickCheck Hub</h1>" +
+    "<p>Frontend preview mode. Academic APIs and uploads are disabled.</p></body></html>";
 
   try {
     if (fs.existsSync(maintenanceHtmlPath)) {
@@ -38,20 +47,34 @@ if (isFullMode) {
     /* keep inline fallback */
   }
 
+  try {
+    if (fs.existsSync(previewHtmlPath)) {
+      previewHtml = fs.readFileSync(previewHtmlPath, "utf8");
+    }
+  } catch (_) {
+    /* keep inline fallback */
+  }
+
   app.get("/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
       service: "QuickCheck Hub",
-      mode: "maintenance",
+      mode: isPreviewMode ? "preview" : "maintenance",
     });
   });
 
   app.use((req, res) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
       return res.status(503).json({
-        message: "QuickCheck Hub is in staging maintenance mode.",
-        mode: "maintenance",
+        message: isPreviewMode
+          ? "QuickCheck Hub preview mode does not expose APIs or uploads."
+          : "QuickCheck Hub is in staging maintenance mode.",
+        mode: isPreviewMode ? "preview" : "maintenance",
       });
+    }
+
+    if (isPreviewMode) {
+      return res.status(200).type("html").send(previewHtml);
     }
 
     res.status(503).type("html").send(maintenanceHtml);
@@ -60,8 +83,13 @@ if (isFullMode) {
   const shouldListen = process.env.VERCEL !== "1";
   if (shouldListen) {
     app.listen(PORT, () => {
-      console.log(`🔒 QuickCheck Hub staging maintenance listening on port ${PORT}`);
-      console.log("APP_RUNTIME_MODE is not 'full' — APIs, uploads, MongoDB and SPA are locked.");
+      if (isPreviewMode) {
+        console.log(`👀 QuickCheck Hub frontend preview listening on port ${PORT}`);
+        console.log("APP_RUNTIME_MODE=preview — no MongoDB, APIs or uploads.");
+      } else {
+        console.log(`🔒 QuickCheck Hub staging maintenance listening on port ${PORT}`);
+        console.log("APP_RUNTIME_MODE is not 'full' — APIs, uploads, MongoDB and SPA are locked.");
+      }
     });
   }
 

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuickCheck Hub — Preview</title>
+  <style>
+    :root {
+      --bg0: #0b1220;
+      --bg1: #142033;
+      --text: #e8eef7;
+      --muted: #9db0c9;
+      --accent: #3d8bfd;
+      --line: rgba(255,255,255,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Georgia, serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 420px at 10% -10%, rgba(61,139,253,.28), transparent 60%),
+        radial-gradient(700px 380px at 90% 0%, rgba(56,189,248,.16), transparent 55%),
+        linear-gradient(160deg, var(--bg0), var(--bg1));
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 12vh 24px 48px;
+    }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 12px;
+    }
+    p { color: var(--muted); line-height: 1.6; font-size: 1.05rem; }
+    .badge {
+      display: inline-block;
+      border: 1px solid var(--line);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font: 600 12px/1 "Segoe UI", sans-serif;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 18px;
+    }
+    ul { color: var(--muted); line-height: 1.7; padding-left: 1.2rem; }
+    .note {
+      margin-top: 28px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.03);
+      font-family: "Segoe UI", sans-serif;
+      font-size: .95rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="badge">Frontend preview mode</div>
+    <h1>QuickCheck Hub</h1>
+    <p>
+      Automatic Assignment Checker for Admin, Teacher and Student workflows.
+      This host is running a <strong style="color:var(--text)">read-only product preview</strong>.
+    </p>
+    <ul>
+      <li>Academic APIs are disabled</li>
+      <li>No database connection is opened</li>
+      <li>Uploads, signup and academic grading data are not available</li>
+    </ul>
+    <div class="note">
+      Full evaluation access requires an authorized operator to configure MongoDB and set
+      <code>APP_RUNTIME_MODE=full</code> after security checks. This page is not the live academic system.
+    </div>
+  </main>
+</body>
+</html>

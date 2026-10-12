@@ -2,7 +2,10 @@ const Assignment = require("../models/Assignment");
 const User = require("../models/User");
 const Submission = require("../models/Submission");
 
+// Teacher/admin analytics may count AI/manual graded work before publish.
 const GRADED = ["graded", "GRADED", "AI_GRADED", "PUBLISHED", "Graded"];
+// Student-facing scores must wait for teacher publish.
+const STUDENT_VISIBLE = ["PUBLISHED"];
 
 function monthBuckets(count = 6) {
   const result = [];
@@ -18,15 +21,23 @@ function monthBuckets(count = 6) {
 exports.getStudentDashboardStats = async (req, res) => {
   try {
     const submissions = await Submission.find({ student: req.user._id }).populate("assignment", "title points subject").sort({ createdAt: 1 });
-    const graded = submissions.filter((s) => GRADED.includes(s.status) && Number(s.totalMarks) > 0 && Number.isFinite(Number(s.marks)));
+    const graded = submissions.filter((s) => {
+      const mark = Number(s.marks ?? s.aiScore);
+      return (
+        STUDENT_VISIBLE.includes(s.status) &&
+        Number(s.totalMarks) > 0 &&
+        Number.isFinite(mark)
+      );
+    });
+    const scoreOf = (s) => Number(s.marks ?? s.aiScore);
     const averageScore = graded.length
-      ? Math.round(graded.reduce((sum, s) => sum + (Number(s.marks) / Number(s.totalMarks)) * 100, 0) / graded.length)
+      ? Math.round(graded.reduce((sum, s) => sum + (scoreOf(s) / Number(s.totalMarks)) * 100, 0) / graded.length)
       : 0;
 
     res.json({
       performanceData: graded.slice(-8).map((s, index) => ({
         month: s.assignment?.title?.slice(0, 12) || String(index + 1),
-        score: Math.round((Number(s.marks) / Number(s.totalMarks)) * 100),
+        score: Math.round((scoreOf(s) / Number(s.totalMarks)) * 100),
       })),
       pieData: [
         { name: "Submitted", value: submissions.length },
