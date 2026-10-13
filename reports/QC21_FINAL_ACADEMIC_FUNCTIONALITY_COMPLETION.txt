@@ -152,12 +152,18 @@ Exact files changed/added:
 F. GITHUB & HOSTINGER
 ================================================================================
 
-Release commit: (filled after push)
-Push: (filled after push)
-origin/main: (filled after push)
+Release commit: bfe097c942551949a999bdd895305ea49edeeb50
+Message: feat(quickcheck): complete academic grading and results workflow
+Push: SUCCESS bb1a29e..bfe097c → origin/main (no force)
+origin/main: bfe097c (matches local HEAD)
 Hostinger: allow auto-deploy; do NOT change GEMINI_API_KEY / GEMINI_MODEL / Mongo / Resend
 Exact hPanel SHA: NOT VERIFIED
-Production health smoke: rechecked after deploy wait
+Live bundle marker: index-BCZ9sV25.js (contains Publish AI result / Submit text answer)
+Production health smoke:
+  /api/health mode=full LIVE VERIFIED
+  /, /login, /signup, /admin → 200 LIVE VERIFIED
+  /api/notifications → 401 LIVE VERIFIED
+  New academic UI markers present LIVE VERIFIED
 
 ================================================================================
 G. REMAINING WORK
