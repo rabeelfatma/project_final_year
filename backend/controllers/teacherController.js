@@ -347,7 +347,7 @@ exports.updateAssignment = async (req, res) => {
 
         const oldPath = normalizeFilePath(current.file);
 
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        if (oldPath && fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
 
       }
 
@@ -411,7 +411,7 @@ exports.deleteAssignment = async (req, res) => {
 
       const filePath = normalizeFilePath(deleted.file);
 
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     }
 
@@ -755,9 +755,7 @@ exports.evaluateWithGemini = async (req, res) => {
 
         const filePath = normalizeFilePath(submission.file);
 
-
-
-        if (!fs.existsSync(filePath)) {
+        if (!filePath || !fs.existsSync(filePath)) {
 
           results.push({
 
@@ -959,6 +957,7 @@ exports.evaluateWithGemini = async (req, res) => {
 
 
 
+        // Scores stay teacher-only until publish — do not leak marks in notifications.
         await createNotification({
 
           recipient: submission.student,
@@ -969,7 +968,7 @@ exports.evaluateWithGemini = async (req, res) => {
 
             submission.assignment?.title || "Your assignment"
 
-          }: ${ai.score}/${totalMarks}.`,
+          } was evaluated. Feedback will appear after your teacher publishes the result.`,
 
           type: "grade",
 
@@ -1153,23 +1152,20 @@ exports.evaluateAssignment = async (req, res) => {
 
 
 
+    const published = submission.status === "PUBLISHED";
     await createNotification({
 
       recipient: submission.student,
 
-      title:
+      title: published ? "Result published" : "Assignment evaluated",
 
-        submission.status === "PUBLISHED"
-
-          ? "Result published"
-
-          : "Assignment evaluated",
-
-      message: `Your ${
-
-        submission.assignment?.title || "assignment"
-
-      } result is ${marks}/${totalMarks}.`,
+      message: published
+        ? `Your ${
+            submission.assignment?.title || "assignment"
+          } result is ${marks}/${totalMarks}.`
+        : `Your ${
+            submission.assignment?.title || "assignment"
+          } was evaluated. Scores appear after your teacher publishes the result.`,
 
       type: "grade",
 
@@ -1357,7 +1353,7 @@ exports.deleteAssignmentsBulk = async (req, res) => {
 
         try {
 
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
         } catch (_) {}
 
@@ -1441,7 +1437,7 @@ exports.deleteSubmission = async (req, res) => {
 
       const filePath = normalizeFilePath(row.file);
 
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     } catch (_) {}
 
@@ -1501,7 +1497,7 @@ exports.deleteSubmissionsBulk = async (req, res) => {
 
         const filePath = normalizeFilePath(row.file);
 
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
       } catch (_) {}
 

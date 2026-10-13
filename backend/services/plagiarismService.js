@@ -158,55 +158,5 @@ function compareTexts(firstText, secondText) {
   );
 }
 
-async function extractText(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-
-  // Extract text from DOCX files
-  if (extension === ".docx") {
-    const result = await mammoth.extractRawText({ path: filePath });
-    return result.value || "";
-  }
-
-  // Read supported text and code files
-  if (TEXT_EXTENSIONS.includes(extension)) {
-    return fs.readFileSync(filePath, "utf8");
-  }
-
-  // Extract text from PDF files
-  if (extension === ".pdf") {
-    try {
-      const pdfModule = require("pdf-parse");
-      const buffer = fs.readFileSync(filePath);
-
-      // Compatibility with older pdf-parse versions
-      if (typeof pdfModule === "function") {
-        const result = await pdfModule(buffer);
-        return result.text || "";
-      }
-
-      // Compatibility with newer pdf-parse versions
-      if (pdfModule.PDFParse) {
-        const parser = new pdfModule.PDFParse({ data: buffer });
-
-        try {
-          const result = await parser.getText();
-          return result.text || "";
-        } finally {
-          if (typeof parser.destroy === "function") {
-            await parser.destroy();
-          }
-        }
-      }
-
-      return "";
-    } catch (error) {
-      console.warn("PDF text extraction failed:", error.message);
-      return "";
-    }
-  }
-
-  return "";
-}
-
 exports.extractText = extractText;
 exports.compareTexts = compareTexts;

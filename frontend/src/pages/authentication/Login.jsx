@@ -159,32 +159,40 @@ export default function Login() {
         {msg && <Alert message={msg} />}
 
         {!showForm && (
-          <div className="grid gap-3" role="listbox" aria-label="Select login role">
-            {ROLES.map(({ id, title, description, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="option"
-                aria-selected={selectedRole === id}
-                onClick={() => selectRole(id)}
-                className="group w-full text-left rounded-xl border border-slate-700/80 bg-slate-900/40 px-4 py-4 transition-all hover:border-sky-400 hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              >
-                <div className="flex items-start gap-4">
-                  <span className="mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400 group-hover:bg-sky-500 group-hover:text-white transition-colors">
-                    <Icon size={22} aria-hidden="true" />
-                  </span>
-                  <span>
-                    <span className="block text-sky-300 font-black uppercase tracking-widest text-sm">
-                      {title}
+          <>
+            <div className="grid gap-3" role="listbox" aria-label="Select login role">
+              {ROLES.map(({ id, title, description, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="option"
+                  aria-selected={selectedRole === id}
+                  onClick={() => selectRole(id)}
+                  className="group w-full text-left rounded-xl border border-slate-700/80 bg-slate-900/40 px-4 py-4 transition-all hover:border-sky-400 hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                >
+                  <div className="flex items-start gap-4">
+                    <span className="mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400 group-hover:bg-sky-500 group-hover:text-white transition-colors">
+                      <Icon size={22} aria-hidden="true" />
                     </span>
-                    <span className="block text-[var(--text-faint)] text-sm mt-1">
-                      {description}
+                    <span>
+                      <span className="block text-sky-300 font-black uppercase tracking-widest text-sm">
+                        {title}
+                      </span>
+                      <span className="block text-[var(--text-faint)] text-sm mt-1">
+                        {description}
+                      </span>
                     </span>
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-center text-[var(--text-faint)] mt-6 text-[11px] font-bold uppercase tracking-[0.2em]">
+              Don&apos;t have an account?{" "}
+              <Link to="/signup" className="text-sky-400 hover:underline">
+                Sign Up
+              </Link>
+            </p>
+          </>
         )}
 
         {showForm && (
@@ -224,13 +232,13 @@ export default function Login() {
               </button>
             </div>
 
-            <div className="flex items-center justify-between mb-6 text-[11px] font-bold">
-              <Link
-                to="/signup"
-                className="text-sky-400 hover:underline opacity-90"
-              >
-                Create Account / Sign Up
-              </Link>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6 text-[11px] font-bold">
+              <p className="text-[var(--text-faint)] uppercase tracking-widest">
+                Don&apos;t have an account?{" "}
+                <Link to="/signup" className="text-sky-400 hover:underline">
+                  Sign Up
+                </Link>
+              </p>
               <Link
                 to="/forgot-password"
                 className="text-sky-400 hover:underline opacity-90"

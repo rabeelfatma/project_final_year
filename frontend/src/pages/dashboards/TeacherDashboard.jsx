@@ -205,7 +205,7 @@ export default function TeacherDashboard() {
       if (failures.length) {
         alert(`AI grading finished. ${failures.filter((x) => x.status === "Success").length} checked successfully; ${failures.length} failed.\n\n${failures.slice(0, 5).map((x) => x.error || x.status).join("\n")}`);
       } else {
-        alert("✅ AI Grading Completed. Students can see the checked score and feedback in Checked Results.");
+        alert("✅ AI Grading Completed. Publish results to release scores and feedback to students.");
       }
       setSelectedSubmissions([]);
       fetchAllData();
@@ -468,7 +468,7 @@ export default function TeacherDashboard() {
               <SidebarItem icon={<PlusCircle size={18}/>}    label={editingId ? 'Editing Mode' : 'Create Assignment'} active={activeTab==='create'} onClick={() => setActiveTab('create')} />
               <SidebarItem icon={<BookOpen size={18}/>}      label="My Assignments"    active={activeTab==='assignments'}  onClick={() => { setActiveTab('assignments'); setEditingId(null); }} />
               <SidebarItem icon={<ClipboardCheck size={18}/>} label="Submissions"      active={activeTab==='submissions'}  onClick={() => setActiveTab('submissions')} />
-              <SidebarItem icon={<ShieldAlert size={18}/>} label="Plagiarism"       active={activeTab==='plagiarism'}   onClick={() => setActiveTab('plagiarism')} />
+              <SidebarItem icon={<ShieldAlert size={18}/>} label="Similarity"       active={activeTab==='plagiarism'}   onClick={() => setActiveTab('plagiarism')} />
               <SidebarItem icon={<Users size={18}/>}         label="Students"          active={activeTab==='students'}     onClick={() => setActiveTab('students')} />
             </nav>
           </div>

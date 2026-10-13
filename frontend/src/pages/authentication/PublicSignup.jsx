@@ -269,9 +269,9 @@ export default function PublicSignup() {
             )}
 
             <p className="text-center text-[var(--text-faint)] mt-6 text-[11px] font-bold uppercase tracking-[0.2em]">
-              Already registered?{" "}
+              Already have an account?{" "}
               <Link to="/login" className="text-sky-400 hover:underline">
-                Back to Login
+                Log In
               </Link>
             </p>
           </form>

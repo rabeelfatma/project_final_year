@@ -94,7 +94,7 @@ function GlobalStyles() {
 function HomeSection() {
   const navigate = useNavigate();
 
-  const handleGetStarted = () => {
+  const handleLogin = () => {
     navigate("/login");
   };
 
@@ -114,18 +114,19 @@ function HomeSection() {
               QuickCheck Hub provides AI-powered evaluation for programming
               and text-based assignments using Gemini AI. It offers
               role-based access for Students, Teachers, and Admins. Students
-              can submit assignments and receive instant feedback and
-              grading. The system performs structural plagiarism detection
-              with similarity scores. Teachers can view performance
-              analytics and trends.
+              can submit assignments and receive feedback after teachers
+              publish results. Teachers can run peer similarity checks on
+              submissions from the same assignment and review analytics.
             </p>
 
             <div className="animate-fadeInUp" style={{ animationDelay: "300ms" }}>
               <button
-                onClick={handleGetStarted}
+                type="button"
+                onClick={handleLogin}
                 className="inline-flex items-center gap-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold px-6 py-3 rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(56,189,248,0.55)] shadow-[0_0_25px_rgba(56,189,248,0.4)] cursor-pointer"
+                aria-label="Login"
               >
-                Get Started
+                Login
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

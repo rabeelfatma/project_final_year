@@ -18,7 +18,7 @@ export default function FeaturesSection() {
     },
     {
       title: "Structural Plagiarism Detection",
-      desc: "AI-based similarity analysis compares submissions and generates a plagiarism report with a similarity score.",
+      desc: "Peer similarity analysis compares extracted text from submissions on the same assignment and scores overlap for teacher review.",
     },
     {
       title: "Automated Grading & Feedback",

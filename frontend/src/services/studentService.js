@@ -30,20 +30,11 @@ const studentService = {
   // 4. Submit Assignment
   submitAssignment: async (assignmentId, formData) => {
     try {
-      // ✅ FIX: Token from localStorage attached for auth
-      const token = localStorage.getItem('token');
-
+      // Let the browser set multipart boundary. Auth header comes from api.js.
       const response = await api.post(
         `/student/assignments/${assignmentId}/submit`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            'Authorization': `Bearer ${token}`,
-          },
-        }
+        formData
       );
-
       return response.data;
     } catch (error) {
       const errorMsg = error.response?.data?.message || error.message;
