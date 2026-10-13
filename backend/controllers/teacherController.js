@@ -1232,6 +1232,9 @@ exports.publishResults = async (req, res) => {
     let publishedCount = 0;
     for (const submission of submissions) {
 
+      // Already published — skip to avoid duplicate student notifications.
+      if (submission.status === "PUBLISHED") continue;
+
       const hasTeacherMarks =
         submission.marks !== null &&
         submission.marks !== undefined &&

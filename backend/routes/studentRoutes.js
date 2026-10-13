@@ -96,9 +96,15 @@ router.get("/assignments", async (req, res) => {
           student: req.user._id,
         }).lean();
         const canShowResult = submission && PUBLISHED.includes(submission.status);
+        // Until publish, do not expose AI_GRADED/graded process status to students.
+        const studentStatus = !submission
+          ? "pending"
+          : canShowResult
+            ? "PUBLISHED"
+            : "submitted";
         return {
           ...assignment,
-          status: submission ? submission.status : "pending",
+          status: studentStatus,
           marks: canShowResult ? submission.marks ?? submission.aiScore : null,
           totalMarks: submission?.totalMarks || assignment.points || null,
           feedback: canShowResult ? submission.feedback || submission.aiFeedback || "" : "",
@@ -180,8 +186,8 @@ router.post("/submissions/bulk-delete", async (req, res) => {
 });
 
 router.post("/assignments/:id/submit", upload.single("file"), async (req, res) => {
+  let createdTextPath = null;
   try {
-    if (!req.file) return res.status(400).json({ message: "File upload required" });
     const assignment = await Assignment.findById(req.params.id);
     if (!assignment) return res.status(404).json({ message: "Assignment not found" });
     if (assignment.status !== "active") {
@@ -196,12 +202,36 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       return res.status(400).json({ message: "The submission deadline has passed." });
     }
 
+    const answerText = String(req.body?.answerText || req.body?.text || "").trim();
+    let storedFile = req.file;
+    if (!storedFile && answerText) {
+      // Text answer path: persist as a .txt under submissions for Gemini extract + demo durability.
+      const uploadsRoot = getUploadsRoot();
+      const submissionsDir = path.join(uploadsRoot, "submissions");
+      if (!fs.existsSync(submissionsDir)) fs.mkdirSync(submissionsDir, { recursive: true });
+      const safeBase = `text-${req.user._id}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.txt`;
+      createdTextPath = path.join(submissionsDir, safeBase);
+      fs.writeFileSync(createdTextPath, answerText.slice(0, 120000), "utf8");
+      storedFile = {
+        filename: safeBase,
+        originalname: "answer.txt",
+        mimetype: "text/plain",
+        path: createdTextPath,
+      };
+    }
+
+    if (!storedFile) {
+      return res.status(400).json({
+        message: "Upload a supported file or provide a short text answer.",
+      });
+    }
+
     const exists = await Submission.findOne({
       assignment: assignment._id,
       student: req.user._id,
     });
     if (exists) {
-      const uploadedPath = path.resolve(req.file.path);
+      const uploadedPath = path.resolve(storedFile.path);
       const uploadsRoot = path.resolve(getUploadsRoot());
       if (uploadedPath.startsWith(uploadsRoot + path.sep) && fs.existsSync(uploadedPath)) {
         await fs.promises.unlink(uploadedPath).catch(() => {});
@@ -209,6 +239,9 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       return res.status(400).json({ message: "Already submitted" });
     }
     if (!assignment.teacher) {
+      if (createdTextPath && fs.existsSync(createdTextPath)) {
+        await fs.promises.unlink(createdTextPath).catch(() => {});
+      }
       return res.status(400).json({ message: "Assignment is not linked to a teacher." });
     }
 
@@ -216,9 +249,9 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       assignment: assignment._id,
       student: req.user._id,
       teacherId: assignment.teacher,
-      file: `uploads/submissions/${req.file.filename}`,
-      originalFileName: req.file.originalname || req.file.filename,
-      fileMimeType: req.file.mimetype || "",
+      file: `uploads/submissions/${storedFile.filename}`,
+      originalFileName: storedFile.originalname || storedFile.filename,
+      fileMimeType: storedFile.mimetype || "",
       status: "submitted",
       totalMarks: assignment.points || null,
       submittedAt: new Date(),
@@ -237,6 +270,9 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       submission,
     });
   } catch (error) {
+    if (createdTextPath && fs.existsSync(createdTextPath)) {
+      await fs.promises.unlink(createdTextPath).catch(() => {});
+    }
     console.error("SUBMISSION ERROR:", error);
     res.status(500).json({ message: "Server error while submitting assignment." });
   }

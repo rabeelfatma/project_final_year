@@ -48,6 +48,8 @@ export default function StudentDashboard() {
 
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
+  const [answerTextDraft, setAnswerTextDraft] = useState("");
+
 
 
   const userName = localStorage.getItem("userName") || "Student";
@@ -142,7 +144,8 @@ export default function StudentDashboard() {
 
         setCheckedResults(submissions
 
-          .filter((s) => ['graded', 'GRADED', 'PUBLISHED', 'AI_GRADED', 'Graded'].includes(s.status) && s.assignment)
+          // Only published results are student-visible (API also nulls unpublished scores).
+          .filter((s) => s.status === 'PUBLISHED' && s.assignment)
 
           .map((s) => ({
 
@@ -266,6 +269,58 @@ export default function StudentDashboard() {
 
 
 
+  const handleTextSubmit = async (asgnId) => {
+
+    const answerText = String(answerTextDraft || "").trim();
+
+    if (!answerText) {
+
+      alert("Enter a short text answer, or upload a file.");
+
+      return;
+
+    }
+
+    if (!localStorage.getItem('token')) {
+
+      alert("Session expired. Please login again.");
+
+      handleLogout();
+
+      return;
+
+    }
+
+    setUploadStatus({ id: asgnId, loading: true, success: false });
+
+    try {
+
+      await studentService.submitAssignment(asgnId, { answerText });
+
+      setAnswerTextDraft("");
+
+      setUploadStatus({ id: asgnId, loading: false, success: true });
+
+      await fetchAllData();
+
+      setSelectedAsgn(null);
+
+      setTimeout(() => setUploadStatus({ id: null, loading: false, success: false }), 3000);
+
+    } catch (err) {
+
+      const errMsg = err.response?.data?.message || "Submission Failed: Check if you are logged in.";
+
+      alert(errMsg);
+
+      setUploadStatus({ id: null, loading: false, success: false });
+
+    }
+
+  };
+
+
+
   const handleLogout = () => {
 
     localStorage.clear();
@@ -348,13 +403,15 @@ export default function StudentDashboard() {
 
   const totalCount = assignments.length;
 
-  const gradedCount = assignments.filter(a => a.status === 'graded' || a.status === 'GRADED' || a.status === 'PUBLISHED' || a.status === 'Graded').length;
+  const gradedCount = assignments.filter(a => a.status === 'PUBLISHED').length;
 
   const submittedCount = assignments.filter(a => a.status === 'submitted' || a.status === 'Submitted').length;
 
   const pendingCount = assignments.filter(a => a.status === 'pending' || !a.status).length;
 
-  const checkedAssignments = checkedResults.length ? checkedResults : assignments.filter(a => ['graded', 'GRADED', 'PUBLISHED', 'AI_GRADED', 'Graded'].includes(a.status));
+  const checkedAssignments = checkedResults.length
+    ? checkedResults
+    : assignments.filter((a) => a.status === 'PUBLISHED');
 
 
 
@@ -794,7 +851,7 @@ export default function StudentDashboard() {
 
              <div className="theme-card border w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 relative max-h-[94dvh] sm:max-h-[90vh] overflow-y-auto my-0 sm:my-auto">
 
-                <button type="button" onClick={() => setSelectedAsgn(null)} className="absolute top-4 right-4 sm:top-8 sm:right-8 text-slate-500 hover:text-white transition-all p-2" aria-label="Close assignment details"><X size={24}/></button>
+                <button type="button" onClick={() => { setSelectedAsgn(null); setAnswerTextDraft(""); }} className="absolute top-4 right-4 sm:top-8 sm:right-8 text-slate-500 hover:text-white transition-all p-2" aria-label="Close assignment details"><X size={24}/></button>
 
                 <h2 className="text-xl sm:text-2xl font-black text-white italic uppercase mb-2 pr-10 break-words">{selectedAsgn.title}</h2>
 
@@ -901,6 +958,56 @@ export default function StudentDashboard() {
                   <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
 
                 </div>
+
+                {!selectedAsgn.isSubmitted && !selectedAsgn.submissionId && (
+
+                  <div className="mt-4 space-y-3">
+
+                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500">
+
+                      Short text answer (demo-friendly)
+
+                      <textarea
+
+                        value={answerTextDraft}
+
+                        onChange={(e) => setAnswerTextDraft(e.target.value)}
+
+                        rows={4}
+
+                        maxLength={120000}
+
+                        placeholder="Type a short harmless answer for AI grading…"
+
+                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-200 normal-case font-medium tracking-normal"
+
+                      />
+
+                    </label>
+
+                    <button
+
+                      type="button"
+
+                      disabled={uploadStatus.loading && uploadStatus.id === selectedAsgn._id}
+
+                      onClick={() => handleTextSubmit(selectedAsgn._id)}
+
+                      className="w-full py-4 bg-sky-500 text-black font-black uppercase text-[10px] rounded-xl hover:bg-sky-400 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+
+                    >
+
+                      <FileUp size={16}/>
+
+                      {uploadStatus.loading && uploadStatus.id === selectedAsgn._id ? 'Submitting…' : 'Submit text answer'}
+
+                    </button>
+
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest text-center">Or use Upload on the assignment row for a file</p>
+
+                  </div>
+
+                )}
 
                 {selectedAsgn.submissionId && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
 

@@ -17,13 +17,6 @@ exports.evaluateAssignment = async (req, res) => {
       return res.status(400).json({ error: "Teacher grading instructions are required." });
     }
 
-    let dynamicTotalMarks = 10;
-    const marksMatch =
-      instructions.match(/(\d+)\s*marks/i) || instructions.match(/out of\s*(\d+)/i);
-    if (marksMatch) {
-      dynamicTotalMarks = parseInt(marksMatch[1], 10);
-    }
-
     if (!submissionIds || !Array.isArray(submissionIds) || !submissionIds.length) {
       return res.status(400).json({ error: "No submission IDs provided" });
     }
@@ -31,10 +24,22 @@ exports.evaluateAssignment = async (req, res) => {
     const batch = submissionIds.slice(0, 60);
     const results = await Promise.all(
       batch.map(async (id) => {
-        const sub = await Submission.findOne(ownedQuery(req, { _id: id }));
+        const sub = await Submission.findOne(ownedQuery(req, { _id: id })).populate(
+          "assignment",
+          "points title"
+        );
         if (!sub) return null;
 
         try {
+          const totalMarks = Number(sub.assignment?.points || sub.totalMarks);
+          if (!Number.isFinite(totalMarks) || totalMarks <= 0) {
+            return {
+              id,
+              status: "Failed",
+              error: "This assignment has no valid maximum marks configured.",
+            };
+          }
+
           let filePath;
           try {
             filePath = resolveStoredUploadPath(sub.file);
@@ -59,22 +64,30 @@ exports.evaluateAssignment = async (req, res) => {
           } else if ([".txt", ".md", ".py", ".js", ".java", ".cpp", ".sql"].includes(ext)) {
             extractedText = fs.readFileSync(filePath, "utf8");
           } else {
-            extractedText = `File format ${ext} detected. Perform visual/manual check.`;
+            // Do not invent placeholder text for unsupported formats.
+            return {
+              id,
+              status: "Failed",
+              error: `Unsupported file format ${ext || "(unknown)"} for legacy evaluation path.`,
+            };
           }
 
           if (!extractedText || extractedText.trim() === "") {
-            throw new Error("File is empty or could not be read");
+            return {
+              id,
+              status: "Failed",
+              error: "File is empty or could not be read.",
+            };
           }
 
-          const finalPrompt = `${instructions}. Strictly evaluate out of ${dynamicTotalMarks}.`;
-          const aiResult = await checkAssignment(extractedText, finalPrompt, dynamicTotalMarks);
+          const aiResult = await checkAssignment(extractedText, instructions, totalMarks);
 
           return await Submission.findOneAndUpdate(
             ownedQuery(req, { _id: id }),
             {
-              aiScore: aiResult.score || 0,
+              aiScore: aiResult.score,
               aiFeedback: aiResult.feedback || "AI check completed.",
-              totalMarks: dynamicTotalMarks,
+              totalMarks,
               status: "AI_GRADED",
             },
             { new: true }
@@ -137,6 +150,7 @@ exports.publishResults = async (req, res) => {
     );
     let published = 0;
     for (const submission of submissions) {
+      if (submission.status === "PUBLISHED") continue;
       const hasTeacherMarks =
         submission.marks !== null &&
         submission.marks !== undefined &&

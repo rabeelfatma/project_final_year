@@ -47,14 +47,36 @@ async function generateJson(parts, maxAttempts = 4) {
   }
 
   const message = lastError?.message || String(lastError || "Unknown Gemini error");
+  const safeMessage = String(message)
+    .replace(/AIza[0-9A-Za-z_\-]{10,}/g, "[redacted]")
+    .replace(/key[=:]\s*[^\s,]+/gi, "key=[redacted]");
 
-  if (/503|unavailable|overload|temporar/i.test(message)) {
-    throw new Error(`Gemini is temporarily unavailable. Submission was NOT graded as zero. Retry later. Details: ${message}`);
+  if (/401|API[_ ]?key|unauthor/i.test(safeMessage)) {
+    throw new Error(
+      "Gemini authentication failed (401). Check GEMINI_API_KEY on the server. Submission was NOT graded."
+    );
   }
-  if (/429|quota|rate limit/i.test(message)) {
-    throw new Error(`Gemini quota/rate limit reached. Check Google AI Studio quota or GEMINI_MODEL. Details: ${message}`);
+  if (/403|permission|forbidden/i.test(safeMessage)) {
+    throw new Error(
+      "Gemini permission denied (403). The configured key cannot use this model or API. Submission was NOT graded."
+    );
   }
-  throw new Error(`AI request failed: ${message}`);
+  if (/404|not found|is not found|unsupported|unknown model/i.test(safeMessage)) {
+    throw new Error(
+      `Gemini model not available (404). Current GEMINI_MODEL may be unsupported for this key. Submission was NOT graded. Details: ${safeMessage}`
+    );
+  }
+  if (/503|unavailable|overload|temporar/i.test(safeMessage)) {
+    throw new Error(
+      `Gemini is temporarily unavailable. Submission was NOT graded as zero. Retry later. Details: ${safeMessage}`
+    );
+  }
+  if (/429|quota|rate limit/i.test(safeMessage)) {
+    throw new Error(
+      `Gemini quota/rate limit reached. Check Google AI Studio quota or GEMINI_MODEL. Details: ${safeMessage}`
+    );
+  }
+  throw new Error(`AI request failed: ${safeMessage}`);
 }
 
 exports.checkAssignment = async (text, teacherInstructions, totalMarks, media = []) => {

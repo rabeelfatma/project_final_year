@@ -27,13 +27,13 @@ const studentService = {
     }
   },
 
-  // 4. Submit Assignment
-  submitAssignment: async (assignmentId, formData) => {
+  // 4. Submit Assignment (file FormData, or { answerText } for text-only demo path)
+  submitAssignment: async (assignmentId, formDataOrPayload) => {
     try {
-      // Let the browser set multipart boundary. Auth header comes from api.js.
+      // Let the browser set multipart boundary for FormData. Auth header comes from api.js.
       const response = await api.post(
         `/student/assignments/${assignmentId}/submit`,
-        formData
+        formDataOrPayload
       );
       return response.data;
     } catch (error) {

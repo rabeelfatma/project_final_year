@@ -1,0 +1,188 @@
+QC-20 — QUICKCHECK HUB: LIVE GEMINI VALIDATION, ACADEMIC WORKFLOW ACCEPTANCE & CONTROLLED RELEASE
+Generated: 2026-10-13
+Workspace: C:\Users\LENOVO\quickcheck-hub-final
+GitHub: xohaibhsn/project_final_year (main)
+Live: https://duke.com.pk
+
+NO Hostinger env changes by Cursor. NO Atlas mutations. NO live account approve/create.
+NO secrets committed. Local academic uploads (87) untouched.
+Probe used local server-side env only; key value never logged or committed.
+
+================================================================================
+1. STARTING STATE
+================================================================================
+
+Starting branch: main
+Starting HEAD:   d6bb51b8cf8cebc79f398bc1e6ab07c17fe42761  (QC-19)
+origin/main:     d6bb51b8cf8cebc79f398bc1e6ab07c17fe42761  (matched)
+Worktree:        clean tracked tree; untracked prior reports/docs only
+Hostinger production SHA (hPanel): NOT VERIFIED
+Live smoke before release:
+  /api/health → {"status":"ok","service":"QuickCheck Hub","mode":"full"}  LIVE VERIFIED
+  /, /login, /signup, /admin, /forgot-password → 200  LIVE VERIFIED
+  /api/notifications unauth → 401  LIVE VERIFIED
+
+================================================================================
+2. GEMINI
+================================================================================
+
+Server-side client: backend/services/geminiService.js via @google/generative-ai ^0.24.1
+Env preference: GEMINI_API_KEY first, then GOOGLE_API_KEY fallback (does not override GEMINI)
+Default model: gemini-3.8-flash (GEMINI_MODEL optional override)
+SDK request format: generateContent + responseMimeType application/json
+No silent fake grading / other provider fallback
+Missing key → safe error; provider failures do not create fabricated success grades
+Credentials: not in frontend bundles; error paths redact key-like strings
+
+Provider request (ONE minimal local server-side probe):
+  API reachable: YES
+  Model accepted: gemini-3.8-flash YES
+  Response returned: YES
+  Response parsed: YES ({ok:true})
+  Provider errors: none
+  Approx usage: promptTokenCount=15, candidatesTokenCount=9, totalTokenCount=120
+  Classification: PROVIDER VERIFIED (local Cursor runtime with server-side key)
+  Hostinger live UI grading: NOT TESTED (requires authenticated Teacher session)
+
+Code changes (Gemini-related):
+  - Clearer 401/403/404/429/503 mapping without fabricating scores
+  - Legacy evaluationController no longer invents placeholder text or marks from instruction regex
+
+================================================================================
+3. ACADEMIC WORKFLOW
+================================================================================
+
+Teacher login:                 CODE COMPLETE / MOCK TESTED / LIVE VERIFIED = NO (needs approved Teacher)
+Assignment creation:           CODE COMPLETE / MOCK TESTED / LIVE = NOT TESTED
+Assignment publication:        CODE COMPLETE / MOCK TESTED / LIVE = NOT TESTED
+Student assignment visibility: CODE COMPLETE / MOCK TESTED / LIVE = NOT TESTED
+Student submission:            CODE COMPLETE / MOCK TESTED (file + new text answer path) / LIVE = NOT TESTED
+Text extraction:               CODE COMPLETE / MOCK TESTED
+Similarity:                    CODE COMPLETE / MOCK TESTED (peer Jaccard; not internet-wide)
+Gemini grading:                CODE COMPLETE / MOCK TESTED / PROVIDER VERIFIED (connectivity) / LIVE UI = NOT TESTED
+Teacher grade publication:     CODE COMPLETE / MOCK TESTED (skip duplicate publish notify)
+Student feedback:              CODE COMPLETE / MOCK TESTED (PUBLISHED-only UI/API)
+Reports and dashboards:        CODE COMPLETE / MOCK TESTED / LIVE role E2E = NOT TESTED
+
+Blocking defects fixed this task:
+  1) Student UI previously listed AI_GRADED in “checked” results even when API nulled scores
+  2) Student assignment list could expose AI_GRADED/graded process status before publish
+  3) Re-publish could spam student notifications
+  4) Legacy /api/evaluation path could fabricate unsupported-format text and wrong max marks
+  5) Demo path needed text answers without relying solely on fragile file uploads
+
+Text submission: Student may submit answerText; server writes answer.txt under uploads/submissions.
+
+================================================================================
+4. SECURITY
+================================================================================
+
+Email verification + Admin approval dual-gate: preserved (QC-18G) — CODE COMPLETE / MOCK TESTED
+Teacher ownership on grade/publish/evaluate: preserved — MOCK TESTED
+Student unpublished-grade protection: tightened (API status mask + UI PUBLISHED-only) — MOCK TESTED
+File authorization (/api/files/*): preserved — MOCK TESTED
+No secrets staged/committed; .env not touched for release
+No production DB writes by this task
+87 original academic upload files remain present locally
+
+================================================================================
+5. QUALITY
+================================================================================
+
+Automated tests: 200 PASS / 0 FAIL  (QC-19 baseline 191; +9 QC-20 focused)
+Production frontend build: PASS (vite)
+Additional issues discovered (not all blocking code):
+  - Full live Teacher→Student→Gemini→Publish still requires operator accounts
+  - Hostinger upload persistence still PERSISTENCE NOT VERIFIED
+  - Stale unused studentController.js existed with weaker gate (aligned, not mounted)
+
+Exact files modified / added:
+  backend/services/geminiService.js
+  backend/controllers/teacherController.js
+  backend/controllers/evaluationController.js
+  backend/controllers/studentController.js
+  backend/routes/studentRoutes.js
+  backend/tests/academicWorkflows.isolated.test.js
+  backend/tests/geminiService.isolated.test.js
+  backend/tests/qc20AcademicAcceptance.isolated.test.js (new)
+  frontend/src/pages/dashboards/StudentDashboard.jsx
+  frontend/src/pages/dashboards/TeacherDashboard.jsx
+  frontend/src/services/studentService.js
+  reports/QC20_LIVE_AI_ACADEMIC_ACCEPTANCE.txt (this file)
+
+Remaining P0 blockers for academic demo LIVE:
+  1) Operator must approve the verified real Hotmail Student (not Gmail / not Demo Student 1)
+  2) Operator must create+verify+approve one real Teacher
+  3) Operator must run ONE live Gemini grade through Teacher UI on duke.com.pk
+  4) Upload durability across Hostinger redeploy still unproven if file uploads are required
+
+Remaining P1:
+  - Confirm Hostinger UPLOADS_DIR / persistent volume if files must survive redeploy
+  - Credential rotation after any prior short-demo exposure (historical note)
+  - Exact hPanel deploy SHA verification when UI available
+
+================================================================================
+6. GITHUB / DEPLOYMENT
+================================================================================
+
+Commit created: YES (see release section after push)
+Suggested message: fix(quickcheck): validate gemini grading and academic demo flow
+Push: see post-push confirmation
+Hostinger: allow normal auto-deploy after push; do NOT change GEMINI_API_KEY / other env
+Do not manually redeploy repeatedly
+
+Live health after deploy (operator / Cursor post-push smoke):
+  Confirm /api/health mode=full
+  Confirm Login / Signup / Admin pages
+  Confirm protected API still 401 without token
+
+================================================================================
+7. FILE STORAGE
+================================================================================
+
+Mechanism: Multer disk → uploads/submissions|assignments (optional UPLOADS_DIR root)
+Auth download: /api/files/*
+Persistence: PERSISTENCE NOT VERIFIED on Hostinger
+Text answer path reduces demo dependence on durable binary uploads
+Safe manual check (after academic flow works):
+  1) Submit ONE disposable non-sensitive .txt via Student UI (or text answer)
+  2) Teacher opens/downloads it once
+  3) Optionally later redeploy once and re-download — only then judge persistence
+Do not delete the 87 preserved originals.
+
+================================================================================
+8. FINAL OPERATOR ACTIONS — LAST
+================================================================================
+
+1. Log in as Rabeel Admin on https://duke.com.pk/admin
+2. Registration Requests → approve ONLY the previously verified real Hotmail Student
+3. Confirm approval email; Student logs in; dashboard loads
+4. Sign up ONE real Teacher (operator-controlled inbox) → verify email → Admin approves
+5. Teacher logs in → create ONE small sample assignment (instructions + max marks) → make active/available
+6. Student opens assignment → submit short text answer (preferred) OR a tiny .txt file
+7. Teacher selects that submission → enter grading instructions → run AI Grade ONCE
+8. Confirm score ≤ maximum and feedback saved; then Publish results
+9. Student views published grade/feedback; check Admin/Teacher/Student stats/notifications
+10. Optional: one Forgot Password; one disposable upload survival check after a later redeploy
+
+If Gemini fails in the UI: record sanitized status/message only (401/403/404/429/5xx). Do not paste keys.
+
+================================================================================
+CLASSIFICATION SUMMARY
+================================================================================
+
+Homepage Login CTA                 LIVE VERIFIED (smoke) / CODE COMPLETE
+Public /login /signup /admin       LIVE VERIFIED (smoke)
+/api/health full mode              LIVE VERIFIED
+Auth dual-gate                     CODE COMPLETE / MOCK TESTED
+Gemini client + model config       CODE COMPLETE / MOCK TESTED / PROVIDER VERIFIED
+Live Gemini grading via UI         NOT TESTED
+Teacher academic E2E live          NOT TESTED
+Student academic E2E live          NOT TESTED
+Publish-grade gate                 CODE COMPLETE / MOCK TESTED
+Peer similarity                    CODE COMPLETE / MOCK TESTED
+Upload persistence on Hostinger    PERSISTENCE NOT VERIFIED / NOT TESTED
+Automated suite                    200 PASS (MOCK TESTED)
+Production build                   PASS
+
+STOP.

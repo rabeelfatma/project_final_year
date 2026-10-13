@@ -10,7 +10,9 @@ const upload = require("../middleware/multerMiddleware");
 const { create: createNotification } = require("../controllers/notificationController");
 const { resolveStoredUploadPath, getUploadsRoot } = require("../utils/uploadsPath");
 
-const GRADED = ["graded", "GRADED", "AI_GRADED", "PUBLISHED", "Graded"];
+// NOTE: Runtime uses backend/routes/studentRoutes.js (PUBLISHED-only visibility).
+// Keep this unused module aligned so it cannot be re-mounted with a weaker gate.
+const GRADED = ["PUBLISHED"];
 
 const resolveStoredPath = (stored) => {
   try {
@@ -114,10 +116,15 @@ router.get("/assignments", protect, async (req, res) => {
         }).lean();
 
         const canShowResult = submission && GRADED.includes(submission.status);
+        const studentStatus = !submission
+          ? "pending"
+          : canShowResult
+            ? "PUBLISHED"
+            : "submitted";
 
         return {
           ...assignment,
-          status: submission ? submission.status : "pending",
+          status: studentStatus,
           marks: canShowResult
             ? submission.marks ?? submission.aiScore
             : null,

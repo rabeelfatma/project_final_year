@@ -60,4 +60,20 @@ describe("geminiService grading bounds (mocked provider)", () => {
     await assert.rejects(() => svc.checkAssignment("x", "ok", 0));
     await assert.rejects(() => svc.checkAssignment("x", "", 10));
   });
+
+  it("clamps negative scores to zero", async () => {
+    process.env.GEMINI_API_KEY = "test-key-not-real";
+    const svc = loadWithMockModel('{"score": -5, "feedback": "too low"}');
+    const result = await svc.checkAssignment("hello", "Grade out of 10 marks", 10);
+    assert.equal(result.score, 0);
+  });
+
+  it("rejects missing score without inventing marks", async () => {
+    process.env.GEMINI_API_KEY = "test-key-not-real";
+    const svc = loadWithMockModel('{"feedback": "no score field"}');
+    await assert.rejects(
+      () => svc.checkAssignment("hello", "Grade carefully", 10),
+      /invalid score/i
+    );
+  });
 });

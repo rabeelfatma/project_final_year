@@ -399,6 +399,7 @@ describe("student route role enforcement and publish visibility", () => {
         assert.equal(rows[0].marks, null);
         assert.equal(rows[0].aiFeedback, "");
         assert.equal(rows[0].resultStatus, "PENDING");
+        assert.equal(rows[0].status, "submitted");
       }
     );
   });

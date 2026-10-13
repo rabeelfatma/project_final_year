@@ -221,8 +221,13 @@ export default function TeacherDashboard() {
     if (selectedSubmissions.length === 0) return;
     try {
       setIsPublishing(true);
-      await teacherService.publishBulkResults({ submissionIds: selectedSubmissions });
-      alert(`✅ Successfully published ${selectedSubmissions.length} results to students!`);
+      const result = await teacherService.publishBulkResults({ submissionIds: selectedSubmissions });
+      const published = Number(result?.published);
+      alert(
+        Number.isFinite(published)
+          ? `✅ Successfully published ${published} result(s) to students!`
+          : '✅ Publish request completed.'
+      );
       setSelectedSubmissions([]);
       fetchAllData();
     } catch (err) {
