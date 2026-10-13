@@ -96,7 +96,8 @@ Student submission text (may be incomplete if the file format could not be extra
 ${String(text || "").slice(0, 120000)}
 
 Grade strictly between 0 and ${maximum}. Do not exceed the maximum. Do not give a zero just because content is missing; if there is no assessable content, explain that in feedback.
-Return ONLY JSON: {"score": number, "feedback": "short useful feedback"}`;
+Return ONLY JSON with this shape:
+{"score": number, "feedback": "short overall feedback", "strengths": ["point"], "improvements": ["point"]}`;
 
   const parts = [{ text: prompt }];
   for (const item of (Array.isArray(media) ? media : []).slice(0, 25)) {
@@ -110,9 +111,17 @@ Return ONLY JSON: {"score": number, "feedback": "short useful feedback"}`;
 
   if (!Number.isFinite(score)) throw new Error("Gemini returned an invalid score.");
 
+  const toStringList = (value) =>
+    (Array.isArray(value) ? value : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
   return {
     score: Math.min(maximum, Math.max(0, score)),
     feedback: String(parsed.feedback || "AI evaluation completed."),
+    strengths: toStringList(parsed.strengths),
+    improvements: toStringList(parsed.improvements),
   };
 };
 

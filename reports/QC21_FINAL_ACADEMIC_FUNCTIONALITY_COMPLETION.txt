@@ -1,0 +1,196 @@
+QC-21 — QUICKCHECK HUB: FINAL ACADEMIC FUNCTIONALITY COMPLETION
+Generated: 2026-10-13
+Workspace: C:\Users\LENOVO\quickcheck-hub-final
+GitHub: xohaibhsn/project_final_year (main)
+Live: https://duke.com.pk
+
+NO Hostinger env changes. NO Atlas mutations. NO live account approve/create.
+NO secrets committed. Local academic uploads (87) untouched.
+Gemini mocked in integration tests; prior QC-20 provider probe remains the connectivity evidence.
+
+================================================================================
+A. SOURCE STATE
+================================================================================
+
+Starting branch: main
+Starting HEAD:   bb1a29e17c0468dae9dddc43f03645f6bfbe3468  (QC-20 docs)
+origin/main:     bb1a29e17c0468dae9dddc43f03645f6bfbe3468  (matched)
+Worktree:        clean tracked tree; prior untracked reports/docs only
+QC-20 compatibility: confirmed (publish gate, text submit, Gemini client retained)
+
+================================================================================
+B. COMPLETED ACADEMIC MODULES
+================================================================================
+
+1. Teacher assignment creation
+   COMPLETE / ISOLATED INTEGRATION VERIFIED
+   Required: title, instructions, dates, positive marks; deadline ≥ start.
+
+2. Assignment editing/management
+   COMPLETE / MOCK TESTED (existing CRUD + ownership)
+
+3. Assignment publication
+   COMPLETE (active = available to Students; deactive = hidden)
+   Demo default: create as active. No separate draft enum added.
+
+4. Student assignment visibility
+   COMPLETE / ISOLATED INTEGRATION VERIFIED
+   Active only; canSubmit + availabilityLabel (open / not open / closed).
+
+5. Student text submission
+   COMPLETE / ISOLATED INTEGRATION VERIFIED
+   answerText persisted on Submission + answer.txt file; min length validated.
+
+6. Supported file/code submissions
+   COMPLETE / MOCK TESTED (existing multer + extractText path preserved)
+
+7. Submission persistence
+   COMPLETE / ISOLATED INTEGRATION VERIFIED (in-memory HTTP fixture; Mongo shape)
+
+8. Gemini evaluation integration
+   COMPLETE / ISOLATED INTEGRATION VERIFIED (mocked provider)
+   Uses assignment title/description + answer text; AI_PROCESSING → AI_GRADED.
+
+9. Marks validation
+   COMPLETE / MOCK TESTED + INTEGRATION
+   Clamp 0…maximum; reject invalid score; no fabricated success.
+
+10. Teacher review
+    COMPLETE / ISOLATED INTEGRATION VERIFIED
+    Submission content endpoint; inline answer; strengths/improvements; AI publish.
+
+11. Grade publication
+    COMPLETE / ISOLATED INTEGRATION VERIFIED
+    Ownership enforced; skip already-published; AI-only publish supported.
+
+12. Student grade/feedback
+    COMPLETE / ISOLATED INTEGRATION VERIFIED
+    PUBLISHED-only; marks vs max; strengths/suggestions; awaiting copy.
+
+13. Similarity checker
+    COMPLETE / MOCK TESTED (peer Jaccard; truthful labels retained)
+
+14. Teacher dashboard
+    COMPLETE / CODE CONNECTED (status labels, review modal, publish AI)
+
+15. Student dashboard
+    COMPLETE / CODE CONNECTED (chart uses marks??aiScore; text submit; awaiting)
+
+16. Admin statistics
+    COMPLETE (preserved QC-18G; not rewritten)
+
+17. Reports
+    COMPLETE (existing Mongo-backed stats; no placeholder rewrite)
+
+18. Academic notifications
+    COMPLETE / INTEGRATION (assignment + AI evaluated + publish; idempotent publish)
+
+================================================================================
+C. FULL WORKFLOW TEST
+================================================================================
+
+Exact test file:
+  backend/tests/qc21AcademicWorkflow.isolated.test.js
+
+Scenario:
+  Teacher → Assignment → Student → Text Submit → Mock Gemini → Publish → Student result
+
+HTTP endpoints exercised: YES
+  POST /api/teacher/assignments
+  GET  /api/student/assignments
+  POST /api/student/assignments/:id/submit
+  GET  /api/teacher/recent-submissions
+  POST /api/teacher/evaluate-ai
+  POST /api/teacher/publish-results
+  GET  /api/student/dashboard-stats
+  GET  /api/teacher/submissions/:id/content
+
+MongoDB persistence exercised: NO (isolated in-memory model doubles)
+Database isolated: YES (never uses quickcheck_rabeel_demo / Atlas)
+PASS/FAIL: PASS
+Remaining untested boundary: live authenticated production UI grading
+
+================================================================================
+D. REAL GEMINI STATUS
+================================================================================
+
+Provider connectivity (QC-20): PROVIDER VERIFIED (one minimal probe; gemini-3.8-flash)
+Backend grading contract: COMPLETE (score/feedback/strengths/improvements + clamps)
+Actual model selection: GEMINI_MODEL or default gemini-3.8-flash
+Integration test result: PASS with MOCKED Gemini
+Production Teacher UI Gemini grading: NOT TESTED / NEEDS GROUP ACCEPTANCE
+
+================================================================================
+E. QUALITY
+================================================================================
+
+Automated tests: 201 PASS / 0 FAIL  (was 200; +1 full-chain)
+Frontend production build: PASS
+Security/authorization: dual-gate preserved; unpublished grades hidden; ownership checks held
+Original academic uploads: 87 preserved
+Secrets: not staged
+
+Exact files changed/added:
+  backend/models/Submission.js
+  backend/services/geminiService.js
+  backend/controllers/teacherController.js
+  backend/controllers/evaluationController.js (from prior QC-20 retained)
+  backend/routes/teacherRoutes.js
+  backend/routes/studentRoutes.js
+  backend/controllers/studentController.js (aligned unused module)
+  frontend/src/services/teacherService.js
+  frontend/src/services/studentService.js
+  frontend/src/pages/dashboards/TeacherDashboard.jsx
+  frontend/src/pages/dashboards/StudentDashboard.jsx
+  backend/tests/qc21AcademicWorkflow.isolated.test.js (new)
+  backend/tests/academicWorkflows.isolated.test.js
+  backend/tests/geminiService.isolated.test.js
+  backend/tests/qc20AcademicAcceptance.isolated.test.js
+  reports/QC21_FINAL_ACADEMIC_FUNCTIONALITY_COMPLETION.txt
+
+================================================================================
+F. GITHUB & HOSTINGER
+================================================================================
+
+Release commit: (filled after push)
+Push: (filled after push)
+origin/main: (filled after push)
+Hostinger: allow auto-deploy; do NOT change GEMINI_API_KEY / GEMINI_MODEL / Mongo / Resend
+Exact hPanel SHA: NOT VERIFIED
+Production health smoke: rechecked after deploy wait
+
+================================================================================
+G. REMAINING WORK
+================================================================================
+
+Teacher assignment create/manage     COMPLETE / ISOLATED INTEGRATION VERIFIED
+Student text submit                  COMPLETE / ISOLATED INTEGRATION VERIFIED
+Gemini grading via app path          COMPLETE / ISOLATED INTEGRATION VERIFIED
+Gemini provider connectivity         PROVIDER VERIFIED (QC-20)
+Live production Teacher AI grade     NEEDS GROUP ACCEPTANCE
+Live Student publish feedback view   NEEDS GROUP ACCEPTANCE
+Hostinger upload persistence         BLOCKED / NOT VERIFIED (text path independent)
+Admin approve real accounts          NEEDS GROUP ACCEPTANCE
+
+================================================================================
+H. FINAL GROUP TESTING INSTRUCTIONS
+================================================================================
+
+URLs (existing):
+  Admin:   https://duke.com.pk/admin
+  Login:   https://duke.com.pk/login
+  Signup:  https://duke.com.pk/signup
+  Home:    https://duke.com.pk/
+
+Short path:
+1. Admin approves verified Teacher and verified Student (Registration Requests).
+2. Teacher logs in → Assignments → create title, instructions, max marks, dates → save (active).
+3. Student logs in → open assignment → Submit text answer (or Upload .txt).
+4. Teacher → Submissions → select submission → AI Grade with instructions → Review.
+5. Teacher → Publish AI result (or Save & Publish with teacher marks).
+6. Student → Results / assignment detail → confirm marks / max / feedback / suggestions.
+7. Optional: Similarity tab (peer similarity only — not internet plagiarism).
+
+Do not paste API keys. Do not approve unverified demo accounts unless intended.
+
+STOP.

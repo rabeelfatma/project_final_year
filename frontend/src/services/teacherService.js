@@ -160,6 +160,11 @@ const teacherService = {
     }
   },
 
+  getSubmissionContent: async (id) => {
+    const response = await api.get(`/teacher/submissions/${id}/content`);
+    return response.data;
+  },
+
   deleteAssignmentsBulk: async (ids) => {
     const response = await api.post('/teacher/assignments/bulk-delete', { ids });
     return response.data;

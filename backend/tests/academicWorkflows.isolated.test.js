@@ -132,6 +132,7 @@ function loadTeacherRouter(authedUser) {
         evaluateWithGemini: ok,
         evaluateAssignment: ok,
         publishResults: ok,
+        getSubmissionContent: ok,
         resetSubmissionGrade: ok,
         resetSubmissionGradesBulk: ok,
         deleteSubmission: ok,

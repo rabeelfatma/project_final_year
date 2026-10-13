@@ -110,6 +110,7 @@ export default function TeacherDashboard() {
   const [aiInstructions, setAiInstructions]     = useState('');
   const [multimediaFiles, setMultimediaFiles]   = useState([]);
   const [savingEval, setSavingEval]             = useState(false);
+  const [reviewContent, setReviewContent]       = useState({ loading: false, text: '', strengths: [], improvements: [] });
   const [checkingPlagiarism, setCheckingPlagiarism] = useState(false);
   const [plagiarismResults, setPlagiarismResults] = useState([]);
   const [activePieIndex, setActivePieIndex]     = useState(null);
@@ -256,11 +257,34 @@ export default function TeacherDashboard() {
   };
 
   // ── Review Modal ──────────────────────────────────────────
-  const openReviewModal = (submission) => {
+  const openReviewModal = async (submission) => {
     setSelectedReview(submission);
     setManualScore(submission.marks ?? '');
     setTeacherNote(submission.feedback || '');
+    setReviewContent({
+      loading: true,
+      text: submission.answerText || '',
+      strengths: submission.aiStrengths || [],
+      improvements: submission.aiImprovements || [],
+    });
     setReviewModalOpen(true);
+    try {
+      const content = await teacherService.getSubmissionContent(submission._id);
+      setSelectedReview((prev) => ({
+        ...(prev || submission),
+        ...content,
+        student: prev?.student || submission.student,
+        assignment: prev?.assignment || submission.assignment,
+      }));
+      setReviewContent({
+        loading: false,
+        text: content.extractedText || content.answerText || '',
+        strengths: content.aiStrengths || [],
+        improvements: content.aiImprovements || [],
+      });
+    } catch (_) {
+      setReviewContent((prev) => ({ ...prev, loading: false }));
+    }
   };
 
   const handleSaveEvaluation = async (publish = false) => {
@@ -281,6 +305,26 @@ export default function TeacherDashboard() {
     } catch (err) {
       console.error('Save Evaluation Error:', err?.response?.data || err.message);
       alert('❌ Error saving evaluation: ' + (err?.response?.data?.message || err.message));
+    } finally {
+      setSavingEval(false);
+    }
+  };
+
+  const handlePublishAiResult = async () => {
+    if (selectedReview?.aiScore == null || !Number.isFinite(Number(selectedReview.aiScore))) {
+      alert('No AI marks available to publish. Run AI grading first, or enter Teacher Marks.');
+      return;
+    }
+    try {
+      setSavingEval(true);
+      const result = await teacherService.publishBulkResults({
+        submissionIds: [selectedReview._id],
+      });
+      alert(`✅ Published ${Number(result?.published) || 1} AI result(s) to the student.`);
+      setReviewModalOpen(false);
+      fetchAllData();
+    } catch (err) {
+      alert('❌ Failed to publish AI result: ' + (err?.response?.data?.message || err.message));
     } finally {
       setSavingEval(false);
     }
@@ -411,7 +455,12 @@ export default function TeacherDashboard() {
 
   const handleCreateOrUpdate = async (e) => {
     e.preventDefault();
-    if (!form.title || !form.startDate || !form.deadline || !form.points || Number(form.points) <= 0) return alert('Title, Start Date, Deadline, and Total Marks are mandatory.');
+    if (!form.title || !String(form.description || '').trim() || !form.startDate || !form.deadline || !form.points || Number(form.points) <= 0) {
+      return alert('Title, academic instructions, Start Date, Deadline, and Total Marks are mandatory.');
+    }
+    if (new Date(form.deadline) < new Date(form.startDate)) {
+      return alert('Deadline must be on or after the start date.');
+    }
     try {
       const formData = new FormData();
       formData.append('title',       form.title);
@@ -837,22 +886,26 @@ export default function TeacherDashboard() {
                               <span className="text-xs font-black accent-text">AI Marks: {sub.aiScore != null ? `${sub.aiScore}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
                               <span className="text-xs font-black" style={{color: 'var(--text)'}}>Teacher Marks: {sub.marks != null ? `${sub.marks}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
                             </div>
-                          ) : <span className="theme-muted text-[10px] font-black uppercase">Not checked</span>}
+                          ) : sub.status === 'AI_PROCESSING' ? (
+                            <span className="theme-muted text-[10px] font-black uppercase">AI grading…</span>
+                          ) : <span className="theme-muted text-[10px] font-black uppercase">Not graded</span>}
                         </td>
 
-                        {/* ✅ FIX 6: Clean status badge — 4 states */}
+                        {/* Status badge */}
                         <td className="p-5">
                           <span className={`px-2 py-1 rounded text-[10px] font-black ${
                             sub.status === 'PUBLISHED'                            ? 'bg-emerald-500/20 text-emerald-500' :
                             sub.status === 'AI_GRADED'                            ? 'bg-orange-500/20 text-orange-400'  :
+                            sub.status === 'AI_PROCESSING'                        ? 'bg-sky-500/20 text-sky-400'        :
                             ['graded','GRADED'].includes(sub.status)              ? 'bg-indigo-500/20 text-indigo-400'  :
                             sub.status === 'submitted'                            ? 'bg-amber-500/20 text-amber-500'    :
                                                                                     'bg-slate-500/20 text-slate-400'
                           }`}>
-                            {sub.status === 'AI_GRADED'                ? 'AI GRADED' :
+                            {sub.status === 'AI_PROCESSING'            ? 'AI PROCESSING' :
+                             sub.status === 'AI_GRADED'                ? 'AI GRADED / REVIEW' :
                              sub.status === 'PUBLISHED'                ? 'PUBLISHED' :
-                             ['graded','GRADED'].includes(sub.status)  ? 'GRADED'    :
-                             sub.status === 'submitted'                ? 'SUBMITTED' : 'PENDING'}
+                             ['graded','GRADED'].includes(sub.status)  ? 'TEACHER REVIEWED' :
+                             sub.status === 'submitted'                ? 'SUBMITTED' : 'NOT GRADED'}
                           </span>
                         </td>
 
@@ -969,14 +1022,41 @@ export default function TeacherDashboard() {
             </div>
 
             <div className="p-4 sm:p-8 overflow-y-auto space-y-6 min-h-0 flex-1">
+              <div className="theme-page p-4 sm:p-6 rounded-2xl border border-slate-800">
+                <h4 className="text-slate-500 font-black text-[10px] uppercase tracking-widest mb-3">Student answer</h4>
+                {reviewContent.loading ? (
+                  <p className="text-slate-400 text-sm">Loading submission text…</p>
+                ) : (
+                  <pre className="text-white text-sm leading-relaxed whitespace-pre-wrap break-words font-sans max-h-48 overflow-y-auto">
+                    {reviewContent.text || 'No readable text found. Open or download the file if this was a binary upload.'}
+                  </pre>
+                )}
+              </div>
+
               {/* AI Feedback */}
               <div className="theme-page p-4 sm:p-6 rounded-2xl border border-slate-800">
                 <h4 className="text-slate-500 font-black text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Sparkles size={14} className="text-sky-500"/> AI Feedback & Mistakes
+                  <Sparkles size={14} className="text-sky-500"/> AI Feedback
                 </h4>
                 <p className="text-white text-sm leading-relaxed italic break-words">
                   {selectedReview.aiFeedback || 'No AI feedback available yet'}
                 </p>
+                {!!reviewContent.strengths?.length && (
+                  <div className="mt-4">
+                    <p className="text-[9px] font-black uppercase text-emerald-400 mb-1">Strengths</p>
+                    <ul className="list-disc pl-5 text-sm text-slate-200 space-y-1">
+                      {reviewContent.strengths.map((item, idx) => <li key={`s-${idx}`}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {!!reviewContent.improvements?.length && (
+                  <div className="mt-4">
+                    <p className="text-[9px] font-black uppercase text-amber-400 mb-1">Improvements</p>
+                    <ul className="list-disc pl-5 text-sm text-slate-200 space-y-1">
+                      {reviewContent.improvements.map((item, idx) => <li key={`i-${idx}`}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Scores */}
@@ -1016,7 +1096,23 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            <div className="p-4 sm:p-8 theme-surface border-t border-slate-800 flex gap-4 shrink-0">
+            <div className="p-4 sm:p-8 theme-surface border-t border-slate-800 flex flex-col sm:flex-row gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSaveEvaluation(false)}
+                disabled={savingEval}
+                className="flex-1 border border-slate-600 text-slate-200 font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-slate-800 transition-all disabled:opacity-60"
+              >
+                Save teacher grade
+              </button>
+              <button
+                type="button"
+                onClick={handlePublishAiResult}
+                disabled={savingEval || selectedReview.aiScore == null}
+                className="flex-1 bg-sky-500 text-black font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-sky-400 transition-all disabled:opacity-60"
+              >
+                Publish AI result
+              </button>
               <button
                 type="button"
                 onClick={() => handleSaveEvaluation(true)}

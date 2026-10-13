@@ -88,6 +88,8 @@ router.get("/dashboard-stats", async (req, res) => {
 
 router.get("/assignments", async (req, res) => {
   try {
+    const now = Date.now();
+    // Active assignments only. Deactive = teacher-hidden drafts/closed items.
     const assignments = await Assignment.find({ status: "active" }).sort({ createdAt: -1 }).lean();
     const finalAssignments = await Promise.all(
       assignments.map(async (assignment) => {
@@ -96,12 +98,26 @@ router.get("/assignments", async (req, res) => {
           student: req.user._id,
         }).lean();
         const canShowResult = submission && PUBLISHED.includes(submission.status);
+        const opensAt = assignment.startDate ? new Date(assignment.startDate).getTime() : 0;
+        const dueAt = assignment.deadline ? new Date(assignment.deadline).getTime() : null;
+        const notOpenYet = opensAt && now < opensAt;
+        const overdue = dueAt != null && now > dueAt;
+        const canSubmit = !submission && !notOpenYet && !overdue;
         // Until publish, do not expose AI_GRADED/graded process status to students.
         const studentStatus = !submission
           ? "pending"
           : canShowResult
             ? "PUBLISHED"
             : "submitted";
+        const awaitingLabel = !submission
+          ? notOpenYet
+            ? "Not open yet"
+            : overdue
+              ? "Closed"
+              : "Open"
+          : canShowResult
+            ? "Published"
+            : "Awaiting evaluation";
         return {
           ...assignment,
           status: studentStatus,
@@ -110,11 +126,15 @@ router.get("/assignments", async (req, res) => {
           feedback: canShowResult ? submission.feedback || submission.aiFeedback || "" : "",
           aiScore: canShowResult ? submission.aiScore : null,
           aiFeedback: canShowResult ? submission.aiFeedback || "" : "",
+          aiStrengths: canShowResult ? submission.aiStrengths || [] : [],
+          aiImprovements: canShowResult ? submission.aiImprovements || [] : [],
           checkedAt: canShowResult ? submission.updatedAt || submission.createdAt : null,
           resultStatus: canShowResult ? submission.status : "PENDING",
           submissionId: submission?._id || null,
           originalFileName: submission?.originalFileName || "",
           isSubmitted: Boolean(submission),
+          canSubmit,
+          availabilityLabel: awaitingLabel,
         };
       })
     );
@@ -141,6 +161,8 @@ router.get("/my-submissions", async (req, res) => {
         aiScore: null,
         feedback: "",
         aiFeedback: "",
+        aiStrengths: [],
+        aiImprovements: [],
       };
     });
     res.json(safe);
@@ -153,7 +175,10 @@ router.delete("/submissions/:id", async (req, res) => {
   try {
     const row = await Submission.findOne({ _id: req.params.id, student: req.user._id });
     if (!row) return res.status(404).json({ message: "Your submission was not found." });
-    if (PUBLISHED.includes(row.status) || ["graded", "GRADED", "AI_GRADED", "Graded"].includes(row.status)) {
+    if (
+      PUBLISHED.includes(row.status) ||
+      ["graded", "GRADED", "AI_GRADED", "AI_PROCESSING", "Graded"].includes(row.status)
+    ) {
       return res.status(400).json({ message: "Graded submissions cannot be deleted." });
     }
     await removeSubmissionFile(row);
@@ -172,7 +197,7 @@ router.post("/submissions/bulk-delete", async (req, res) => {
     const deletable = rows.filter(
       (row) =>
         !PUBLISHED.includes(row.status) &&
-        !["graded", "GRADED", "AI_GRADED", "Graded"].includes(row.status)
+        !["graded", "GRADED", "AI_GRADED", "AI_PROCESSING", "Graded"].includes(row.status)
     );
     for (const row of deletable) await removeSubmissionFile(row);
     const result = await Submission.deleteMany({
@@ -203,6 +228,11 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
     }
 
     const answerText = String(req.body?.answerText || req.body?.text || "").trim();
+    if (!req.file && answerText && answerText.length < 3) {
+      return res.status(400).json({
+        message: "Text answer is too short. Enter at least a few words.",
+      });
+    }
     let storedFile = req.file;
     if (!storedFile && answerText) {
       // Text answer path: persist as a .txt under submissions for Gemini extract + demo durability.
@@ -252,6 +282,7 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       file: `uploads/submissions/${storedFile.filename}`,
       originalFileName: storedFile.originalname || storedFile.filename,
       fileMimeType: storedFile.mimetype || "",
+      answerText: answerText ? answerText.slice(0, 120000) : "",
       status: "submitted",
       totalMarks: assignment.points || null,
       submittedAt: new Date(),

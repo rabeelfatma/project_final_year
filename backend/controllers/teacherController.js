@@ -157,6 +157,8 @@ exports.createAssignment = async (req, res) => {
 
       !title ||
 
+      !String(description || "").trim() ||
+
       !startDate ||
 
       !deadline ||
@@ -169,10 +171,18 @@ exports.createAssignment = async (req, res) => {
 
       return res.status(400).json({
 
-        message: "Title, dates, and total marks greater than 0 are required.",
+        message: "Title, academic instructions, dates, and total marks greater than 0 are required.",
 
       });
 
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(deadline);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      return res.status(400).json({
+        message: "Deadline must be a valid date on or after the start date.",
+      });
     }
 
 
@@ -189,11 +199,11 @@ exports.createAssignment = async (req, res) => {
 
       title: title.trim(),
 
-      startDate: new Date(startDate),
+      startDate: start,
 
-      deadline: new Date(deadline),
+      deadline: end,
 
-      description: description || "",
+      description: String(description).trim(),
 
       points: totalMarks,
 
@@ -705,7 +715,7 @@ exports.evaluateWithGemini = async (req, res) => {
 
           "assignment",
 
-          "title points file originalFileName fileMimeType"
+          "title description points file originalFileName fileMimeType"
 
         );
 
@@ -751,40 +761,42 @@ exports.evaluateWithGemini = async (req, res) => {
 
         }
 
+        // Mark in-progress so Teacher UI can show AI grading state.
+        submission.status = "AI_PROCESSING";
+        await submission.save();
+
 
 
         const filePath = normalizeFilePath(submission.file);
+        const inlineAnswer = String(submission.answerText || "").trim();
 
-        if (!filePath || !fs.existsSync(filePath)) {
-
+        if ((!filePath || !fs.existsSync(filePath)) && !inlineAnswer) {
+          submission.status = "submitted";
+          await submission.save();
           results.push({
-
             id,
-
             status: "Failed",
-
             error: "Submitted file was not found on the server.",
-
           });
-
           continue;
-
         }
 
 
 
-        let text = "";
+        let text = inlineAnswer;
         const gradingMedia = [...referenceMedia];
-        const stat = fs.statSync(filePath);
-        const submissionMime = getInlineMime(
-          submission.fileMimeType,
-          filePath
-        );
+        const stat = filePath && fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+        const submissionMime = filePath
+          ? getInlineMime(submission.fileMimeType, filePath)
+          : "";
 
-        // Code/text documents (including .cs) are extracted as text. Images, PDFs,
-        // audio and video can also be attached directly when Gemini supports the MIME.
-        text = await extractText(filePath);
+        // Prefer persisted text answer; otherwise extract from the uploaded file.
+        if (!text && filePath && fs.existsSync(filePath)) {
+          text = await extractText(filePath);
+        }
         if (
+          filePath &&
+          stat &&
           submissionMime &&
           GEMINI_INLINE_MIMES.has(submissionMime) &&
           stat.size > 0 &&
@@ -802,11 +814,13 @@ exports.evaluateWithGemini = async (req, res) => {
         }
 
         if (!text.trim()) {
+          submission.status = "submitted";
+          await submission.save();
           results.push({
             id,
             status: "Failed",
             error:
-              `The uploaded ${path.extname(filePath) || "file"} format could not be read by the AI checker. Use a supported text/code, DOCX, PDF, spreadsheet, presentation, ZIP, or supported image/audio/video file, or review it manually.`,
+              `The uploaded ${path.extname(filePath || "") || "file"} format could not be read by the AI checker. Use a supported text/code, DOCX, PDF, spreadsheet, presentation, ZIP, or supported image/audio/video file, or review it manually.`,
           });
           continue;
         }
@@ -814,6 +828,14 @@ exports.evaluateWithGemini = async (req, res) => {
 
 
         let gradingContext = instructions;
+        if (submission.assignment?.title) {
+          gradingContext += `\n\nASSIGNMENT TITLE: ${submission.assignment.title}`;
+        }
+        if (submission.assignment?.description) {
+          gradingContext += `\n\nASSIGNMENT QUESTION / INSTRUCTIONS:\n${String(
+            submission.assignment.description
+          ).slice(0, 20000)}`;
+        }
 
 
 
@@ -947,9 +969,17 @@ exports.evaluateWithGemini = async (req, res) => {
 
         submission.aiFeedback = ai.feedback;
 
+        submission.aiStrengths = Array.isArray(ai.strengths) ? ai.strengths : [];
+
+        submission.aiImprovements = Array.isArray(ai.improvements)
+          ? ai.improvements
+          : [];
+
         submission.totalMarks = totalMarks;
 
         submission.status = "AI_GRADED";
+
+        submission.gradedAt = new Date();
 
 
 
@@ -996,7 +1026,16 @@ exports.evaluateWithGemini = async (req, res) => {
 
         console.error(`AI evaluation failed for ${id}:`, error.message);
 
-
+        try {
+          const failed = await Submission.findOne({
+            _id: id,
+            teacherId: req.user._id,
+          });
+          if (failed && failed.status === "AI_PROCESSING") {
+            failed.status = "submitted";
+            await failed.save();
+          }
+        } catch (_) {}
 
         results.push({
 
@@ -1559,6 +1598,8 @@ exports.resetSubmissionGrade = async (req, res) => {
     submission.feedback = "";
     submission.aiScore = null;
     submission.aiFeedback = "";
+    submission.aiStrengths = [];
+    submission.aiImprovements = [];
     submission.totalMarks = Number(submission.assignment?.points) > 0
       ? Number(submission.assignment.points)
       : null;
@@ -1673,6 +1714,8 @@ exports.resetSubmissionGradesBulk = async (req, res) => {
       submission.feedback = "";
       submission.aiScore = null;
       submission.aiFeedback = "";
+      submission.aiStrengths = [];
+      submission.aiImprovements = [];
       submission.totalMarks = Number(submission.assignment?.points) > 0 ? Number(submission.assignment.points) : null;
       submission.status = "submitted";
       submission.checkedAt = undefined;
@@ -1683,5 +1726,47 @@ exports.resetSubmissionGradesBulk = async (req, res) => {
   } catch (error) {
     console.error("BULK RESET GRADE ERROR:", error);
     return res.status(500).json({ message: "Could not reset selected grades.", error: error.message });
+  }
+};
+
+// Read submission text for Teacher review (inline answerText and/or extracted file text).
+exports.getSubmissionContent = async (req, res) => {
+  try {
+    const submission = await Submission.findOne({
+      _id: req.params.id,
+      teacherId: req.user._id,
+    }).populate("assignment", "title points");
+
+    if (!submission) {
+      return res.status(404).json({ message: "Submission not found." });
+    }
+
+    let extractedText = String(submission.answerText || "").trim();
+    const filePath = normalizeFilePath(submission.file);
+    if (!extractedText && filePath && fs.existsSync(filePath)) {
+      try {
+        extractedText = String((await extractText(filePath)) || "").trim();
+      } catch (_) {
+        extractedText = "";
+      }
+    }
+
+    return res.json({
+      success: true,
+      submissionId: submission._id,
+      originalFileName: submission.originalFileName || "",
+      status: submission.status,
+      answerText: String(submission.answerText || ""),
+      extractedText: extractedText.slice(0, 120000),
+      aiScore: submission.aiScore,
+      aiFeedback: submission.aiFeedback,
+      aiStrengths: submission.aiStrengths || [],
+      aiImprovements: submission.aiImprovements || [],
+      marks: submission.marks,
+      feedback: submission.feedback,
+      totalMarks: submission.totalMarks || submission.assignment?.points || null,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Could not load submission content." });
   }
 };

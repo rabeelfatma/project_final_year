@@ -36,9 +36,13 @@ function loadWithMockModel(responseText) {
 describe("geminiService grading bounds (mocked provider)", () => {
   it("clamps oversized scores to the maximum", async () => {
     process.env.GEMINI_API_KEY = "test-key-not-real";
-    const svc = loadWithMockModel('{"score": 999, "feedback": "too high"}');
+    const svc = loadWithMockModel(
+      '{"score": 999, "feedback": "too high", "strengths": ["ok"], "improvements": ["more"]}'
+    );
     const result = await svc.checkAssignment("hello", "Grade out of 10 marks", 10);
     assert.equal(result.score, 10);
+    assert.deepEqual(result.strengths, ["ok"]);
+    assert.deepEqual(result.improvements, ["more"]);
   });
 
   it("rejects invalid provider JSON without inventing marks", async () => {

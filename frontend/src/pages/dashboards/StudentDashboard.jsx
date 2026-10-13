@@ -157,7 +157,7 @@ export default function StudentDashboard() {
 
             points: s.assignment.points,
 
-            marks: s.marks,
+            marks: s.marks ?? s.aiScore,
 
             aiScore: s.aiScore,
 
@@ -166,6 +166,10 @@ export default function StudentDashboard() {
             feedback: s.feedback || s.aiFeedback || '',
 
             aiFeedback: s.aiFeedback || '',
+
+            aiStrengths: s.aiStrengths || [],
+
+            aiImprovements: s.aiImprovements || [],
 
             submissionId: s._id,
 
@@ -439,13 +443,20 @@ export default function StudentDashboard() {
 
   const realPerformanceData = checkedResults
 
-    .filter((item) => item.marks !== undefined && item.marks !== null && item.marks !== '')
+    .filter((item) => {
+      const score = Number(item.marks ?? item.aiScore);
+      return Number.isFinite(score);
+    })
 
     .slice()
 
     .sort((a, b) => new Date(a.checkedAt || 0) - new Date(b.checkedAt || 0))
 
-    .map((item) => ({ name: item.title || 'Assignment', score: Number(item.marks), total: Number(item.totalMarks || item.points || 100) }));
+    .map((item) => ({
+      name: item.title || 'Assignment',
+      score: Number(item.marks ?? item.aiScore),
+      total: Number(item.totalMarks || item.points || 100),
+    }));
 
 
 
@@ -883,7 +894,9 @@ export default function StudentDashboard() {
 
                            ? `${selectedAsgn.marks} / ${selectedAsgn.totalMarks || selectedAsgn.points || '--'}`
 
-                           : "Pending"}
+                           : selectedAsgn.isSubmitted
+                             ? "Awaiting evaluation"
+                             : (selectedAsgn.availabilityLabel || "Pending")}
 
                        </span>
 
@@ -897,13 +910,37 @@ export default function StudentDashboard() {
 
                        <p className="text-sm text-slate-300 italic leading-relaxed break-words">
 
-                         {selectedAsgn.feedback || "No teacher feedback yet."}
+                         {selectedAsgn.feedback
+                           || (selectedAsgn.isSubmitted && !selectedAsgn.aiFeedback
+                             ? "Your submission is awaiting evaluation."
+                             : "No teacher feedback yet.")}
 
                        </p>
 
                     </div>
 
                 </div>
+
+                {!!(selectedAsgn.aiStrengths?.length || selectedAsgn.aiImprovements?.length) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    {!!selectedAsgn.aiStrengths?.length && (
+                      <div className="bg-slate-900 p-4 rounded-2xl border border-emerald-500/20">
+                        <p className="text-[8px] uppercase font-black text-emerald-400 mb-2">Strengths</p>
+                        <ul className="list-disc pl-4 text-sm text-slate-300 space-y-1">
+                          {selectedAsgn.aiStrengths.map((item, idx) => <li key={`st-${idx}`}>{item}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {!!selectedAsgn.aiImprovements?.length && (
+                      <div className="bg-slate-900 p-4 rounded-2xl border border-amber-500/20">
+                        <p className="text-[8px] uppercase font-black text-amber-400 mb-2">Suggestions</p>
+                        <ul className="list-disc pl-4 text-sm text-slate-300 space-y-1">
+                          {selectedAsgn.aiImprovements.map((item, idx) => <li key={`im-${idx}`}>{item}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
 
 
 
@@ -959,7 +996,7 @@ export default function StudentDashboard() {
 
                 </div>
 
-                {!selectedAsgn.isSubmitted && !selectedAsgn.submissionId && (
+                {!selectedAsgn.isSubmitted && !selectedAsgn.submissionId && selectedAsgn.canSubmit !== false && (
 
                   <div className="mt-4 space-y-3">
 
@@ -1098,6 +1135,7 @@ function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus }) {
 const status = asgn.status?.toLowerCase();
 
   const isDone = ['submitted','graded','published','ai_graded'].includes(status);
+  const canUpload = !isDone && asgn.canSubmit !== false;
 
 
 
@@ -1117,7 +1155,7 @@ const status = asgn.status?.toLowerCase();
 
              <h4 className="font-black text-white text-sm uppercase italic tracking-tight break-words">{asgn.title}</h4>
 
-             <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Due: {asgn.deadline?.split('T')[0] || 'N/A'}</p>
+             <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Due: {asgn.deadline?.split?.('T')?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : 'N/A')} · {asgn.availabilityLabel || (isDone ? asgn.status : 'Open')} · Max {asgn.points ?? asgn.totalMarks ?? '--'}</p>
 
           </div>
 
@@ -1127,11 +1165,11 @@ const status = asgn.status?.toLowerCase();
 
           <button type="button" onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all" aria-label="View assignment"><Eye size={16}/></button>
 
-          <label className={`px-4 py-2.5 rounded-lg font-black text-[9px] uppercase cursor-pointer transition-all ${isDone ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+          <label className={`px-4 py-2.5 rounded-lg font-black text-[9px] uppercase cursor-pointer transition-all ${canUpload ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
 
-              {uploadStatus.id === asgn._id ? (uploadStatus.loading ? '...' : 'Done') : (isDone ? asgn.status : 'Upload')}
+              {uploadStatus.id === asgn._id ? (uploadStatus.loading ? '...' : 'Done') : (canUpload ? 'Upload' : (isDone ? asgn.status : (asgn.availabilityLabel || 'Closed')))}
 
-              {!isDone && <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />}
+              {canUpload && <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />}
 
           </label>
 

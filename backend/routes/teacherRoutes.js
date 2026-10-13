@@ -64,6 +64,9 @@ router.put('/evaluate/:id', teacherController.evaluateAssignment);
 // Frontend call: api.post('/teacher/publish-results', data)
 router.post('/publish-results', teacherController.publishResults);
 
+// Teacher review: read submitted text / extracted content
+router.get('/submissions/:id/content', teacherController.getSubmissionContent);
+
 // Submission deletion: individual + selected bulk
 router.patch('/submissions/:id/reset-grade', teacherController.resetSubmissionGrade);
 router.post('/submissions/bulk-reset-grades', teacherController.resetSubmissionGradesBulk);
