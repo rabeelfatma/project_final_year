@@ -125,16 +125,21 @@ Remaining P1:
 6. GITHUB / DEPLOYMENT
 ================================================================================
 
-Commit created: YES (see release section after push)
-Suggested message: fix(quickcheck): validate gemini grading and academic demo flow
-Push: see post-push confirmation
-Hostinger: allow normal auto-deploy after push; do NOT change GEMINI_API_KEY / other env
-Do not manually redeploy repeatedly
+Commit created: YES
+Commit SHA: 45052aeb062a5a5e1ad286d3c4a09a11a664adba
+Message: fix(quickcheck): validate gemini grading and academic demo flow
+Push: SUCCESS d6bb51b..45052ae → origin/main (no force)
+Local HEAD = origin/main = 45052ae
+Hostinger auto-deploy: LIKELY COMPLETE (live JS contains “Submit text answer”)
+Exact hPanel production SHA: NOT VERIFIED
+Live bundle marker observed: index-D9q0MT3m.js
+Do NOT change GEMINI_API_KEY / other Hostinger env; do not redeploy repeatedly
 
-Live health after deploy (operator / Cursor post-push smoke):
-  Confirm /api/health mode=full
-  Confirm Login / Signup / Admin pages
-  Confirm protected API still 401 without token
+Live health after deploy (Cursor smoke):
+  /api/health → mode=full  LIVE VERIFIED
+  /, /login, /signup, /admin → 200  LIVE VERIFIED
+  /api/notifications unauth → 401  LIVE VERIFIED
+  New Student text-submit UI marker present in live JS  LIVE VERIFIED
 
 ================================================================================
 7. FILE STORAGE
