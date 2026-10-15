@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Layout, Users, GraduationCap, FileText, Activity, LogOut, 
+  Layout, Users, GraduationCap, FileText, Activity, 
   Trash2, Plus, Edit2, X, UserRound, UsersRound, ClipboardList,
   UserPlus, Check, Ban
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
 import adminService from '../../services/adminService';
 import SidebarControls from '../../components/common/SidebarControls';
 import DashboardNavShell from '../../components/common/DashboardNavShell';
+import DashboardLogoutButton from '../../components/common/DashboardLogoutButton';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 
@@ -167,12 +168,18 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate('/admin');
+  };
+
   return (
     <DashboardNavShell
       widthClass="w-64"
       desktopMode="fixed"
       desktopOffsetClass="md:ml-64"
       mobileTitle="QuickCheck Hub"
+      headerActions={<DashboardLogoutButton onClick={handleLogout} />}
       sidebar={
         <div className="p-6 flex flex-col flex-1 min-h-0">
           <div className="text-xl font-black mb-10 flex items-center gap-2 uppercase tracking-tighter text-white">
@@ -200,9 +207,6 @@ export default function AdminDashboard() {
               setActiveTab('Registration Requests');
             }}
           />
-          <button type="button" onClick={() => {localStorage.clear(); navigate('/admin');}} className="mt-auto flex items-center gap-2 p-3 text-red-500 font-bold hover:bg-red-500/10 rounded-xl transition-all">
-              <LogOut size={20}/> LOGOUT
-          </button>
         </div>
       }
     >

@@ -12,7 +12,7 @@ import {
 
 import {
 
-  BookOpen, CheckCircle, Clock, FileUp, Layout, LogOut,
+  BookOpen, CheckCircle, Clock, FileUp, Layout,
 
   Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp, Search,
 
@@ -25,6 +25,8 @@ import studentService from '../../services/studentService';
 import SidebarControls from '../../components/common/SidebarControls';
 
 import DashboardNavShell from '../../components/common/DashboardNavShell';
+
+import DashboardLogoutButton from '../../components/common/DashboardLogoutButton';
 
 import AIChatbot from '../../components/common/AIChatbot';
 
@@ -490,6 +492,8 @@ export default function StudentDashboard() {
 
       mobileTitle="EduCore Student"
 
+      headerActions={<DashboardLogoutButton onClick={handleLogout} />}
+
       sidebar={
 
         <div className="p-6 flex flex-col flex-1 min-h-0">
@@ -523,12 +527,6 @@ export default function StudentDashboard() {
 
 
           <SidebarControls role="student" />
-
-          <button type="button" onClick={handleLogout} className="mt-3 w-full py-2.5 bg-red-500/10 text-red-500 rounded-lg text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2">
-
-            <LogOut size={12}/> Sign Out
-
-          </button>
 
         </div>
 

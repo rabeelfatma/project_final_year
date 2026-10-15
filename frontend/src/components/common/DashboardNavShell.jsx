@@ -13,6 +13,7 @@ export default function DashboardNavShell({
   desktopMode = "flow",
   desktopOffsetClass = "",
   mobileTitle = "Menu",
+  headerActions = null,
 }) {
   const [open, setOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -140,7 +141,10 @@ export default function DashboardNavShell({
 
       <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${desktopOffsetClass}`}>
         <div
-          className="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 border-b theme-card shrink-0"
+          className={[
+            "sticky top-0 z-30 flex items-center gap-3 px-4 py-3 border-b theme-card shrink-0",
+            headerActions ? "" : "md:hidden",
+          ].join(" ")}
           style={{ borderColor: "var(--border)" }}
         >
           <button
@@ -150,14 +154,17 @@ export default function DashboardNavShell({
             aria-label={open ? "Close navigation menu" : "Open navigation menu"}
             aria-expanded={open}
             aria-controls={navId}
-            className="p-2 rounded-xl border theme-surface hover:border-sky-500 transition-colors"
+            className="md:hidden p-2 rounded-xl border theme-surface hover:border-sky-500 transition-colors"
             style={{ borderColor: "var(--border)" }}
           >
             <Menu size={20} />
           </button>
-          <span className="text-xs font-black uppercase tracking-widest truncate">
+          <span className="md:hidden text-xs font-black uppercase tracking-widest truncate min-w-0">
             {mobileTitle}
           </span>
+          {headerActions ? (
+            <div className="ml-auto flex items-center gap-2 shrink-0">{headerActions}</div>
+          ) : null}
         </div>
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-10 theme-page relative min-w-0">

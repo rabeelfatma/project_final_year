@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Layout, PlusCircle, BookOpen, ClipboardCheck, Users, RotateCcw,
-  LogOut, Loader2, FileUp, X, CheckCircle, TrendingUp, Download,
+  Loader2, FileUp, X, CheckCircle, TrendingUp, Download,
   ShieldCheck, Clock, Trash2, Edit3, Sparkles, MessageSquare,
   Send, Eye, AlertCircle, ShieldAlert, FileText
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import {
 import teacherService from '../../services/teacherService';
 import SidebarControls from '../../components/common/SidebarControls';
 import DashboardNavShell from '../../components/common/DashboardNavShell';
+import DashboardLogoutButton from '../../components/common/DashboardLogoutButton';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
@@ -504,12 +505,18 @@ export default function TeacherDashboard() {
     </div>
   );
 
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate('/login');
+  };
+
   // ─── Render ────────────────────────────────────────────────
   return (
     <DashboardNavShell
       widthClass="w-64"
       desktopMode="flow"
       mobileTitle="QuickCheck Teacher"
+      headerActions={<DashboardLogoutButton onClick={handleLogout} />}
       sidebar={
         <>
           <div className="p-8">
@@ -526,10 +533,7 @@ export default function TeacherDashboard() {
               <SidebarItem icon={<Users size={18}/>}         label="Students"          active={activeTab==='students'}     onClick={() => setActiveTab('students')} />
             </nav>
           </div>
-          <div className="px-6"><SidebarControls role="teacher" /></div>
-          <button type="button" onClick={() => { localStorage.clear(); navigate('/login'); }} className="mt-auto p-8 flex items-center gap-3 text-slate-500 hover:text-red-400 border-t border-slate-800 transition-colors">
-            <LogOut size={18}/> <span className="font-bold text-xs uppercase">Disconnect</span>
-          </button>
+          <div className="px-6 mt-auto"><SidebarControls role="teacher" /></div>
         </>
       }
     >
