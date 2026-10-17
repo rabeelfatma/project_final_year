@@ -13,9 +13,12 @@ import {
 import teacherService from '../../services/teacherService';
 import SidebarControls from '../../components/common/SidebarControls';
 import DashboardNavShell from '../../components/common/DashboardNavShell';
-import DashboardLogoutButton from '../../components/common/DashboardLogoutButton';
+import DashboardNavItem from '../../components/common/DashboardNavItem';
+import DashboardTopBar from '../../components/common/DashboardTopBar';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
+import ProfilePage from '../account/ProfilePage';
+import SettingsPage from '../account/SettingsPage';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
 import api from '../../utils/api';
 import {
@@ -24,21 +27,6 @@ import {
   isAssignmentSelected,
 } from '../../utils/assignmentSelection';
 
-// ─── Sub-components ───────────────────────────────────────────
-function SidebarItem({ icon, label, active, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 p-3.5 rounded-xl cursor-pointer transition-all text-left ${
-      active ? 'bg-sky-500 text-black font-black shadow-lg shadow-sky-500/20' : 'text-slate-500 hover:bg-slate-800/50 hover:text-white font-bold'
-    }`}
-    >
-      {icon} <span className="text-[10px] uppercase tracking-widest font-black">{label}</span>
-    </button>
-  );
-}
-
 function StatCard({ label, value, icon }) {
   const [selected, setSelected] = useState(false);
   return (
@@ -46,20 +34,20 @@ function StatCard({ label, value, icon }) {
       type="button"
       onClick={() => setSelected((current) => !current)}
       aria-pressed={selected}
-      className={`w-full text-left theme-card border p-6 rounded-3xl relative overflow-hidden group transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent)] ${selected ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/20' : ''}`}
+      className="qc-stat-card relative overflow-hidden"
     >
-      <div className="flex justify-between items-start mb-4">
-        <div className="p-2 rounded-lg theme-page border transition-colors" style={{borderColor: selected ? 'var(--accent)' : 'var(--border)', color: selected ? 'var(--accent)' : 'var(--muted)'}}>{icon}</div>
+      <div className="flex justify-between items-start mb-3">
+        <div className="p-2 rounded-qc border transition-colors" style={{borderColor: selected ? 'var(--accent)' : 'var(--border)', color: selected ? 'var(--accent)' : 'var(--muted)'}}>{icon}</div>
       </div>
-      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{label}</p>
-      <h3 className="text-3xl font-black accent-text tracking-tighter">{value || 0}</h3>
+      <p className="qc-stat-label">{label}</p>
+      <h3 className="qc-stat-value">{value || 0}</h3>
     </button>
   );
 }
 
 function LegendItem({ color, label }) {
   return (
-    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
+    <div className="flex items-center gap-2 text-xs font-semibold theme-muted">
       <div className={`w-2 h-2 rounded-full ${color}`}></div> {label}
     </div>
   );
@@ -67,9 +55,9 @@ function LegendItem({ color, label }) {
 
 function NoDataMessage({ icon, message }) {
   return (
-    <div className="theme-card border p-20 rounded-3xl text-center w-full">
-      <div className="mx-auto text-slate-700 mb-4 opacity-20 flex justify-center">{icon}</div>
-      <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">{message}</p>
+    <div className="qc-card qc-empty w-full">
+      <div className="mx-auto mb-3 opacity-30 flex justify-center">{icon}</div>
+      <p>{message}</p>
     </div>
   );
 }
@@ -93,6 +81,7 @@ export default function TeacherDashboard() {
   const multimediaInputRef = useRef(null);
 
   const [activeTab, setActiveTab]               = useState('dashboard');
+  const [shellView, setShellView]               = useState('main');
   const [loading, setLoading]                   = useState(true);
   const [editingId, setEditingId]               = useState(null);
   const [stats, setStats]                       = useState({ totalCreated: 0, totalStudents: 0, pendingCount: 0, completedCount: 0 });
@@ -500,8 +489,8 @@ export default function TeacherDashboard() {
   // ─── Loading ───────────────────────────────────────────────
   if (loading) return (
     <div className="h-screen theme-page flex flex-col items-center justify-center">
-      <Loader2 className="animate-spin text-sky-500 mb-4" size={48} />
-      <p className="text-white font-bold tracking-[0.3em] text-[10px]">SYNCING QUICKCHECK...</p>
+      <Loader2 className="animate-spin accent-text mb-4" size={40} />
+      <p className="text-sm font-semibold theme-muted">Loading QuickCheck Hub…</p>
     </div>
   );
 
@@ -510,52 +499,84 @@ export default function TeacherDashboard() {
     navigate('/login');
   };
 
+  const openMainTab = (tab) => {
+    setShellView('main');
+    setActiveTab(tab);
+    if (tab !== 'create') setEditingId(null);
+  };
+
+  const mainPageTitle =
+    activeTab === 'dashboard' ? 'Overview'
+      : activeTab === 'create' ? (editingId ? 'Edit Assignment' : 'Create Assignment')
+      : activeTab === 'assignments' ? 'My Assignments'
+      : activeTab === 'submissions' ? 'Submissions'
+      : activeTab === 'plagiarism' ? 'Similarity'
+      : 'Students';
+
+  const pageTitle =
+    shellView === 'profile' ? 'My Profile'
+      : shellView === 'settings' ? 'Settings'
+      : mainPageTitle;
+
   // ─── Render ────────────────────────────────────────────────
   return (
     <DashboardNavShell
       widthClass="w-64"
       desktopMode="flow"
-      mobileTitle="QuickCheck Teacher"
-      headerActions={<DashboardLogoutButton onClick={handleLogout} />}
+      mobileTitle="QuickCheck Hub"
+      pageTitle={pageTitle}
+      headerActions={
+        <DashboardTopBar
+          role="teacher"
+          onLogout={handleLogout}
+          onOpenProfile={() => setShellView('profile')}
+          onOpenSettings={() => setShellView('settings')}
+        />
+      }
       sidebar={
-        <>
-          <div className="p-8">
-            <div className="flex items-center gap-3 text-white mb-10">
-              <div className="bg-sky-500 p-2 rounded-lg text-black"><ShieldCheck size={20}/></div>
-              <span className="font-black text-xl tracking-tighter">QuickCheck Hub</span>
+        <div className="p-5 flex flex-col flex-1 min-h-0">
+          <div className="qc-sidebar-brand">
+            <span className="qc-sidebar-brand__mark"><ShieldCheck size={18}/></span>
+            <div>
+              <span className="qc-sidebar-brand__text">QuickCheck Hub</span>
+              <span className="qc-sidebar-brand__role">Teacher</span>
             </div>
-            <nav className="space-y-1">
-              <SidebarItem icon={<Layout size={18}/>}        label="Overview"          active={activeTab==='dashboard'}    onClick={() => { setActiveTab('dashboard'); setEditingId(null); }} />
-              <SidebarItem icon={<PlusCircle size={18}/>}    label={editingId ? 'Editing Mode' : 'Create Assignment'} active={activeTab==='create'} onClick={() => setActiveTab('create')} />
-              <SidebarItem icon={<BookOpen size={18}/>}      label="My Assignments"    active={activeTab==='assignments'}  onClick={() => { setActiveTab('assignments'); setEditingId(null); }} />
-              <SidebarItem icon={<ClipboardCheck size={18}/>} label="Submissions"      active={activeTab==='submissions'}  onClick={() => setActiveTab('submissions')} />
-              <SidebarItem icon={<ShieldAlert size={18}/>} label="Similarity"       active={activeTab==='plagiarism'}   onClick={() => setActiveTab('plagiarism')} />
-              <SidebarItem icon={<Users size={18}/>}         label="Students"          active={activeTab==='students'}     onClick={() => setActiveTab('students')} />
-            </nav>
           </div>
-          <div className="px-6 mt-auto"><SidebarControls role="teacher" /></div>
-        </>
+          <nav className="space-y-1" aria-label="Teacher navigation">
+            <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab==='dashboard'} onClick={() => openMainTab('dashboard')} />
+            <DashboardNavItem icon={<PlusCircle size={18}/>} label={editingId ? 'Editing Mode' : 'Create Assignment'} active={shellView === 'main' && activeTab==='create'} onClick={() => { setShellView('main'); setActiveTab('create'); }} />
+            <DashboardNavItem icon={<BookOpen size={18}/>} label="My Assignments" active={shellView === 'main' && activeTab==='assignments'} onClick={() => openMainTab('assignments')} />
+            <DashboardNavItem icon={<ClipboardCheck size={18}/>} label="Submissions" active={shellView === 'main' && activeTab==='submissions'} onClick={() => openMainTab('submissions')} />
+            <DashboardNavItem icon={<ShieldAlert size={18}/>} label="Similarity" active={shellView === 'main' && activeTab==='plagiarism'} onClick={() => openMainTab('plagiarism')} />
+            <DashboardNavItem icon={<Users size={18}/>} label="Students" active={shellView === 'main' && activeTab==='students'} onClick={() => openMainTab('students')} />
+          </nav>
+          <SidebarControls />
+        </div>
       }
     >
-
-        {/* ══ DASHBOARD TAB ══ */}
+        {shellView === 'profile' ? (
+          <ProfilePage onBack={() => setShellView('main')} />
+        ) : shellView === 'settings' ? (
+          <SettingsPage role="teacher" onBack={() => setShellView('main')} />
+        ) : (
+        <>
         {activeTab === 'dashboard' && (
-          <div className="animate-in fade-in slide-in-from-top-4 duration-700">
-            <header className="mb-6 md:mb-10 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="qc-page-header">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tighter">Teacher Dashboard</h1>
-                <p className="text-slate-400 text-sm mt-1">Live analytics and classroom performance.</p>
+                <h2 className="qc-page-title">Teacher Dashboard</h2>
+                <p className="qc-page-subtitle">Live analytics and classroom performance.</p>
               </div>
-            </header>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <StatCard label="Total Assignments" value={stats.totalCreated} icon={<BookOpen size={16}/>}/>
               <StatCard label="Total Students" value={stats.totalStudents} icon={<Users size={16}/>}/>
               <StatCard label="Pending Graded" value={stats.pendingCount} icon={<Clock size={16}/>}/>
               <StatCard label="Successful Graded" value={stats.completedCount} icon={<CheckCircle size={16}/>}/>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 theme-card border p-8 rounded-3xl">
-                <h3 className="text-white font-bold mb-6 flex items-center gap-2"><TrendingUp className="text-sky-500" size={18}/> Activity Insights</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
+              <div className="lg:col-span-2 qc-card">
+                <h3 className="font-semibold mb-5 flex items-center gap-2"><TrendingUp className="accent-text" size={18}/> Activity Insights</h3>
                 <div style={{ width:'100%', height:300 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
@@ -569,9 +590,9 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              <div className="theme-card border p-8 rounded-3xl flex flex-col items-center justify-center">
-                <h3 className="text-white font-bold mb-2">Grading Progress</h3>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4">Click a slice for details</p>
+              <div className="qc-card flex flex-col items-center justify-center">
+                <h3 className="font-semibold mb-1">Grading Progress</h3>
+                <p className="theme-muted text-xs mb-4">Click a slice for details</p>
 
                 {activePieIndex !== null && (
                   <div className={`mb-4 px-6 py-3 rounded-2xl border text-center ${activePieIndex === 0 ? 'accent-soft' : 'accent-soft'}`}>
@@ -597,7 +618,7 @@ export default function TeacherDashboard() {
                   </ResponsiveContainer>
                 </div>
                 <div className="flex gap-4 mt-4">
-                  <LegendItem color="bg-amber-500"   label="Pending"/>
+                  <LegendItem color="bg-slate-500"   label="Pending"/>
                   <LegendItem color="bg-emerald-500" label="Graded"/>
                 </div>
               </div>
@@ -607,33 +628,36 @@ export default function TeacherDashboard() {
 
         {/* ══ CREATE TAB ══ */}
         {activeTab === 'create' && (
-          <div className="max-w-3xl mx-auto animate-in zoom-in-95 duration-500">
-            <h1 className="text-2xl font-black text-white mb-8 tracking-tighter uppercase">
-              {editingId ? 'Update Assignment' : 'New Assignment'}
-            </h1>
-            <form onSubmit={handleCreateOrUpdate} className="theme-card border p-5 sm:p-10 rounded-3xl space-y-6 sm:space-y-8 shadow-2xl">
+          <div className="max-w-3xl">
+            <div className="qc-page-header">
               <div>
-                <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Assignment Title</label>
-                <input type="text" className="w-full theme-input border rounded-xl p-4 text-sm outline-none" value={form.title} onChange={e => setForm({...form, title:e.target.value})} placeholder="e.g. System Design Analysis"/>
+                <h2 className="qc-page-title">{editingId ? 'Update Assignment' : 'New Assignment'}</h2>
+                <p className="qc-page-subtitle">Define the task, deadline, and supporting materials.</p>
+              </div>
+            </div>
+            <form onSubmit={handleCreateOrUpdate} className="qc-card space-y-5 sm:space-y-6">
+              <div>
+                <label className="qc-label">Assignment Title</label>
+                <input type="text" className="qc-input" value={form.title} onChange={e => setForm({...form, title:e.target.value})} placeholder="e.g. System Design Analysis"/>
               </div>
               <div>
-                <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Total Marks</label>
-                <input type="number" min="1" className="w-full theme-input border rounded-xl p-4 text-sm outline-none" value={form.points} onChange={e => setForm({...form, points:e.target.value})} placeholder="e.g. 30" />
+                <label className="qc-label">Total Marks</label>
+                <input type="number" min="1" className="qc-input" value={form.points} onChange={e => setForm({...form, points:e.target.value})} placeholder="e.g. 30" />
                 <p className="text-[9px] text-slate-500 mt-2">Students will see their score as obtained / this total only after grading.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
-                  <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Start Date</label>
-                  <input type="datetime-local" className="w-full theme-input border rounded-xl p-4 text-sm outline-none focus:ring-2 ring-[var(--accent)]/50" value={form.startDate} onChange={e => setForm({...form, startDate:e.target.value})}/>
+                  <label className="qc-label">Start Date</label>
+                  <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => setForm({...form, startDate:e.target.value})}/>
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Deadline Date</label>
-                  <input type="datetime-local" className="w-full theme-input border rounded-xl p-4 text-sm outline-none focus:ring-2 ring-[var(--accent)]/50" value={form.deadline} onChange={e => setForm({...form, deadline:e.target.value})}/>
+                  <label className="qc-label">Deadline Date</label>
+                  <input type="datetime-local" className="qc-input" value={form.deadline} onChange={e => setForm({...form, deadline:e.target.value})}/>
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-2 block">Description</label>
-                <textarea className="w-full theme-input border rounded-xl p-4 text-sm h-40 resize-none outline-none" value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Instructions..."/>
+                <label className="qc-label">Description</label>
+                <textarea className="qc-input !h-36 resize-none" value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Instructions..."/>
               </div>
               <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all" onClick={() => fileInputRef.current.click()}>
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange}/>
@@ -658,7 +682,7 @@ export default function TeacherDashboard() {
                   </div>
                 )}
               </div>
-              <button type="submit" className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest hover:shadow-lg transition-all">
+              <button type="submit" className="qc-btn qc-btn-primary qc-btn-block !py-3.5">
                 {editingId ? 'Update Assignment' : 'Upload Assignment'}
               </button>
             </form>
@@ -669,7 +693,7 @@ export default function TeacherDashboard() {
         {activeTab === 'assignments' && (
           <div className="animate-in fade-in duration-500">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
-              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">My Assignments</h1>
+              <h1 className="qc-page-title">My Assignments</h1>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2">
                   <input
@@ -698,7 +722,7 @@ export default function TeacherDashboard() {
                 const assignmentId = normalizeAssignmentId(asgn._id);
                 return (
                   // ✅ FIX: key uses _id instead of index
-                  <div key={assignmentId || asgn._id} className="theme-card border p-4 sm:p-6 rounded-2xl flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
+                  <div key={assignmentId || asgn._id} className="qc-card flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
                     <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
                       <input
                         type="checkbox"
@@ -746,7 +770,7 @@ export default function TeacherDashboard() {
             <div className="flex flex-col gap-6 mb-8">
               <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4">
                 <div>
-                  <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Submissions</h1>
+                  <h1 className="qc-page-title">Submissions</h1>
                   <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">
                     Selected: <span className={selectedSubmissions.length >= 40 ? 'text-red-500' : 'text-sky-500'}>{selectedSubmissions.length}</span> / 40
                   </p>
@@ -754,19 +778,19 @@ export default function TeacherDashboard() {
                 <div className="flex flex-wrap gap-2 sm:gap-3">
                   {selectedSubmissions.length > 0 && (
                     <>
-                      <button type="button" onClick={handleAiEvaluation} disabled={aiLoading} className="bg-sky-500 hover:bg-sky-400 text-black px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-sky-500/20">
+                      <button type="button" onClick={handleAiEvaluation} disabled={aiLoading} className="bg-sky-500 hover:bg-sky-400 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-sky-500/20">
                         {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
                         AI Evaluate
                       </button>
-                      <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-amber-500 hover:bg-amber-400 text-black px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all">
+                      <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-sky-500 hover:bg-sky-400 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all">
                         {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>}
                         Check Plagiarism
                       </button>
-                      <button type="button" onClick={handlePublishBulk} disabled={isPublishing} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20">
+                      <button type="button" onClick={handlePublishBulk} disabled={isPublishing} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20">
                         {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
                         Publish Marks
                       </button>
-                      <button type="button" onClick={handleResetSelectedGrades} className="bg-amber-500 hover:bg-amber-400 text-black px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><RotateCcw size={14}/> Reset grades</button>
+                      <button type="button" onClick={handleResetSelectedGrades} className="bg-slate-600 hover:bg-slate-500 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><RotateCcw size={14}/> Reset grades</button>
                       <button type="button" onClick={handleDeleteSelectedSubmissions} className="bg-red-500 hover:bg-red-400 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><Trash2 size={14}/> Delete selected</button>
                     </>
                   )}
@@ -774,7 +798,7 @@ export default function TeacherDashboard() {
               </div>
 
               {/* Grading Instructions */}
-              <div className="theme-card border p-4 sm:p-6 rounded-3xl flex flex-col gap-4">
+              <div className="qc-card flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-sky-400 font-black text-[10px] uppercase tracking-widest">
                   <MessageSquare size={14}/> Grading Instructions for AI
                 </div>
@@ -809,7 +833,7 @@ export default function TeacherDashboard() {
             </div>
 
             {/* Submissions Table */}
-            <div className="theme-card border rounded-3xl overflow-hidden shadow-2xl">
+            <div className="qc-table-wrap">
               <div className="max-h-[600px] overflow-auto">
                 <table className="w-full min-w-[900px] text-left border-collapse">
                   <thead className="theme-page sticky top-0 z-10 text-[10px] font-black uppercase text-slate-500 tracking-widest border-b border-slate-800">
@@ -899,10 +923,10 @@ export default function TeacherDashboard() {
                         <td className="p-5">
                           <span className={`px-2 py-1 rounded text-[10px] font-black ${
                             sub.status === 'PUBLISHED'                            ? 'bg-emerald-500/20 text-emerald-500' :
-                            sub.status === 'AI_GRADED'                            ? 'bg-orange-500/20 text-orange-400'  :
+                            sub.status === 'AI_GRADED'                            ? 'bg-sky-500/20 text-sky-400'        :
                             sub.status === 'AI_PROCESSING'                        ? 'bg-sky-500/20 text-sky-400'        :
-                            ['graded','GRADED'].includes(sub.status)              ? 'bg-indigo-500/20 text-indigo-400'  :
-                            sub.status === 'submitted'                            ? 'bg-amber-500/20 text-amber-500'    :
+                            ['graded','GRADED'].includes(sub.status)              ? 'bg-sky-500/20 text-sky-400'        :
+                            sub.status === 'submitted'                            ? 'bg-slate-500/20 text-slate-400'    :
                                                                                     'bg-slate-500/20 text-slate-400'
                           }`}>
                             {sub.status === 'AI_PROCESSING'            ? 'AI PROCESSING' :
@@ -934,14 +958,14 @@ export default function TeacherDashboard() {
           <div className="animate-in fade-in duration-500">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
               <div className="min-w-0">
-                <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tighter uppercase">Plagiarism Check</h1>
+                <h1 className="qc-page-title">Plagiarism Check</h1>
                 <p className="text-slate-500 text-xs max-w-2xl">Local similarity checking compares extracted text from submissions of the same assignment. It is an indicator for teacher review, not an automatic misconduct decision.</p>
               </div>
-              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism || selectedSubmissions.length === 0} className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
+              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism || selectedSubmissions.length === 0} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
                 {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>} Run Check
               </button>
             </div>
-            <div className="theme-card border rounded-3xl overflow-hidden">
+            <div className="qc-table-wrap">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left">
                   <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
@@ -954,7 +978,7 @@ export default function TeacherDashboard() {
                         <td className="p-5 text-sm text-slate-400">{row.assignment}</td>
                         <td className="p-5 text-sm font-black">{row.similarity}%</td>
                         <td className="p-5 text-sm text-slate-400">{row.comparedWith ? `${row.comparedWith.student} (${row.comparedWith.similarity}%)` : 'No comparable submission'}</td>
-                        <td className="p-5"><span className={`px-2 py-1 rounded text-[10px] font-black ${row.status === 'HIGH' ? 'bg-red-500/20 text-red-400' : row.status === 'REVIEW' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{row.status}</span></td>
+                        <td className="p-5"><span className={`px-2 py-1 rounded text-[10px] font-black ${row.status === 'HIGH' ? 'bg-red-500/20 text-red-400' : row.status === 'REVIEW' ? 'bg-slate-500/20 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{row.status}</span></td>
                       </tr>
                     ))}
                     {plagiarismResults.length === 0 && <tr><td colSpan="5" className="p-16 text-center text-slate-500 text-xs">Select submissions in the Submissions tab and run a plagiarism check.</td></tr>}
@@ -968,11 +992,11 @@ export default function TeacherDashboard() {
         {/* ══ STUDENTS TAB ══ */}
         {activeTab === 'students' && (
           <div className="animate-in fade-in duration-500">
-            <h1 className="text-3xl font-black text-white mb-8 tracking-tighter uppercase">Student Directory</h1>
+            <h1 className="qc-page-title mb-6">Student Directory</h1>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {students.map((st) => (
                 // ✅ FIX: key uses _id instead of index
-                <div key={st._id} className="theme-card border p-6 rounded-[2rem] flex items-center gap-4 hover:border-sky-50 transition-all group">
+                <div key={st._id} className="qc-card flex items-center gap-4 hover:border-sky-50 transition-all group">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-800 to-[#020617] flex items-center justify-center text-sky-500 font-black text-xl border border-slate-800 shadow-xl">
                     {(st.name || st.studentName)?.charAt(0).toUpperCase()}
                   </div>
@@ -990,6 +1014,8 @@ export default function TeacherDashboard() {
             </div>
             {students.length === 0 && <NoDataMessage icon={<Users size={40}/>} message="No students are currently enrolled."/>}
           </div>
+        )}
+        </>
         )}
         <AIChatbot role="teacher" showTrigger={false} />
         <MessagePanel role="teacher" showTrigger={false} />
@@ -1018,7 +1044,7 @@ export default function TeacherDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
-              <button type="button" onClick={() => handleResetSubmissionGrade(selectedReview._id)} className="rounded-lg border border-amber-500/40 px-3 py-2 text-[9px] font-black uppercase text-amber-400 hover:bg-amber-500/10" title="Clear current grading to allow regrading">Reset grade</button>
+              <button type="button" onClick={() => handleResetSubmissionGrade(selectedReview._id)} className="rounded-lg border border-slate-500/40 px-3 py-2 text-[9px] font-black uppercase text-slate-400 hover:bg-slate-500/10" title="Clear current grading to allow regrading">Reset grade</button>
               <button type="button" onClick={() => setReviewModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white" aria-label="Close review dialog">
                 <X size={24}/>
               </button>

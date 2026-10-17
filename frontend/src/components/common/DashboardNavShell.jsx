@@ -3,7 +3,7 @@ import { Menu, X } from "lucide-react";
 
 /**
  * Shared Admin/Teacher/Student dashboard chrome:
- * - Desktop: existing sidebar layout (fixed or in-flow)
+ * - Desktop: consistent sidebar width and in-flow layout
  * - Mobile: off-canvas drawer with menu button, backdrop, Escape, and nav-click close
  */
 export default function DashboardNavShell({
@@ -12,8 +12,9 @@ export default function DashboardNavShell({
   widthClass = "w-64",
   desktopMode = "flow",
   desktopOffsetClass = "",
-  mobileTitle = "Menu",
+  mobileTitle = "QuickCheck Hub",
   headerActions = null,
+  pageTitle = null,
 }) {
   const [open, setOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -56,12 +57,10 @@ export default function DashboardNavShell({
       setIsDesktop(event.matches);
       if (event.matches) setOpen(false);
     };
-    setIsDesktop(media.matches);
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, []);
 
-  // Mobile: move focus into the drawer on open; restore to Menu on dismiss.
   useEffect(() => {
     if (isDesktop) {
       wasOpenRef.current = open;
@@ -106,19 +105,20 @@ export default function DashboardNavShell({
         inert={!navVisible ? true : undefined}
         className={[
           widthClass,
-          "theme-card border-r flex flex-col overflow-y-auto custom-scrollbar",
+          "qc-dashboard-sidebar theme-card border-r flex flex-col overflow-y-auto custom-scrollbar",
           "fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 ease-out",
           open
             ? "translate-x-0 pointer-events-auto"
             : "-translate-x-full pointer-events-none md:pointer-events-auto",
           desktopPositionClass,
         ].join(" ")}
+        style={{ borderColor: "var(--sidebar-border)" }}
       >
         <div
           className="flex items-center justify-between gap-3 px-4 py-3 border-b md:hidden shrink-0"
-          style={{ borderColor: "var(--border)" }}
+          style={{ borderColor: "var(--sidebar-border)", color: "var(--sidebar-text)" }}
         >
-          <span className="text-xs font-black uppercase tracking-widest text-white">
+          <span className="text-sm font-semibold tracking-tight truncate">
             {mobileTitle}
           </span>
           <button
@@ -127,8 +127,12 @@ export default function DashboardNavShell({
             onClick={close}
             aria-label="Close navigation menu"
             tabIndex={navVisible ? 0 : -1}
-            className="p-2 rounded-xl border theme-surface hover:border-sky-500 transition-colors"
-            style={{ borderColor: "var(--border)" }}
+            className="p-2 rounded-qc border transition-colors"
+            style={{
+              borderColor: "var(--sidebar-border)",
+              color: "var(--sidebar-text)",
+              background: "var(--sidebar-hover-bg)",
+            }}
           >
             <X size={18} />
           </button>
@@ -140,12 +144,9 @@ export default function DashboardNavShell({
       </aside>
 
       <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${desktopOffsetClass}`}>
-        <div
-          className={[
-            "sticky top-0 z-30 flex items-center gap-3 px-4 py-3 border-b theme-card shrink-0",
-            headerActions ? "" : "md:hidden",
-          ].join(" ")}
-          style={{ borderColor: "var(--border)" }}
+        <header
+          className="sticky top-0 z-30 flex items-center gap-3 px-4 sm:px-6 border-b theme-card shrink-0"
+          style={{ borderColor: "var(--border)", minHeight: "var(--header-height)" }}
         >
           <button
             ref={menuButtonRef}
@@ -154,21 +155,33 @@ export default function DashboardNavShell({
             aria-label={open ? "Close navigation menu" : "Open navigation menu"}
             aria-expanded={open}
             aria-controls={navId}
-            className="md:hidden p-2 rounded-xl border theme-surface hover:border-sky-500 transition-colors"
+            className="md:hidden p-2 rounded-qc border theme-surface hover:border-[var(--accent)] transition-colors"
             style={{ borderColor: "var(--border)" }}
           >
             <Menu size={20} />
           </button>
-          <span className="md:hidden text-xs font-black uppercase tracking-widest truncate min-w-0">
-            {mobileTitle}
-          </span>
+
+          <div className="min-w-0 flex-1">
+            {pageTitle ? (
+              <h1 className="text-sm sm:text-base font-semibold tracking-tight truncate">
+                {pageTitle}
+              </h1>
+            ) : (
+              <span className="md:hidden text-sm font-semibold tracking-tight truncate block">
+                {mobileTitle}
+              </span>
+            )}
+          </div>
+
           {headerActions ? (
             <div className="ml-auto flex items-center gap-2 shrink-0">{headerActions}</div>
           ) : null}
-        </div>
+        </header>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-10 theme-page relative min-w-0">
-          {children}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden theme-page relative min-w-0">
+          <div className="qc-content px-4 sm:px-6 lg:px-8 py-5 sm:py-6 md:py-8">
+            {children}
+          </div>
         </main>
       </div>
     </div>

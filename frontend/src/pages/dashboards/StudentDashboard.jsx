@@ -26,7 +26,13 @@ import SidebarControls from '../../components/common/SidebarControls';
 
 import DashboardNavShell from '../../components/common/DashboardNavShell';
 
-import DashboardLogoutButton from '../../components/common/DashboardLogoutButton';
+import DashboardNavItem from '../../components/common/DashboardNavItem';
+
+import DashboardTopBar from '../../components/common/DashboardTopBar';
+
+import ProfilePage from '../account/ProfilePage';
+
+import SettingsPage from '../account/SettingsPage';
 
 import AIChatbot from '../../components/common/AIChatbot';
 
@@ -43,6 +49,8 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState('Overview');
+
+  const [shellView, setShellView] = useState('main');
 
   const [selectedAsgn, setSelectedAsgn] = useState(null);
 
@@ -474,7 +482,7 @@ export default function StudentDashboard() {
 
     <div className="h-screen theme-page flex items-center justify-center">
 
-        <Loader2 className="animate-spin text-blue-500" size={40} />
+        <Loader2 className="animate-spin accent-text" size={40} />
 
     </div>
 
@@ -486,62 +494,74 @@ export default function StudentDashboard() {
 
     <DashboardNavShell
 
-      widthClass="w-72"
+      widthClass="w-64"
 
       desktopMode="flow"
 
-      mobileTitle="EduCore Student"
+      mobileTitle="QuickCheck Hub"
+      pageTitle={
+        shellView === 'profile' ? 'My Profile'
+          : shellView === 'settings' ? 'Settings'
+          : (activeTab === 'Analytics' ? 'Performance' : activeTab)
+      }
 
-      headerActions={<DashboardLogoutButton onClick={handleLogout} />}
+      headerActions={
+        <DashboardTopBar
+          role="student"
+          onLogout={handleLogout}
+          onOpenProfile={() => setShellView('profile')}
+          onOpenSettings={() => setShellView('settings')}
+        />
+      }
 
       sidebar={
 
         <div className="p-6 flex flex-col flex-1 min-h-0">
 
-          <div className="flex items-center gap-3 mb-10">
-
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg">
-
-              <BookOpen size={20} className="text-white"/>
-
+          <div className="qc-sidebar-brand">
+            <span className="qc-sidebar-brand__mark"><BookOpen size={18}/></span>
+            <div>
+              <span className="qc-sidebar-brand__text">QuickCheck Hub</span>
+              <span className="qc-sidebar-brand__role">Student</span>
             </div>
-
-            <span className="text-xl font-black text-white uppercase italic tracking-tighter">EduCore<span className="text-blue-500 text-2xl">.</span></span>
-
           </div>
-
-
 
           <nav className="space-y-2 flex-1">
 
-            <NavItem icon={<Layout size={18}/>} label="Overview" active={activeTab === 'Overview'} onClick={() => setActiveTab('Overview')} />
+            <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab === 'Overview'} onClick={() => { setShellView('main'); setActiveTab('Overview'); }} />
 
-            <NavItem icon={<FileText size={18}/>} label="My Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
+            <DashboardNavItem icon={<FileText size={18}/>} label="My Assignments" active={shellView === 'main' && activeTab === 'Assignments'} onClick={() => { setShellView('main'); setActiveTab('Assignments'); }} />
 
-            <NavItem icon={<CheckCircle size={18}/>} label="Checked Results" active={activeTab === 'Checked'} onClick={() => setActiveTab('Checked')} />
+            <DashboardNavItem icon={<CheckCircle size={18}/>} label="Checked Results" active={shellView === 'main' && activeTab === 'Checked'} onClick={() => { setShellView('main'); setActiveTab('Checked'); }} />
 
-            <NavItem icon={<TrendingUp size={18}/>} label="Performance" active={activeTab === 'Analytics'} onClick={() => setActiveTab('Analytics')} />
+            <DashboardNavItem icon={<TrendingUp size={18}/>} label="Performance" active={shellView === 'main' && activeTab === 'Analytics'} onClick={() => { setShellView('main'); setActiveTab('Analytics'); }} />
 
           </nav>
 
 
 
-          <SidebarControls role="student" />
+          <SidebarControls />
 
         </div>
 
       }
 
     >
-
-
-
+        {shellView === 'profile' ? (
+          <ProfilePage onBack={() => setShellView('main')} />
+        ) : shellView === 'settings' ? (
+          <SettingsPage role="student" onBack={() => setShellView('main')} />
+        ) : (
+        <>
         <header className="mb-6 md:mb-10 flex flex-wrap items-end justify-between gap-4">
-
-            <div><h1 className="text-2xl sm:text-3xl font-black uppercase italic tracking-tighter text-white">Dashboard</h1><div className="h-1 w-16 bg-blue-600 mt-1 rounded-full"></div></div>
-
-            <div className="text-right"><p className="theme-muted text-[9px] font-black uppercase tracking-widest">Roll Number</p><p className="accent-text font-black">{studentData.regNo || userRegNo}</p></div>
-
+            <div>
+              <h1 className="qc-page-title">Dashboard</h1>
+              <p className="qc-page-subtitle">Track assignments, submissions, and published results.</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-semibold theme-muted uppercase tracking-wide">Roll Number</p>
+              <p className="accent-text font-black">{studentData.regNo || userRegNo}</p>
+            </div>
         </header>
 
 
@@ -552,23 +572,23 @@ export default function StudentDashboard() {
 
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
 
-                <StatCard label="Total Allotted" value={totalCount} color="text-blue-400" icon={<FileText size={16}/>} sub="Active Tasks" />
+                <StatCard label="Total Allotted" value={totalCount} color="text-sky-400" icon={<FileText size={16}/>} sub="Active Tasks" />
 
-                <StatCard label="Submitted" value={submittedCount} color="text-yellow-400" icon={<CheckCircle size={16}/>} sub="Under Review" />
+                <StatCard label="Submitted" value={submittedCount} color="text-slate-400" icon={<CheckCircle size={16}/>} sub="Under Review" />
 
                 <StatCard label="Graded" value={gradedCount} color="text-emerald-400" icon={<Award size={16}/>} sub="Results Published" />
 
-                <StatCard label="Pending" value={pendingCount} color="text-rose-400" icon={<Clock size={16}/>} sub="Action Needed" />
+                <StatCard label="Pending" value={pendingCount} color="text-slate-400" icon={<Clock size={16}/>} sub="Action Needed" />
 
-                <StatCard label="Average Score" value={`${studentData.averageScore || 0}%`} color="text-indigo-400" icon={<TrendingUp size={16}/>} sub="From graded work" />
+                <StatCard label="Average Score" value={`${studentData.averageScore || 0}%`} color="text-sky-400" icon={<TrendingUp size={16}/>} sub="From graded work" />
 
              </div>
 
 
 
-             <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
+             <div className="qc-card">
 
-                <h2 className="text-lg font-black uppercase italic text-white flex items-center gap-2 mb-6"><FileUp size={18} className="text-emerald-500"/> Recent Assignments</h2>
+                <h2 className="text-lg font-black uppercase italic text-white flex items-center gap-2 mb-6"><FileUp size={18} className="text-sky-500"/> Recent Assignments</h2>
 
                 <div className="space-y-4">
 
@@ -692,7 +712,7 @@ export default function StudentDashboard() {
 
              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
 
-                <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
+                <div className="qc-card">
 
                     <h2 className="text-lg font-black uppercase italic text-white mb-6">Workload Distribution</h2>
 
@@ -722,7 +742,7 @@ export default function StudentDashboard() {
 
 
 
-                <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
+                <div className="qc-card">
 
                     <h2 className="text-lg font-black uppercase italic text-white mb-6">Real Score Trend</h2>
 
@@ -756,7 +776,7 @@ export default function StudentDashboard() {
 
 
 
-                <div className="theme-card border p-4 sm:p-8 rounded-[2rem]">
+                <div className="qc-card">
 
                     <h2 className="text-lg font-black uppercase italic text-white mb-6">Grading Progress</h2>
 
@@ -930,8 +950,8 @@ export default function StudentDashboard() {
                       </div>
                     )}
                     {!!selectedAsgn.aiImprovements?.length && (
-                      <div className="bg-slate-900 p-4 rounded-2xl border border-amber-500/20">
-                        <p className="text-[8px] uppercase font-black text-amber-400 mb-2">Suggestions</p>
+                      <div className="bg-slate-900 p-4 rounded-2xl border border-sky-500/20">
+                        <p className="text-[8px] uppercase font-black text-sky-400 mb-2">Suggestions</p>
                         <ul className="list-disc pl-4 text-sm text-slate-300 space-y-1">
                           {selectedAsgn.aiImprovements.map((item, idx) => <li key={`im-${idx}`}>{item}</li>)}
                         </ul>
@@ -1058,27 +1078,14 @@ export default function StudentDashboard() {
 
         )}
 
+        </>
+        )}
+
         <AIChatbot role="student" showTrigger={false} />
 
         <MessagePanel role="student" showTrigger={false} />
 
     </DashboardNavShell>
-
-  );
-
-}
-
-
-
-function NavItem({ icon, label, active, onClick }) {
-
-  return (
-
-    <button type="button" onClick={onClick} className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all ${active ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-80'}`}>
-
-        {icon} <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
-
-    </button>
 
   );
 
@@ -1100,7 +1107,7 @@ function StatCard({ label, value, color, icon, sub }) {
 
       aria-pressed={selected}
 
-      className={`w-full text-left theme-card border p-6 rounded-[2rem] transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent)] ${selected ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/20' : ''}`}
+      className="qc-stat-card"
 
     >
 
@@ -1108,9 +1115,9 @@ function StatCard({ label, value, color, icon, sub }) {
 
         <div>
 
-          <p className="text-[8px] font-black text-slate-500 uppercase">{label}</p>
+          <p className="qc-stat-label">{label}</p>
 
-          <h3 className={`text-2xl font-black italic ${color}`}>{value}</h3>
+          <h3 className={`qc-stat-value ${color}`}>{value}</h3>
 
         </div>
 
@@ -1118,7 +1125,7 @@ function StatCard({ label, value, color, icon, sub }) {
 
       </div>
 
-      <p className="text-[7px] text-slate-600 font-bold uppercase">{sub}</p>
+      <p className="qc-stat-sub">{sub}</p>
 
     </button>
 
@@ -1139,7 +1146,7 @@ const status = asgn.status?.toLowerCase();
 
   return (
 
-    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 bg-slate-900/60 border border-slate-800/80 rounded-2xl hover:bg-slate-900 transition-all border-l-4 border-l-transparent hover:border-l-blue-500">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
 
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
 
@@ -1151,9 +1158,9 @@ const status = asgn.status?.toLowerCase();
 
           <div className="min-w-0">
 
-             <h4 className="font-black text-white text-sm uppercase italic tracking-tight break-words">{asgn.title}</h4>
+             <h4 className="font-semibold text-sm break-words">{asgn.title}</h4>
 
-             <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Due: {asgn.deadline?.split?.('T')?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : 'N/A')} · {asgn.availabilityLabel || (isDone ? asgn.status : 'Open')} · Max {asgn.points ?? asgn.totalMarks ?? '--'}</p>
+             <p className="text-xs theme-muted mt-0.5">Due: {asgn.deadline?.split?.('T')?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : 'N/A')} · {asgn.availabilityLabel || (isDone ? asgn.status : 'Open')} · Max {asgn.points ?? asgn.totalMarks ?? '--'}</p>
 
           </div>
 
@@ -1163,7 +1170,7 @@ const status = asgn.status?.toLowerCase();
 
           <button type="button" onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all" aria-label="View assignment"><Eye size={16}/></button>
 
-          <label className={`px-4 py-2.5 rounded-lg font-black text-[9px] uppercase cursor-pointer transition-all ${canUpload ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
+          <label className={`px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all ${canUpload ? 'qc-btn-primary' : 'bg-[var(--surface-2)] theme-muted cursor-not-allowed'}`}>
 
               {uploadStatus.id === asgn._id ? (uploadStatus.loading ? '...' : 'Done') : (canUpload ? 'Upload' : (isDone ? asgn.status : (asgn.availabilityLabel || 'Closed')))}
 

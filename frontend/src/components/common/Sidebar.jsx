@@ -171,7 +171,7 @@ export default function SidebarControls({ role }) {
           <div className="mt-5">
             <div className="flex items-center gap-2 text-xs font-bold mb-2"><Palette size={14}/> Accent</div>
             <div className="grid grid-cols-3 gap-2">
-              {Object.entries(accents).map(([key,item]) => <button key={key} onClick={() => setAccent(key)} className={`accent-option ${accent === key ? "selected" : ""}`}><span style={{background:item.value}}/>{item.name}</button>)}
+              {Object.entries(accents).map(([key,item]) => <button key={key} onClick={() => setAccent(key)} className={`accent-option ${accent === key ? "selected" : ""}`}><span style={{background: theme === "dark" ? item.valueDark : item.value}}/>{item.name}</button>)}
             </div>
           </div>
           <p className="theme-muted text-[9px] mt-4 leading-relaxed">In-app notifications stay enabled. Browser push notification and notification sound settings have been removed.</p>

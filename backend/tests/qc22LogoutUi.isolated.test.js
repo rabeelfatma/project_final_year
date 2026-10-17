@@ -9,6 +9,10 @@ const logoutButtonPath = path.join(
   root,
   "frontend/src/components/common/DashboardLogoutButton.jsx"
 );
+const topBarPath = path.join(
+  root,
+  "frontend/src/components/common/DashboardTopBar.jsx"
+);
 const navShellPath = path.join(
   root,
   "frontend/src/components/common/DashboardNavShell.jsx"
@@ -47,10 +51,17 @@ describe("QC-22 logout UI contracts", () => {
     assert.match(shell, /\{headerActions\}/);
   });
 
-  it("wires Admin, Teacher, and Student dashboards to top-right Logout", () => {
+  it("places Logout inside the shared top-bar account menu for all roles", () => {
+    const topBar = read(topBarPath);
+    assert.match(topBar, /DashboardLogoutButton/);
+    assert.match(topBar, /My Profile/);
+    assert.match(topBar, /Settings/);
+    assert.match(topBar, /Account menu/);
+    assert.doesNotMatch(topBar, /Sign Out/);
+
     for (const filePath of [adminDashPath, teacherDashPath, studentDashPath]) {
       const source = read(filePath);
-      assert.match(source, /DashboardLogoutButton/);
+      assert.match(source, /DashboardTopBar/);
       assert.match(source, /headerActions=\{/);
       assert.match(source, /handleLogout/);
       assert.match(source, /localStorage\.clear\(\)/);

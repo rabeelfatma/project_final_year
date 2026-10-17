@@ -140,16 +140,12 @@ export default function Login() {
   };
 
   return (
-    <div className="bg-[var(--bg)] min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-[var(--bg-secondary)] border border-sky-400/70 p-6 sm:p-8 rounded-2xl shadow-xl">
-        <div className="text-center mb-8">
-          <p className="text-sky-400 text-xs font-bold uppercase tracking-[0.25em] mb-2">
-            QuickCheck Hub
-          </p>
-          <h1 className="text-[var(--text)] text-3xl font-black tracking-tight">
-            Welcome Back
-          </h1>
-          <p className="text-[var(--text-faint)] mt-2 text-sm">
+    <div className="qc-auth-shell">
+      <div className="qc-auth-card max-w-lg">
+        <div className="text-center mb-7">
+          <p className="qc-auth-brand">QuickCheck Hub</p>
+          <h1 className="qc-auth-title">Welcome Back</h1>
+          <p className="qc-auth-subtitle">
             {showForm
               ? `${roleLabel(selectedRole)} login — email and password only`
               : "Select your role to continue"}
@@ -168,17 +164,18 @@ export default function Login() {
                   role="option"
                   aria-selected={selectedRole === id}
                   onClick={() => selectRole(id)}
-                  className="group w-full text-left rounded-xl border border-slate-700/80 bg-slate-900/40 px-4 py-4 transition-all hover:border-sky-400 hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  className="group w-full text-left rounded-qc-lg border px-4 py-4 transition-all hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
                 >
                   <div className="flex items-start gap-4">
-                    <span className="mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400 group-hover:bg-sky-500 group-hover:text-white transition-colors">
+                    <span className="mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-qc accent-soft accent-text group-hover:bg-[var(--accent)] group-hover:text-[var(--on-accent)] transition-colors">
                       <Icon size={22} aria-hidden="true" />
                     </span>
                     <span>
-                      <span className="block text-sky-300 font-black uppercase tracking-widest text-sm">
+                      <span className="block accent-text font-semibold text-sm">
                         {title}
                       </span>
-                      <span className="block text-[var(--text-faint)] text-sm mt-1">
+                      <span className="block theme-muted text-sm mt-1">
                         {description}
                       </span>
                     </span>
@@ -188,7 +185,7 @@ export default function Login() {
             </div>
             <p className="text-center text-[var(--text-faint)] mt-6 text-[11px] font-bold uppercase tracking-[0.2em]">
               Don&apos;t have an account?{" "}
-              <Link to="/signup" className="text-sky-400 hover:underline">
+              <Link to="/signup" className="accent-text hover:underline">
                 Sign Up
               </Link>
             </p>
@@ -224,7 +221,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setShowPass((value) => !value)}
-                className="absolute right-3 top-2.5 text-sky-400 hover:text-sky-300 text-[10px] font-bold uppercase inline-flex items-center gap-1"
+                className="absolute right-3 top-2.5 accent-text text-[10px] font-bold uppercase inline-flex items-center gap-1"
                 aria-label={showPass ? "Hide password" : "Show password"}
               >
                 {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -235,13 +232,13 @@ export default function Login() {
             <div className="flex flex-wrap items-center justify-between gap-2 mb-6 text-[11px] font-bold">
               <p className="text-[var(--text-faint)] uppercase tracking-widest">
                 Don&apos;t have an account?{" "}
-                <Link to="/signup" className="text-sky-400 hover:underline">
+                <Link to="/signup" className="accent-text hover:underline">
                   Sign Up
                 </Link>
               </p>
               <Link
                 to="/forgot-password"
-                className="text-sky-400 hover:underline opacity-90"
+                className="accent-text hover:underline opacity-90"
               >
                 Forgot Password?
               </Link>
@@ -260,7 +257,7 @@ export default function Login() {
             <button
               type="button"
               onClick={backToRoles}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em] hover:text-sky-400 transition-colors"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em] hover:text-[var(--accent)] transition-colors"
             >
               <ArrowLeft size={14} aria-hidden="true" />
               Change Role

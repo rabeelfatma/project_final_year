@@ -89,12 +89,13 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="bg-[var(--bg)] min-h-screen flex justify-center items-center p-4">
+    <div className="qc-auth-shell">
       <form
-        className="bg-[var(--bg-secondary)] p-6 sm:p-8 w-full max-w-md border border-sky-400 rounded-xl"
+        className="qc-auth-card"
         onSubmit={handleSubmit}
       >
-        <h2 className="text-sky-400 text-center mb-5 text-xl font-bold">
+        <p className="qc-auth-brand text-center">QuickCheck Hub</p>
+        <h2 className="qc-auth-title text-center mb-5">
           Reset Password
         </h2>
 

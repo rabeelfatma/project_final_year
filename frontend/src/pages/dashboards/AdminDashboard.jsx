@@ -12,14 +12,18 @@ import {
 import adminService from '../../services/adminService';
 import SidebarControls from '../../components/common/SidebarControls';
 import DashboardNavShell from '../../components/common/DashboardNavShell';
-import DashboardLogoutButton from '../../components/common/DashboardLogoutButton';
+import DashboardNavItem from '../../components/common/DashboardNavItem';
+import DashboardTopBar from '../../components/common/DashboardTopBar';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
+import ProfilePage from '../account/ProfilePage';
+import SettingsPage from '../account/SettingsPage';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   
   const [activeTab, setActiveTab] = useState('Dashboard');
+  const [shellView, setShellView] = useState('main');
   const [loading, setLoading] = useState(false);
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -173,65 +177,95 @@ export default function AdminDashboard() {
     navigate('/admin');
   };
 
+  const openMainTab = (tab) => {
+    setShellView('main');
+    setActiveTab(tab);
+  };
+
+  const pageTitle =
+    shellView === 'profile'
+      ? 'My Profile'
+      : shellView === 'settings'
+        ? 'Settings'
+        : activeTab;
+
   return (
     <DashboardNavShell
       widthClass="w-64"
-      desktopMode="fixed"
-      desktopOffsetClass="md:ml-64"
+      desktopMode="flow"
       mobileTitle="QuickCheck Hub"
-      headerActions={<DashboardLogoutButton onClick={handleLogout} />}
+      pageTitle={pageTitle}
+      headerActions={
+        <DashboardTopBar
+          role="admin"
+          onLogout={handleLogout}
+          onOpenProfile={() => setShellView('profile')}
+          onOpenSettings={() => setShellView('settings')}
+          onRegistrationNotificationClick={() => {
+            setRegistrationFilter('pending');
+            openMainTab('Registration Requests');
+          }}
+        />
+      }
       sidebar={
-        <div className="p-6 flex flex-col flex-1 min-h-0">
-          <div className="text-xl font-black mb-10 flex items-center gap-2 uppercase tracking-tighter text-white">
-            <Activity className="text-sky-500" /> QuickCheck Hub
+        <div className="p-5 flex flex-col flex-1 min-h-0">
+          <div className="qc-sidebar-brand">
+            <span className="qc-sidebar-brand__mark"><Activity size={18} /></span>
+            <div>
+              <span className="qc-sidebar-brand__text">QuickCheck Hub</span>
+              <span className="qc-sidebar-brand__role">Admin</span>
+            </div>
           </div>
 
-          <nav className="space-y-2">
-            <AdminLink icon={<Layout/>} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
-            <AdminLink icon={<Users/>} label="Students" active={activeTab === 'Students'} onClick={() => setActiveTab('Students')} />
-            <AdminLink icon={<GraduationCap/>} label="Teachers" active={activeTab === 'Teachers'} onClick={() => setActiveTab('Teachers')} />
-            <AdminLink icon={<FileText/>} label="Assignments" active={activeTab === 'Assignments'} onClick={() => setActiveTab('Assignments')} />
-            <AdminLink
-              icon={<UserPlus/>}
+          <nav className="space-y-1" aria-label="Admin navigation">
+            <DashboardNavItem icon={<Layout size={18}/>} label="Dashboard" active={shellView === 'main' && activeTab === 'Dashboard'} onClick={() => openMainTab('Dashboard')} />
+            <DashboardNavItem icon={<Users size={18}/>} label="Students" active={shellView === 'main' && activeTab === 'Students'} onClick={() => openMainTab('Students')} />
+            <DashboardNavItem icon={<GraduationCap size={18}/>} label="Teachers" active={shellView === 'main' && activeTab === 'Teachers'} onClick={() => openMainTab('Teachers')} />
+            <DashboardNavItem icon={<FileText size={18}/>} label="Assignments" active={shellView === 'main' && activeTab === 'Assignments'} onClick={() => openMainTab('Assignments')} />
+            <DashboardNavItem
+              icon={<UserPlus size={18}/>}
               label="Registration Requests"
-              active={activeTab === 'Registration Requests'}
-              onClick={() => setActiveTab('Registration Requests')}
+              active={shellView === 'main' && activeTab === 'Registration Requests'}
+              onClick={() => openMainTab('Registration Requests')}
               badge={pendingRegistrationCount > 0 ? pendingRegistrationCount : null}
             />
           </nav>
 
-          <SidebarControls
-            role="admin"
-            onRegistrationNotificationClick={() => {
-              setRegistrationFilter('pending');
-              setActiveTab('Registration Requests');
-            }}
-          />
+          <SidebarControls />
         </div>
       }
     >
-        <header className="flex flex-wrap justify-between items-center gap-3 mb-6 md:mb-10">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black italic tracking-tighter uppercase">{activeTab}</h1>
-          
+        {shellView === 'profile' ? (
+          <ProfilePage onBack={() => setShellView('main')} />
+        ) : shellView === 'settings' ? (
+          <SettingsPage role="admin" onBack={() => setShellView('main')} />
+        ) : (
+        <>
+        <div className="qc-page-header">
+          <div>
+            <h2 className="qc-page-title">{activeTab}</h2>
+            <p className="qc-page-subtitle">Manage users, assignments, and registration approvals.</p>
+          </div>
           {(activeTab === 'Students' || activeTab === 'Teachers') && (
-            <button 
-              onClick={() => navigate(activeTab === 'Students' ? '/signup/student' : '/signup/teacher')} 
-              className="bg-sky-500 text-black px-4 sm:px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/20 text-xs tracking-widest"
+            <button
+              type="button"
+              onClick={() => navigate(activeTab === 'Students' ? '/signup/student' : '/signup/teacher')}
+              className="qc-btn qc-btn-primary"
             >
-              <Plus size={18}/> ADD {activeTab.slice(0, -1).toUpperCase()}
+              <Plus size={16}/> Add {activeTab.slice(0, -1)}
             </button>
           )}
-        </header>
+        </div>
 
         {loading ? (
-          <div className="h-64 flex items-center justify-center font-bold text-sky-500 animate-pulse uppercase tracking-widest">Fetching System Data...</div>
+          <div className="h-56 flex items-center justify-center text-sm font-semibold accent-text">Loading system data…</div>
         ) : activeTab === 'Dashboard' ? (
-          <div className="space-y-10 animate-in fade-in duration-700">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              <StatBox label="Total Users" value={systemStats.totalUsers} icon={<UsersRound size={20}/>} />
-              <StatBox label="Teachers" value={systemStats.totalTeachers} icon={<GraduationCap size={20}/>} />
-              <StatBox label="Students" value={systemStats.totalStudents} icon={<UserRound size={20}/>} />
-              <StatBox label="Assignments" value={systemStats.totalAssignments} icon={<ClipboardList size={20}/>} />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatBox label="Total Users" value={systemStats.totalUsers} icon={<UsersRound size={18}/>} />
+              <StatBox label="Teachers" value={systemStats.totalTeachers} icon={<GraduationCap size={18}/>} />
+              <StatBox label="Students" value={systemStats.totalStudents} icon={<UserRound size={18}/>} />
+              <StatBox label="Assignments" value={systemStats.totalAssignments} icon={<ClipboardList size={18}/>} />
             </div>
             {pendingRegistrationCount > 0 && (
               <button
@@ -240,10 +274,10 @@ export default function AdminDashboard() {
                   setRegistrationFilter('pending');
                   setActiveTab('Registration Requests');
                 }}
-                className="w-full text-left p-4 sm:p-5 rounded-2xl border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 transition-colors"
+                className="w-full text-left qc-card hover:border-[var(--accent)] transition-colors"
               >
-                <p className="text-[10px] font-black uppercase tracking-widest text-sky-400 mb-1">Registration Requests</p>
-                <p className="text-sm font-bold text-slate-200">
+                <p className="qc-section-title mb-1">Registration Requests</p>
+                <p className="text-sm font-medium">
                   {readyForApprovalCount} ready for Admin approval
                   {awaitingVerificationCount > 0
                     ? ` · ${awaitingVerificationCount} awaiting email verification`
@@ -252,11 +286,11 @@ export default function AdminDashboard() {
               </button>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-              <div className="p-4 sm:p-8 rounded-[2rem] border theme-card">
-                <h3 className="mb-2 font-black uppercase text-slate-500 text-xs tracking-widest">Total Users</h3>
-                <p className="text-[10px] text-slate-600 mb-5">User growth over the latest six months</p>
-                <div style={{ width: '100%', height: 300 }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+              <div className="qc-card">
+                <h3 className="qc-section-title">Total Users</h3>
+                <p className="text-xs theme-muted mb-4">User growth over the latest six months</p>
+                <div style={{ width: '100%', height: 280 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={systemStats.chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -269,10 +303,10 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="p-4 sm:p-8 rounded-[2rem] border theme-card">
-                <h3 className="mb-2 font-black uppercase text-slate-500 text-xs tracking-widest">Total Assignments</h3>
-                <p className="text-[10px] text-slate-600 mb-5">Assignments created over the latest six months</p>
-                <div style={{ width: '100%', height: 300 }}>
+              <div className="qc-card">
+                <h3 className="qc-section-title">Total Assignments</h3>
+                <p className="text-xs theme-muted mb-4">Assignments created over the latest six months</p>
+                <div style={{ width: '100%', height: 280 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={systemStats.assignmentBarData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -285,9 +319,9 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="p-4 sm:p-8 rounded-[2rem] border theme-card lg:col-span-2">
-                <h3 className="mb-6 font-black uppercase text-slate-500 text-xs tracking-widest">Department Distribution</h3>
-                <div style={{ width: '100%', height: 300 }}>
+              <div className="qc-card lg:col-span-2">
+                <h3 className="qc-section-title mb-4">Department Distribution</h3>
+                <div style={{ width: '100%', height: 280 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={systemStats.pieData} innerRadius={70} outerRadius={100} dataKey="value" paddingAngle={8}>
@@ -301,24 +335,19 @@ export default function AdminDashboard() {
             </div>
           </div>
         ) : activeTab === 'Registration Requests' ? (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex flex-wrap justify-between items-end gap-3">
-              <h2 className="text-xl sm:text-2xl font-black italic text-sky-500 uppercase tracking-tighter">
-                Registration Requests
-              </h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-              <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Total Pending</p>
-                <p className="text-lg font-black text-slate-100">{totalPendingCount}</p>
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="qc-card !py-3">
+                <p className="qc-stat-label">Total Pending</p>
+                <p className="text-xl font-bold">{totalPendingCount}</p>
               </div>
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-amber-400">Awaiting Email Verification</p>
-                <p className="text-lg font-black text-amber-300">{awaitingVerificationCount}</p>
+              <div className="qc-card !py-3" style={{ borderColor: 'color-mix(in srgb, var(--warning) 35%, var(--border))' }}>
+                <p className="qc-stat-label" style={{ color: 'var(--warning)' }}>Awaiting Email Verification</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--warning)' }}>{awaitingVerificationCount}</p>
               </div>
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Ready for Admin Approval</p>
-                <p className="text-lg font-black text-emerald-300">{readyForApprovalCount}</p>
+              <div className="qc-card !py-3" style={{ borderColor: 'color-mix(in srgb, var(--success) 35%, var(--border))' }}>
+                <p className="qc-stat-label" style={{ color: 'var(--success)' }}>Ready for Admin Approval</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{readyForApprovalCount}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -327,11 +356,7 @@ export default function AdminDashboard() {
                   key={status}
                   type="button"
                   onClick={() => setRegistrationFilter(status)}
-                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    registrationFilter === status
-                      ? 'bg-sky-500 text-black'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                  className={`qc-filter-chip ${registrationFilter === status ? 'is-active' : ''}`}
                 >
                   {status === 'pending' ? 'Pending Requests' : status}
                 </button>
@@ -346,58 +371,56 @@ export default function AdminDashboard() {
             />
           </div>
         ) : (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex flex-wrap justify-between items-end gap-3">
-                <h2 className="text-xl sm:text-2xl font-black italic text-sky-500 uppercase tracking-tighter">LISTING: {activeTab}</h2>
-                <span className="text-xs font-bold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">{viewData.length} Records found</span>
+          <div className="space-y-4">
+            <div className="flex flex-wrap justify-between items-center gap-3">
+                <p className="text-sm theme-muted">{viewData.length} records</p>
             </div>
             <DataTable data={viewData} onDelete={handleDelete} onEdit={handleEditClick} type={activeTab} />
           </div>
         )}
+        </>
+        )}
         <AIChatbot role="admin" showTrigger={false} />
         <MessagePanel role="admin" showTrigger={false} />
 
-      {/* --- EDIT MODAL (FIXED WITH EMAIL AND DROPDOWN) --- */}
       {isEditModalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
-          <div className="theme-card border w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-5 sm:p-8 relative shadow-2xl max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto my-0 sm:my-auto">
-            <button type="button" onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 sm:top-6 sm:right-6 text-slate-500 hover:text-white p-2" aria-label="Close edit dialog">
-              <X size={24}/>
+        <div className="qc-modal-backdrop">
+          <div className="qc-modal">
+            <button type="button" onClick={() => setIsEditModalOpen(false)} className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]" aria-label="Close edit dialog">
+              <X size={20}/>
             </button>
-            <h2 className="text-xl sm:text-2xl font-black text-white italic uppercase mb-6 tracking-tighter pr-10">Edit {activeTab.slice(0,-1)}</h2>
+            <h2 className="qc-page-title pr-10 mb-5">Edit {activeTab.slice(0,-1)}</h2>
             
             <form onSubmit={handleUpdate} className="space-y-4 custom-scrollbar">
               <div>
-                <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Full Name</label>
+                <label className="qc-label">Full Name</label>
                 <input 
                   type="text" 
                   value={editingItem.name || editingItem.title || ''} 
                   onChange={(e) => setEditingItem({...editingItem, name: e.target.value, title: e.target.value})}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-white focus:border-sky-500 outline-none"
+                  className="qc-input"
                 />
               </div>
 
-              {/* Email Field (Visible for both) */}
               {(activeTab === 'Students' || activeTab === 'Teachers') && (
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Email Address</label>
+                  <label className="qc-label">Email Address</label>
                   <input 
                     type="email" 
                     value={editingItem.email || ''} 
                     onChange={(e) => setEditingItem({...editingItem, email: e.target.value})}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-white focus:border-sky-500 outline-none"
+                    className="qc-input"
                   />
                 </div>
               )}
 
-              {/* Department Field */}
               {(activeTab === 'Students' || activeTab === 'Teachers') && (
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Department</label>
+                  <label className="qc-label">Department</label>
                   <select 
                     value={editingItem.department || 'CS'} 
                     onChange={(e) => setEditingItem({...editingItem, department: e.target.value})}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-white focus:border-sky-500 outline-none"
+                    className="qc-input"
                   >
                     <option value="CS">Computer Science (CS)</option>
                     <option value="SE">Software Engineering (SE)</option>
@@ -405,14 +428,13 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* Subject Dropdown ONLY for Teachers (Fixed with 40 subjects) */}
               {activeTab === 'Teachers' && (
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Assigned Subject</label>
+                  <label className="qc-label">Assigned Subject</label>
                   <select 
                     value={editingItem.subject || ''} 
                     onChange={(e) => setEditingItem({...editingItem, subject: e.target.value})}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-white focus:border-sky-500 outline-none"
+                    className="qc-input"
                   >
                     <option value="">Select Subject</option>
                     {SUBJECTS.map((sub, idx) => (
@@ -422,20 +444,19 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* Reg # for Students */}
               {activeTab === 'Students' && (
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Registration Number</label>
+                  <label className="qc-label">Registration Number</label>
                   <input 
                     type="text" 
                     value={editingItem.registrationNumber || ''} 
                     readOnly
-                    className="w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-slate-500 cursor-not-allowed outline-none"
+                    className="qc-input opacity-70 cursor-not-allowed"
                   />
                 </div>
               )}
 
-              <button type="submit" className="w-full bg-sky-500 text-black font-black py-4 rounded-2xl hover:bg-sky-400 transition-all uppercase tracking-widest text-xs mt-4">
+              <button type="submit" className="qc-btn qc-btn-primary qc-btn-block mt-2">
                 Update Record
               </button>
             </form>
@@ -446,101 +467,79 @@ export default function AdminDashboard() {
   );
 }
 
-// Sub-components
-function AdminLink({ icon, label, active, onClick, badge = null }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 p-4 rounded-2xl cursor-pointer font-black transition-all text-left ${active ? 'bg-sky-500 text-black shadow-lg shadow-sky-500/30' : 'text-slate-500 hover:bg-slate-800 hover:text-white'}`}
-    >
-      {icon}
-      <span className="text-[10px] uppercase tracking-widest flex-1">{label}</span>
-      {badge != null && (
-        <span className={`min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] flex items-center justify-center ${active ? 'bg-black/20 text-black' : 'bg-sky-500 text-black'}`}>
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-}
-
 function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject }) {
   const colSpan = filter === 'pending' ? 7 : 6;
   return (
-    <div className="rounded-3xl border theme-card overflow-hidden shadow-2xl">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[780px] text-left">
-          <thead className="theme-surface text-[10px] uppercase text-slate-500 font-black tracking-widest border-b border-slate-800">
-            <tr>
-              <th className="p-3 sm:p-5">Full Name</th>
-              <th className="p-3 sm:p-5">Email</th>
-              <th className="p-3 sm:p-5">Requested Role</th>
-              <th className="p-3 sm:p-5">Registration Date</th>
-              <th className="p-3 sm:p-5">Email Verified</th>
-              <th className="p-3 sm:p-5">Status</th>
-              {filter === 'pending' && <th className="p-3 sm:p-5 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {data.length > 0 ? data.map((item) => (
-              <tr key={item.id} className="hover:bg-sky-500/5 transition-colors">
-                <td className="p-3 sm:p-5 font-bold text-sm text-slate-200">{item.name}</td>
-                <td className="p-3 sm:p-5 text-slate-400 text-sm break-all">{item.email}</td>
-                <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest text-sky-400">
-                  {item.role}
-                </td>
-                <td className="p-3 sm:p-5 text-slate-400 text-sm whitespace-nowrap">
-                  {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
-                </td>
-                <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                  {item.emailVerified === true ? (
-                    <span className="text-emerald-400">Verified</span>
-                  ) : item.approvalStatus === 'pending' ? (
-                    <span className="text-amber-400">Unverified</span>
-                  ) : (
-                    <span className="text-slate-500">Not recorded</span>
-                  )}
-                </td>
-                <td className="p-3 sm:p-5 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  {item.approvalStatus}
-                </td>
-                {filter === 'pending' && (
-                  <td className="p-3 sm:p-5 text-right whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2 justify-end">
-                      <button
-                        type="button"
-                        disabled={actionId === item.id || item.emailVerified !== true}
-                        onClick={() => onApprove(item.id)}
-                        className="inline-flex items-center gap-1 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-400/10 rounded-xl hover:bg-emerald-400 hover:text-black transition-all disabled:opacity-50"
-                        aria-label={`Approve ${item.name}`}
-                        title={item.emailVerified !== true ? 'Email must be verified first' : 'Approve'}
-                      >
-                        <Check size={14} /> Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actionId === item.id}
-                        onClick={() => onReject(item.id)}
-                        className="inline-flex items-center gap-1 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-400 bg-red-400/10 rounded-xl hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
-                        aria-label={`Reject ${item.name}`}
-                      >
-                        <Ban size={14} /> Reject
-                      </button>
-                    </div>
-                  </td>
+    <div className="qc-table-wrap">
+      <table className="qc-table min-w-[780px]">
+        <thead>
+          <tr>
+            <th>Full Name</th>
+            <th>Email</th>
+            <th>Requested Role</th>
+            <th>Registration Date</th>
+            <th>Email Verified</th>
+            <th>Status</th>
+            {filter === 'pending' && <th className="text-right">Actions</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {data.length > 0 ? data.map((item) => (
+            <tr key={item.id}>
+              <td className="font-semibold">{item.name}</td>
+              <td className="theme-muted break-all">{item.email}</td>
+              <td className="accent-text text-xs font-semibold uppercase tracking-wide">{item.role}</td>
+              <td className="theme-muted whitespace-nowrap">
+                {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+              </td>
+              <td className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
+                {item.emailVerified === true ? (
+                  <span style={{ color: 'var(--success)' }}>Verified</span>
+                ) : item.approvalStatus === 'pending' ? (
+                  <span style={{ color: 'var(--warning)' }}>Unverified</span>
+                ) : (
+                  <span className="theme-muted">Not recorded</span>
                 )}
-              </tr>
-            )) : (
-              <tr>
-                <td colSpan={colSpan} className="p-10 sm:p-20 text-center italic text-slate-500 uppercase tracking-widest text-xs font-bold">
-                  No {filter} registration requests.
+              </td>
+              <td className="theme-muted text-xs font-semibold uppercase tracking-wide">
+                {item.approvalStatus}
+              </td>
+              {filter === 'pending' && (
+                <td className="text-right whitespace-nowrap">
+                  <div className="inline-flex items-center gap-2 justify-end">
+                    <button
+                      type="button"
+                      disabled={actionId === item.id || item.emailVerified !== true}
+                      onClick={() => onApprove(item.id)}
+                      className="qc-btn qc-btn-secondary !min-h-8 !px-2.5 !text-xs"
+                      style={{ color: 'var(--success)' }}
+                      aria-label={`Approve ${item.name}`}
+                      title={item.emailVerified !== true ? 'Email must be verified first' : 'Approve'}
+                    >
+                      <Check size={14} /> Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionId === item.id}
+                      onClick={() => onReject(item.id)}
+                      className="qc-btn qc-btn-danger !min-h-8 !px-2.5 !text-xs"
+                      aria-label={`Reject ${item.name}`}
+                    >
+                      <Ban size={14} /> Reject
+                    </button>
+                  </div>
                 </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              )}
+            </tr>
+          )) : (
+            <tr>
+              <td colSpan={colSpan} className="qc-empty">
+                No {filter} registration requests.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -552,13 +551,18 @@ function StatBox({ label, value, icon }) {
       type="button"
       onClick={() => setSelected((current) => !current)}
       aria-pressed={selected}
-      className={`w-full text-left p-5 sm:p-8 rounded-[2rem] border theme-card shadow-lg transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent)] ${selected ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/20' : ''}`}
+      className="qc-stat-card"
     >
-      <div className="flex items-start justify-between mb-4">
-        <span className={`p-3 rounded-xl border transition-colors ${selected ? 'accent-soft accent-text' : 'theme-page theme-muted'}`} style={{borderColor: selected ? 'var(--accent)' : 'var(--border)'}}>{icon}</span>
+      <div className="flex items-start justify-between mb-3">
+        <span
+          className={`p-2.5 rounded-qc border ${selected ? 'accent-soft accent-text' : 'theme-muted'}`}
+          style={{ borderColor: selected ? 'var(--accent)' : 'var(--border)' }}
+        >
+          {icon}
+        </span>
       </div>
-      <p className="text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest">{label}</p>
-      <h3 className="text-4xl font-black accent-text">{value || 0}</h3>
+      <p className="qc-stat-label">{label}</p>
+      <h3 className="qc-stat-value">{value || 0}</h3>
     </button>
   );
 }
@@ -568,47 +572,47 @@ function DataTable({ data, onDelete, onEdit, type }) {
   const isStudent = type === 'Students';
 
   return (
-    <div className="rounded-3xl border theme-card overflow-hidden shadow-2xl">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-left">
-          <thead className="theme-surface text-[10px] uppercase text-slate-500 font-black tracking-widest border-b border-slate-800">
-            <tr>
-              <th className="p-3 sm:p-5">{isAssignment ? 'Title' : 'Full Name'}</th>
-              <th className="p-3 sm:p-5">{isStudent ? 'Reg #' : (isAssignment ? 'Teacher' : 'Subject')}</th>
-              <th className="p-3 sm:p-5">{isAssignment ? 'Due Date' : 'Dept'}</th>
-              <th className="p-3 sm:p-5 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {data.length > 0 ? data.map((item) => (
-              <tr key={item._id} className="hover:bg-sky-500/5 transition-colors group">
-                <td className="p-3 sm:p-5 font-bold text-sm text-slate-200">
-                  {isAssignment ? item.title : item.name}
-                  {!isAssignment && <div className="text-[10px] text-slate-500 font-normal break-all">{item.email}</div>}
-                </td>
-                <td className="p-3 sm:p-5 text-slate-400 text-sm whitespace-nowrap">
-                  {isStudent ? (item.registrationNumber || 'N/A') : (isAssignment ? (item.teacherName || "Admin") : (item.subject || 'Not Assigned'))}
-                </td>
-                <td className="p-3 sm:p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">
-                  {isAssignment ? (item.deadline ? new Date(item.deadline).toLocaleDateString() : 'N/A') : (item.department || 'CS')}
-                </td>
-                <td className="p-3 sm:p-5 text-right whitespace-nowrap">
-                  <div className="inline-flex items-center gap-2 justify-end">
-                    {!isAssignment && <button type="button" onClick={() => onEdit(item)} className="p-2 text-sky-400 bg-sky-400/10 rounded-xl hover:bg-sky-400 hover:text-black transition-all" aria-label="Edit record">
-                      <Edit2 size={16}/>
-                    </button>}
-                    <button type="button" onClick={() => onDelete(item._id)} className="p-2 text-red-500 bg-red-500/10 rounded-xl hover:bg-red-500 hover:text-white transition-all" aria-label="Delete record">
-                      <Trash2 size={16}/>
+    <div className="qc-table-wrap">
+      <table className="qc-table min-w-[560px]">
+        <thead>
+          <tr>
+            <th>{isAssignment ? 'Title' : 'Full Name'}</th>
+            <th>{isStudent ? 'Reg #' : (isAssignment ? 'Teacher' : 'Subject')}</th>
+            <th>{isAssignment ? 'Due Date' : 'Dept'}</th>
+            <th className="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.length > 0 ? data.map((item) => (
+            <tr key={item._id}>
+              <td className="font-semibold">
+                {isAssignment ? item.title : item.name}
+                {!isAssignment && <div className="text-xs theme-muted font-normal break-all mt-0.5">{item.email}</div>}
+              </td>
+              <td className="theme-muted whitespace-nowrap">
+                {isStudent ? (item.registrationNumber || 'N/A') : (isAssignment ? (item.teacherName || "Admin") : (item.subject || 'Not Assigned'))}
+              </td>
+              <td className="theme-muted text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
+                {isAssignment ? (item.deadline ? new Date(item.deadline).toLocaleDateString() : 'N/A') : (item.department || 'CS')}
+              </td>
+              <td className="text-right whitespace-nowrap">
+                <div className="inline-flex items-center gap-2 justify-end">
+                  {!isAssignment && (
+                    <button type="button" onClick={() => onEdit(item)} className="qc-btn qc-btn-secondary !min-h-8 !px-2 !py-1.5" aria-label="Edit record">
+                      <Edit2 size={15}/>
                     </button>
-                  </div>
-                </td>
-              </tr>
-            )) : (
-              <tr><td colSpan="4" className="p-10 sm:p-20 text-center italic text-slate-500 uppercase tracking-widest text-xs font-bold">No {type} found.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  )}
+                  <button type="button" onClick={() => onDelete(item._id)} className="qc-btn qc-btn-danger !min-h-8 !px-2 !py-1.5" aria-label="Delete record">
+                    <Trash2 size={15}/>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          )) : (
+            <tr><td colSpan="4" className="qc-empty">No {type} found.</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

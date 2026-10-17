@@ -221,9 +221,9 @@ export default function PortalControls({ role }) {
                 type="button"
                 onClick={() => setAccent(key)}
                 className={`rounded-xl border p-2 text-[10px] font-bold transition-all ${accent === key ? "ring-2" : ""}`}
-                style={{ borderColor: "var(--border)", "--tw-ring-color": item.value }}
+                style={{ borderColor: "var(--border)", "--tw-ring-color": theme === "dark" ? item.valueDark : item.value }}
               >
-                <span className="block h-5 rounded-lg mb-1" style={{ background: item.value }} />
+                <span className="block h-5 rounded-lg mb-1" style={{ background: theme === "dark" ? item.valueDark : item.value }} />
                 {item.name}
               </button>
             ))}

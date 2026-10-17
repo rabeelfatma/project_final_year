@@ -1,10 +1,24 @@
-export default function Button({ text, type = "submit", onClick, disabled = false }) {
+export default function Button({
+  text,
+  type = "submit",
+  onClick,
+  disabled = false,
+  variant = "primary",
+  className = "",
+}) {
+  const variantClass =
+    variant === "secondary"
+      ? "qc-btn-secondary"
+      : variant === "danger"
+        ? "qc-btn-danger"
+        : "qc-btn-primary";
+
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="w-full bg-sky-500 hover:bg-sky-600 active:scale-95 transition-all text-white p-2 rounded font-bold shadow-lg shadow-sky-500/20 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
+      className={`qc-btn qc-btn-block ${variantClass} ${className}`.trim()}
     >
       {text}
     </button>

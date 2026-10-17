@@ -1,12 +1,21 @@
 export default function Alert({ message }) {
-  const isError = message.includes("❌");
+  if (!message) return null;
+
+  const text = String(message);
+  const isError =
+    text.includes("❌") ||
+    /fail|invalid|error|denied|required|unavailable|unable/i.test(text);
+
   return (
-    <div className={`mb-3 p-2 text-sm font-medium border rounded transition-all duration-300 animate-bounce-short ${
-      isError 
-      ? "text-[var(--error)] bg-[var(--error-bg)] border-[var(--error)]" 
-      : "text-[var(--accent)] bg-[var(--accent-bg)] border-[var(--accent)]"
-    }`}>
-      {message}
+    <div
+      role="alert"
+      className={`mb-4 px-3 py-2.5 text-sm font-medium border rounded-qc ${
+        isError
+          ? "text-[var(--danger)] bg-[var(--danger-bg)] border-[color-mix(in_srgb,var(--danger)_35%,var(--border))]"
+          : "text-[var(--accent)] bg-[var(--accent-bg)] border-[color-mix(in_srgb,var(--accent)_35%,var(--border))]"
+      }`}
+    >
+      {text.replace(/^❌\s*/, "")}
     </div>
   );
 }

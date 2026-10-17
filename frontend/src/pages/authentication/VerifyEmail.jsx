@@ -93,16 +93,16 @@ export default function VerifyEmail() {
   };
 
   return (
-    <div className="bg-[var(--bg)] min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[var(--bg-secondary)] border border-sky-400/70 p-6 sm:p-8 rounded-2xl shadow-xl">
-        <div className="text-center mb-8">
-          <p className="text-sky-400 text-xs font-bold uppercase tracking-[0.25em] mb-2">
+    <div className="qc-auth-shell">
+      <div className="qc-auth-card">
+        <div className="text-center mb-7">
+          <p className="qc-auth-brand">
             QuickCheck Hub
           </p>
-          <h1 className="text-[var(--text)] text-3xl font-black tracking-tight">
+          <h1 className="qc-auth-title">
             Verify Email
           </h1>
-          <p className="text-[var(--text-faint)] mt-2 text-sm">
+          <p className="qc-auth-subtitle">
             Confirm your email to continue registration review
           </p>
         </div>

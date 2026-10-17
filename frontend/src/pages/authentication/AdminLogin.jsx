@@ -78,19 +78,15 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="bg-[var(--bg)] min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[var(--bg-secondary)] border border-sky-400/70 p-6 sm:p-8 rounded-2xl shadow-xl">
-        <div className="text-center mb-8">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400 mb-4">
+    <div className="qc-auth-shell">
+      <div className="qc-auth-card">
+        <div className="text-center mb-7">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-qc accent-soft accent-text mb-4">
             <Shield size={24} aria-hidden="true" />
           </span>
-          <h1 className="text-[var(--text)] text-3xl font-black tracking-tight">
-            QuickCheck Hub
-          </h1>
-          <p className="text-sky-400 text-sm font-bold uppercase tracking-[0.2em] mt-2">
-            Administration Portal
-          </p>
-          <p className="text-[var(--text-faint)] mt-2 text-sm">
+          <p className="qc-auth-brand">Administration Portal</p>
+          <h1 className="qc-auth-title">QuickCheck Hub</h1>
+          <p className="qc-auth-subtitle">
             Sign in with your administrator credentials
           </p>
         </div>
@@ -125,7 +121,7 @@ export default function AdminLogin() {
             <button
               type="button"
               onClick={() => setShowPass((v) => !v)}
-              className="absolute right-3 top-2.5 text-sky-400 hover:text-sky-300 text-[10px] font-bold uppercase inline-flex items-center gap-1"
+              className="absolute right-3 top-2.5 accent-text text-[10px] font-bold uppercase inline-flex items-center gap-1"
               aria-label={showPass ? "Hide password" : "Show password"}
             >
               {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -136,7 +132,7 @@ export default function AdminLogin() {
           <div className="text-right mb-6">
             <Link
               to="/forgot-password"
-              className="text-sky-400 text-[11px] font-bold hover:underline opacity-90"
+              className="accent-text text-[11px] font-bold hover:underline opacity-90"
             >
               Forgot Password?
             </Link>

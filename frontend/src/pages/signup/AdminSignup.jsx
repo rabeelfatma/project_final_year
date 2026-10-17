@@ -80,10 +80,10 @@ export default function AdminSignup() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-      <form className="bg-[#020617] p-8 w-96 border border-sky-400 rounded-xl" onSubmit={handleSubmit}>
+    <div className="qc-auth-shell">
+      <form className="qc-auth-card" onSubmit={handleSubmit}>
 
-        <h2 className="text-sky-400 text-center mb-5 text-xl font-bold">
+        <h2 className="qc-auth-title text-center mb-5">
           Add Admin
         </h2>
 

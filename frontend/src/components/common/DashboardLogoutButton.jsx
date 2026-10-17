@@ -11,10 +11,9 @@ export default function DashboardLogoutButton({ onClick, label = "Logout" }) {
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl border text-red-500 font-bold text-[10px] sm:text-xs uppercase tracking-widest hover:bg-red-500/10 hover:border-red-500/40 transition-all shrink-0"
-      style={{ borderColor: "var(--border)" }}
+      className="qc-btn qc-btn-danger qc-btn-block !min-h-9 !px-3 sm:!px-3.5 !text-xs"
     >
-      <LogOut size={16} aria-hidden="true" />
+      <LogOut size={15} aria-hidden="true" />
       <span>{label}</span>
     </button>
   );

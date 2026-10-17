@@ -35,7 +35,7 @@ export default function AboutSection() {
               style={{ animationDelay: "200ms" }}
               className={`p-6 rounded-xl cursor-pointer transition-all duration-300 ease-out animate-fadeInUp
               ${activeIndex === 0
-                ? "bg-sky-500 scale-105 shadow-[0_0_25px_rgba(56,189,248,0.5)] ring-2 ring-sky-300"
+                ? "bg-sky-500 scale-105 shadow-qc-md ring-2 ring-sky-300"
                 : "bg-[var(--card-bg)] hover:scale-105 hover:bg-[var(--card-bg-hover)]"}`}
             >
               <h4 className="font-bold text-lg mb-2">Ali Raza</h4>
@@ -52,7 +52,7 @@ export default function AboutSection() {
               style={{ animationDelay: "250ms" }}
               className={`p-6 rounded-xl cursor-pointer transition-all duration-300 ease-out animate-fadeInUp
               ${activeIndex === 1
-                ? "bg-sky-500 scale-105 shadow-[0_0_25px_rgba(56,189,248,0.5)] ring-2 ring-sky-300"
+                ? "bg-sky-500 scale-105 shadow-qc-md ring-2 ring-sky-300"
                 : "bg-[var(--card-bg)] hover:scale-105 hover:bg-[var(--card-bg-hover)]"}`}
             >
               <h4 className="font-bold text-lg mb-2">Sana Iqbal</h4>
@@ -69,7 +69,7 @@ export default function AboutSection() {
               style={{ animationDelay: "300ms" }}
               className={`p-6 rounded-xl cursor-pointer transition-all duration-300 ease-out animate-fadeInUp
               ${activeIndex === 2
-                ? "bg-sky-500 scale-105 shadow-[0_0_25px_rgba(56,189,248,0.5)] ring-2 ring-sky-300"
+                ? "bg-sky-500 scale-105 shadow-qc-md ring-2 ring-sky-300"
                 : "bg-[var(--card-bg)] hover:scale-105 hover:bg-[var(--card-bg-hover)]"}`}
             >
               <h4 className="font-bold text-lg mb-2">Haris Ahmed</h4>

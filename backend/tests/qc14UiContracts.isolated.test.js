@@ -6,6 +6,10 @@ const vm = require("vm");
 
 const root = path.resolve(__dirname, "../..");
 const cssPath = path.join(root, "frontend/src/index.css");
+const topBarPath = path.join(
+  root,
+  "frontend/src/components/common/DashboardTopBar.jsx"
+);
 const sidebarControlsPath = path.join(
   root,
   "frontend/src/components/common/SidebarControls.jsx"
@@ -48,14 +52,19 @@ function loadAssignmentSelection() {
 }
 
 describe("QC-14 UI contracts", () => {
-  it("uses navy dashboard background tokens instead of pure black canvas", () => {
+  it("uses shared blue dashboard tokens with dark near-black sidebars", () => {
     const css = read(cssPath);
-    assert.match(css, /--bg:\s*#0f172a/);
-    assert.match(css, /--surface:\s*#152746/);
-    assert.doesNotMatch(
-      css,
-      /:root\[data-theme="dark"\]\s*\{[^}]*--bg:\s*#0d1117/
-    );
+    assert.match(css, /--qc-primary:\s*#1683F8/);
+    assert.match(css, /--qc-primary-deep:\s*#0969DA/);
+    assert.match(css, /--qc-primary-light:\s*#60B5FF/);
+    assert.match(css, /:root\[data-theme="dark"\]\s*\{[^}]*--bg:\s*#0B1118/);
+    assert.match(css, /:root\[data-theme="dark"\]\s*\{[^}]*--surface:\s*#111C27/);
+    assert.match(css, /:root\[data-theme="dark"\]\s*\{[^}]*--sidebar-bg:\s*#080E14/);
+    assert.match(css, /:root\[data-theme="light"\]\s*\{[^}]*--bg:\s*#F4F8FC/);
+    assert.match(css, /:root\[data-theme="light"\]\s*\{[^}]*--surface:\s*#FFFFFF/);
+    assert.match(css, /:root\[data-theme="light"\]\s*\{[^}]*--sidebar-bg:\s*#101820/);
+    assert.match(css, /:root\[data-theme="dark"\]\s*\{[^}]*--accent:\s*#1683F8/);
+    assert.match(css, /:root\[data-theme="light"\]\s*\{[^}]*--accent:\s*#1683F8/);
     assert.doesNotMatch(
       css,
       /:root\[data-theme="dark"\]\s*\{[^}]*--bg:\s*#000(?:000)?\b/
@@ -76,14 +85,16 @@ describe("QC-14 UI contracts", () => {
     assert.match(css, /qc-utility-panel/);
   });
 
-  it("opens Settings/Notifications via body portal and closes mobile drawer", () => {
+  it("opens Notifications via body portal from the top bar and closes mobile drawer", () => {
+    const topBar = read(topBarPath);
     const controls = read(sidebarControlsPath);
     const shell = read(navShellPath);
-    assert.match(controls, /createPortal/);
-    assert.match(controls, /qc-settings-panel/);
-    assert.match(controls, /qc-notifications-panel/);
-    assert.match(controls, /quickcheck:close-drawer/);
-    assert.match(controls, /Notifications are unavailable until the server/);
+    assert.match(topBar, /createPortal/);
+    assert.match(topBar, /qc-notifications-panel/);
+    assert.match(topBar, /quickcheck:close-drawer/);
+    assert.match(topBar, /Notifications are unavailable until the server/);
+    assert.match(controls, /quickcheck:open-messages/);
+    assert.match(controls, /quickcheck:open-ai/);
     assert.match(shell, /quickcheck:close-drawer/);
   });
 

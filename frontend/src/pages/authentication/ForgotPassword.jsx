@@ -65,16 +65,17 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="bg-[var(--bg)] min-h-screen flex justify-center items-center p-4">
+    <div className="qc-auth-shell">
       <form
-        className="bg-[var(--bg-secondary)] p-6 sm:p-8 w-full max-w-md border border-sky-400 rounded-xl"
+        className="qc-auth-card"
         onSubmit={handleSubmit}
       >
-        <h2 className="text-sky-400 text-center mb-5 text-xl font-bold">
+        <p className="qc-auth-brand text-center">QuickCheck Hub</p>
+        <h2 className="qc-auth-title text-center mb-2">
           Forgot Password
         </h2>
 
-        <p className="text-[var(--text)] text-sm opacity-80 mb-4 text-center">
+        <p className="qc-auth-subtitle text-center mb-5">
           Enter your registered email. If an account exists, we will send a reset link.
         </p>
 
@@ -102,7 +103,7 @@ export default function ForgotPassword() {
         <button
           type="button"
           onClick={() => navigate("/login")}
-          className="w-full mt-4 text-center text-sky-400 text-[11px] font-bold uppercase tracking-[0.2em] hover:underline"
+          className="w-full mt-4 text-center accent-text text-[11px] font-bold uppercase tracking-[0.2em] hover:underline"
         >
           Back to Login
         </button>

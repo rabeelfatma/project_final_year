@@ -59,13 +59,13 @@ export default function ProfileModal({ onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="theme-surface w-full max-w-md rounded-3xl border p-7 shadow-2xl relative">
-        <button type="button" onClick={onClose} className="absolute top-5 right-5 theme-muted hover:text-[var(--text)]" aria-label="Close profile">
-          <X />
+    <div className="qc-modal-backdrop z-[200]">
+      <div className="qc-modal relative">
+        <button type="button" onClick={onClose} className="absolute top-3 right-3 theme-muted hover:text-[var(--text)] p-2" aria-label="Close profile">
+          <X size={18} />
         </button>
-        <h2 className="text-2xl font-black mb-1">My Profile</h2>
-        <p className="theme-muted text-xs mb-6">Update only your profile picture, name and email.</p>
+        <h2 className="qc-page-title mb-1">My Profile</h2>
+        <p className="theme-muted text-sm mb-6">Update only your profile picture, name and email.</p>
 
         <form onSubmit={save} className="space-y-5">
           <div className="flex items-center gap-4">

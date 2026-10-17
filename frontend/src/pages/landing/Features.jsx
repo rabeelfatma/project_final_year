@@ -53,7 +53,7 @@ export default function FeaturesSection() {
               style={{ animationDelay: `${index * 80}ms` }}
               className={`p-6 rounded-xl cursor-pointer transition-all duration-300 ease-out animate-fadeInUp
               ${activeIndex === index
-                ? "bg-sky-500 scale-105 shadow-[0_0_25px_rgba(56,189,248,0.5)] ring-2 ring-sky-300"
+                ? "bg-sky-500 scale-105 shadow-qc-md ring-2 ring-sky-300"
                 : "bg-[var(--card-bg)] hover:scale-105 hover:bg-[var(--card-bg-hover)]"}`}
             >
               <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>

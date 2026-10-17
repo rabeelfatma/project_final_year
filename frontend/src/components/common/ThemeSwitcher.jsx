@@ -35,8 +35,8 @@ export default function ThemeSwitcher() {
           </button>
           <div className="grid grid-cols-3 gap-2">
             {Object.entries(accents).map(([key, item]) => (
-              <button key={key} type="button" onClick={() => setAccent(key)} className={`rounded-xl border p-2 text-[10px] font-bold ${accent === key ? "ring-2" : ""}`} style={{ borderColor: "var(--border)", "--tw-ring-color": item.value }}>
-                <span className="block h-5 rounded-lg mb-1" style={{ background: item.value }} />
+              <button key={key} type="button" onClick={() => setAccent(key)} className={`rounded-xl border p-2 text-[10px] font-bold ${accent === key ? "ring-2" : ""}`} style={{ borderColor: "var(--border)", "--tw-ring-color": theme === "dark" ? item.valueDark : item.value }}>
+                <span className="block h-5 rounded-lg mb-1" style={{ background: theme === "dark" ? item.valueDark : item.value }} />
                 {item.name}
               </button>
             ))}
