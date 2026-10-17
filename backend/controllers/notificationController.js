@@ -1,6 +1,6 @@
 const Notification = require("../models/Notification");
 const PushSubscription = require("../models/PushSubscription");
-const { webpush, publicKey } = require("../config/push");
+const { webpush, publicKey, vapidConfigured } = require("../config/push");
 
 exports.list = async (req, res) => {
   try {
@@ -56,10 +56,24 @@ exports.clearAll = async (req, res) => {
   }
 };
 
-exports.publicKey = (_req, res) => res.json({ publicKey });
+exports.publicKey = (_req, res) => {
+  if (!vapidConfigured || !publicKey) {
+    return res.status(503).json({
+      message:
+        "Web push is not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY.",
+    });
+  }
+  return res.json({ publicKey });
+};
 
 exports.subscribe = async (req, res) => {
   try {
+    if (!vapidConfigured) {
+      return res.status(503).json({
+        message:
+          "Web push is not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY.",
+      });
+    }
     const subscription = req.body;
     if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
       return res.status(400).json({ message: "Invalid push subscription" });
@@ -91,15 +105,19 @@ exports.create = async ({ recipient, title, message, type = "system", meta = {},
     url,
   });
 
-  await Promise.all(subscriptions.map(async (item) => {
-    try {
-      await webpush.sendNotification(item.subscription, payload);
-    } catch (error) {
-      if ([404, 410].includes(error.statusCode)) {
-        await PushSubscription.deleteOne({ _id: item._id });
-      }
-    }
-  }));
+  if (vapidConfigured) {
+    await Promise.all(
+      subscriptions.map(async (item) => {
+        try {
+          await webpush.sendNotification(item.subscription, payload);
+        } catch (error) {
+          if ([404, 410].includes(error.statusCode)) {
+            await PushSubscription.deleteOne({ _id: item._id });
+          }
+        }
+      })
+    );
+  }
 
   return notification;
 };

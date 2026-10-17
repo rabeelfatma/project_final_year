@@ -8,33 +8,16 @@ const Submission = require("../models/Submission");
 const { protect } = require("../middleware/authMiddleware");
 const upload = require("../middleware/multerMiddleware");
 const { create: createNotification } = require("../controllers/notificationController");
-const { resolveStoredUploadPath, getUploadsRoot } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
 // NOTE: Runtime uses backend/routes/studentRoutes.js (PUBLISHED-only visibility).
 // Keep this unused module aligned so it cannot be re-mounted with a weaker gate.
 const GRADED = ["PUBLISHED"];
 
-const resolveStoredPath = (stored) => {
-  try {
-    return resolveStoredUploadPath(stored);
-  } catch (_) {
-    return null;
-  }
-};
-
 async function removeSubmissionFile(row) {
   if (!row?.file) return;
-
-  const filePath = resolveStoredPath(row.file);
-  if (!filePath) {
-    console.warn("Skipped submission file outside uploads directory.");
-    return;
-  }
-
   try {
-    if (fs.existsSync(filePath)) {
-      await fs.promises.unlink(filePath);
-    }
+    await storedFiles.remove(row.file);
   } catch (error) {
     console.warn("Could not remove submission file:", error.message);
   }
@@ -271,14 +254,12 @@ router.post(
 
       if (exists) {
         // Remove newly uploaded file when duplicate submission is rejected.
-        const uploadedPath = path.resolve(req.file.path);
-        const uploadsRoot = path.resolve(getUploadsRoot());
-
-        if (
-          uploadedPath.startsWith(uploadsRoot + path.sep) &&
-          fs.existsSync(uploadedPath)
-        ) {
-          await fs.promises.unlink(uploadedPath).catch(() => {});
+        if (req.file?.filename) {
+          await storedFiles
+            .remove(`uploads/submissions/${req.file.filename}`)
+            .catch(() => {});
+        } else if (req.file?.path && fs.existsSync(req.file.path)) {
+          await fs.promises.unlink(req.file.path).catch(() => {});
         }
 
         return res.status(400).json({ message: "Already submitted" });

@@ -21,18 +21,26 @@ function getUploadsRoot() {
 
 function ensureUploadSubdirs() {
   const root = getUploadsRoot();
-  for (const name of [
-    "assignments",
-    "submissions",
-    "profilePictures",
-    "messages",
-    "generated",
-    "others",
-  ]) {
-    const dir = path.join(root, name);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+  try {
+    for (const name of [
+      "assignments",
+      "submissions",
+      "profilePictures",
+      "messages",
+      "generated",
+      "others",
+    ]) {
+      const dir = path.join(root, name);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
     }
+  } catch (error) {
+    // Vercel / read-only FS: do not crash cold starts. Durable uploads need object storage.
+    console.warn(
+      "Upload directories unavailable (read-only or ephemeral FS):",
+      error.message
+    );
   }
   return root;
 }
@@ -77,13 +85,42 @@ function resolveStoredUploadPath(stored) {
 }
 
 /**
- * Mount profile-picture static hosting only. Academic trees require /api/files/*.
+ * Mount profile-picture hosting only. Academic trees require /api/files/*.
+ * On Vercel+R2, stream avatars from the private bucket (no public bucket ACL).
  */
 function configureUploadStatic(app, { setHeaders } = {}) {
   const root = ensureUploadSubdirs();
   const profileDir = path.join(root, "profilePictures");
   const staticOpts = setHeaders ? { setHeaders } : undefined;
-  app.use("/uploads/profilePictures", express.static(profileDir, staticOpts));
+
+  if (process.env.VERCEL === "1") {
+    const storedFiles = require("./storedFiles");
+    app.get("/uploads/profilePictures/:name", async (req, res) => {
+      const name = path.basename(String(req.params.name || ""));
+      if (!name) return res.status(404).end();
+      const stored = `uploads/profilePictures/${name}`;
+      try {
+        if (!(await storedFiles.exists(stored))) return res.status(404).end();
+        const download = await storedFiles.openDownloadStream(stored);
+        if (setHeaders) setHeaders(res, name);
+        if (download.contentType) res.setHeader("Content-Type", download.contentType);
+        if (download.localPath) return res.sendFile(download.localPath);
+        download.stream.on("error", () => {
+          if (!res.headersSent) res.status(500).end();
+          else res.end();
+        });
+        return download.stream.pipe(res);
+      } catch (error) {
+        if (error.code === "R2_NOT_CONFIGURED") {
+          return res.status(503).json({ message: error.message });
+        }
+        return res.status(404).end();
+      }
+    });
+  } else {
+    app.use("/uploads/profilePictures", express.static(profileDir, staticOpts));
+  }
+
   app.use("/uploads", (_req, res) => {
     res.status(401).json({
       message: "Authentication required. Use authorized file download routes.",

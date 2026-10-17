@@ -41,11 +41,32 @@ function extractTotalMarks(instructions) {
 
 
 const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
 function normalizeFilePath(file) {
   try {
     return resolveStoredUploadPath(file);
   } catch (_) {
+    return null;
+  }
+}
+
+async function removeStoredAcademicFile(stored) {
+  if (!stored) return;
+  try {
+    await storedFiles.remove(stored);
+  } catch (error) {
+    console.warn("Could not remove academic file:", error.message);
+  }
+}
+
+async function materializeStored(stored) {
+  if (!stored) return null;
+  try {
+    if (!(await storedFiles.exists(stored))) return null;
+    return await storedFiles.materialize(stored);
+  } catch (error) {
+    if (error.code === "R2_NOT_CONFIGURED") throw error;
     return null;
   }
 }
@@ -355,9 +376,7 @@ exports.updateAssignment = async (req, res) => {
 
       if (current.file && current.file !== newPath) {
 
-        const oldPath = normalizeFilePath(current.file);
-
-        if (oldPath && fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        await removeStoredAcademicFile(current.file);
 
       }
 
@@ -419,9 +438,7 @@ exports.deleteAssignment = async (req, res) => {
 
     if (deleted.file) {
 
-      const filePath = normalizeFilePath(deleted.file);
-
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      await removeStoredAcademicFile(deleted.file);
 
     }
 
@@ -605,6 +622,12 @@ exports.evaluateWithGemini = async (req, res) => {
 
 
 
+    function readRefBytes(file) {
+      if (file?.buffer && Buffer.isBuffer(file.buffer)) return file.buffer;
+      if (file?.path && fs.existsSync(file.path)) return fs.readFileSync(file.path);
+      return null;
+    }
+
     for (const file of referenceFiles) {
 
       const mime = String(
@@ -615,15 +638,8 @@ exports.evaluateWithGemini = async (req, res) => {
 
 
 
-      let size = 0;
-
-
-
-      try {
-
-        size = fs.statSync(file.path).size;
-
-      } catch (_) {}
+      const bytes = readRefBytes(file);
+      let size = bytes ? bytes.length : 0;
 
 
 
@@ -641,7 +657,7 @@ exports.evaluateWithGemini = async (req, res) => {
 
           mimeType: mime,
 
-          data: fs.readFileSync(file.path).toString("base64"),
+          data: bytes.toString("base64"),
 
         });
 
@@ -660,8 +676,16 @@ exports.evaluateWithGemini = async (req, res) => {
     for (const file of referenceFiles) {
 
       try {
-
-        const text = await extractText(file.path);
+        let text = "";
+        if (file?.path && fs.existsSync(file.path)) {
+          text = await extractText(file.path);
+        } else if (file?.buffer && Buffer.isBuffer(file.buffer)) {
+          const ext = path.extname(file.originalname || "");
+          const tmp = path.join(require("os").tmpdir(), `qc-ref-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`);
+          fs.writeFileSync(tmp, file.buffer);
+          try { text = await extractText(tmp); }
+          finally { try { fs.unlinkSync(tmp); } catch (_) {} }
+        }
 
 
 
@@ -767,10 +791,21 @@ exports.evaluateWithGemini = async (req, res) => {
 
 
 
-        const filePath = normalizeFilePath(submission.file);
         const inlineAnswer = String(submission.answerText || "").trim();
+        let materialized = null;
+        let filePath = null;
+        try {
+          materialized = await materializeStored(submission.file);
+          filePath = materialized?.path || null;
+        } catch (matErr) {
+          if (matErr.code === "R2_NOT_CONFIGURED") {
+            submission.status = "submitted";
+            await submission.save();
+            throw matErr;
+          }
+        }
 
-        if ((!filePath || !fs.existsSync(filePath)) && !inlineAnswer) {
+        if (!filePath && !inlineAnswer) {
           submission.status = "submitted";
           await submission.save();
           results.push({
@@ -814,6 +849,7 @@ exports.evaluateWithGemini = async (req, res) => {
         }
 
         if (!text.trim()) {
+          if (materialized) await materialized.cleanup();
           submission.status = "submitted";
           await submission.save();
           results.push({
@@ -859,13 +895,15 @@ exports.evaluateWithGemini = async (req, res) => {
 
         ) {
 
+          let questionMat = null;
           try {
 
-            const questionPath = normalizeFilePath(
+            questionMat = await materializeStored(
 
               submission.assignment.file
 
             );
+            const questionPath = questionMat?.path || null;
 
 
 
@@ -886,6 +924,8 @@ exports.evaluateWithGemini = async (req, res) => {
             if (
 
               supportedQuestionImage &&
+
+              questionPath &&
 
               fs.existsSync(questionPath) &&
 
@@ -913,7 +953,7 @@ exports.evaluateWithGemini = async (req, res) => {
 
                 }).`;
 
-            } else if (fs.existsSync(questionPath)) {
+            } else if (questionPath && fs.existsSync(questionPath)) {
 
               const questionText = await extractText(questionPath);
 
@@ -943,6 +983,8 @@ exports.evaluateWithGemini = async (req, res) => {
 
             );
 
+          } finally {
+            if (questionMat) await questionMat.cleanup();
           }
 
         }
@@ -1022,7 +1064,11 @@ exports.evaluateWithGemini = async (req, res) => {
 
         });
 
+        if (materialized) await materialized.cleanup();
+
       } catch (error) {
+
+        if (typeof materialized !== "undefined" && materialized) { try { await materialized.cleanup(); } catch (_) {} }
 
         console.error(`AI evaluation failed for ${id}:`, error.message);
 
@@ -1086,6 +1132,14 @@ exports.evaluateWithGemini = async (req, res) => {
         }
 
       } catch (_) {}
+
+    }
+
+
+
+    if (error && error.code === "R2_NOT_CONFIGURED") {
+
+      return res.status(503).json({ message: error.message });
 
     }
 
@@ -1389,16 +1443,7 @@ exports.deleteAssignmentsBulk = async (req, res) => {
 
       if (row.file) {
 
-        const filePath = normalizeFilePath(row.file);
-
-
-
-        try {
-
-          if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-
-        } catch (_) {}
-
+        await removeStoredAcademicFile(row.file);
       }
 
     }
@@ -1477,9 +1522,7 @@ exports.deleteSubmission = async (req, res) => {
 
     try {
 
-      const filePath = normalizeFilePath(row.file);
-
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      await removeStoredAcademicFile(row.file);
 
     } catch (_) {}
 
@@ -1537,9 +1580,7 @@ exports.deleteSubmissionsBulk = async (req, res) => {
 
       try {
 
-        const filePath = normalizeFilePath(row.file);
-
-        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        await removeStoredAcademicFile(row.file);
 
       } catch (_) {}
 
@@ -1742,13 +1783,19 @@ exports.getSubmissionContent = async (req, res) => {
     }
 
     let extractedText = String(submission.answerText || "").trim();
-    const filePath = normalizeFilePath(submission.file);
-    if (!extractedText && filePath && fs.existsSync(filePath)) {
-      try {
-        extractedText = String((await extractText(filePath)) || "").trim();
-      } catch (_) {
-        extractedText = "";
+    let contentMat = null;
+    try {
+      contentMat = await materializeStored(submission.file);
+      if (!extractedText && contentMat?.path) {
+        extractedText = String((await extractText(contentMat.path)) || "").trim();
       }
+    } catch (contentErr) {
+      if (contentErr && contentErr.code === "R2_NOT_CONFIGURED") {
+        throw contentErr;
+      }
+      /* keep answerText only for other read/extract failures */
+    } finally {
+      if (contentMat) await contentMat.cleanup();
     }
 
     return res.json({
@@ -1767,6 +1814,9 @@ exports.getSubmissionContent = async (req, res) => {
       totalMarks: submission.totalMarks || submission.assignment?.points || null,
     });
   } catch (error) {
+    if (error && error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).json({ message: error.message });
+    }
     return res.status(500).json({ message: "Could not load submission content." });
   }
 };

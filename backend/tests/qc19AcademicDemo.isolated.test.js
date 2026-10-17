@@ -90,7 +90,10 @@ describe("QC-19 grading notification and path safety", () => {
       "utf8"
     );
     assert.match(src, /Feedback will appear after your teacher publishes/);
-    assert.match(src, /!filePath \|\| !fs\.existsSync\(filePath\)/);
+    // Missing submission bytes still fail closed (local disk or R2 materialize).
+    assert.match(src, /!filePath && !inlineAnswer/);
+    assert.match(src, /Submitted file was not found on the server/);
+    assert.match(src, /materializeStored/);
     assert.doesNotMatch(
       src,
       /AI evaluation completed[\s\S]{0,200}: \$\{ai\.score\}\//

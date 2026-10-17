@@ -76,3 +76,38 @@ Legend: `[ ]` pending · `[x]` done locally in code · `[~]` partial / mock-only
 - Purchasing S3/R2
 - Unlocking `APP_RUNTIME_MODE=full` without Mongo + secrets
 - Using original student documents as demo data
+
+## I. Separate Vercel deployment (frontend + backend API)
+
+Code prep (local, Hostinger untouched):
+
+- [x] Backend exports Express app without `listen` when `VERCEL=1`
+- [x] `backend/vercel.json` routes all traffic to `server.js` (`@vercel/node`)
+- [x] `frontend/vercel.json` SPA rewrites for client-side routing
+- [x] Frontend `VITE_API_BASE_URL` supports separate API origin
+- [x] MongoDB connection reuse + no `process.exit` on Vercel
+- [x] VAPID via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (no startup write on Vercel)
+- [x] CORS allowlist via `CLIENT_ORIGIN` / `FRONTEND_URL`
+- [x] Body limit capped to ~4.5mb when `VERCEL=1`
+- [x] Private Cloudflare R2 adapter (`backend/utils/objectStorage.js` + `storedFiles.js`)
+- [x] Vercel uploads persist to R2; Hostinger/local keep disk multer behavior
+- [x] Authenticated `/api/files/*`, grading, plagiarism, generated files resolve via adapter
+- [ ] Create two Vercel projects (Root Directory `frontend` and `backend`) — operator
+- [ ] Set backend env names listed in `backend/.env.example` (Vercel + R2 section)
+- [ ] Set frontend build env `VITE_API_BASE_URL` to backend `/api` URL
+- [ ] Atlas Network Access allows Vercel egress (or `0.0.0.0/0` for demo)
+- [ ] Live smoke after deploy (auth, role isolation, file routes, R2 upload/download) — UNVERIFIED until then
+
+### Upload storage (implemented locally; live R2 unverified)
+
+- Bucket: private `quickcheck-hub-files` (no public access / no permanent public URLs)
+- Mongo paths remain `uploads/<folder>/<file>` (no DB migration)
+- Env names: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+  `R2_BUCKET_NAME`, `R2_ENDPOINT` — never commit secrets
+- When `VERCEL=1` and R2 env is incomplete, durable uploads return a clear 503
+- Platform limit: Vercel Hobby ~4.5MB request body → multipart uploads capped ~4MB
+- [x] Express error middleware maps `R2_NOT_CONFIGURED` → HTTP 503 (no secret leak)
+- [x] Vercel multer: oversized uploads abort stream and settle Multer callback once
+- [x] Ephemeral AI `/api/ai/chat` + `/evaluate-ai` uploads skip R2 assert (memory only)
+- [x] Submission content + mounted evaluation paths return 503 when R2 required but missing
+- [x] Generated AI download ownership (server-side `.owner.json` sidecar on generate; `downloadGenerated` enforces `req.user._id`; legacy/unowned → opaque 404; AIChat URLs not trusted)

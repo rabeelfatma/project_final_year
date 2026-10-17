@@ -5,11 +5,8 @@ const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
 const Message = require("../models/Message");
 const { extractText } = require("../services/plagiarismService");
-const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
-function safePath(stored) {
-  return resolveStoredUploadPath(stored);
-}
 function escapeHtml(value) {
   return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -25,15 +22,43 @@ function contentTypeFromExt(ext) {
   };
   return map[ext] || "";
 }
-function sendFile(res, stored, originalName, mimeType, inline = false) {
-  let filePath;
-  try { filePath = safePath(stored); } catch (_) { return res.status(400).json({ message: "Invalid stored file path." }); }
-  if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found on server." });
-  const name = String(originalName || path.basename(filePath)).replace(/["\r\n]/g, "_");
+
+async function sendFile(res, stored, originalName, mimeType, inline = false) {
+  let download;
+  try {
+    download = await storedFiles.openDownloadStream(stored);
+  } catch (error) {
+    if (error.message === "Invalid file path.") {
+      return res.status(400).json({ message: "Invalid stored file path." });
+    }
+    if (error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).json({ message: error.message });
+    }
+    if (error.code === "ENOENT" || error?.$metadata?.httpStatusCode === 404) {
+      return res.status(404).json({ message: "File not found on server." });
+    }
+    console.error("sendFile error:", error.message);
+    return res.status(500).json({ message: "Unable to download file." });
+  }
+
+  const name = String(originalName || path.basename(String(stored))).replace(/["\r\n]/g, "_");
   res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${name}"`);
   if (mimeType) res.setHeader("Content-Type", mimeType);
-  return res.sendFile(filePath);
+  else if (download.contentType) res.setHeader("Content-Type", download.contentType);
+  if (download.contentLength != null) res.setHeader("Content-Length", String(download.contentLength));
+
+  if (download.localPath) {
+    return res.sendFile(download.localPath);
+  }
+
+  download.stream.on("error", (err) => {
+    console.error("download stream error:", err.message);
+    if (!res.headersSent) res.status(500).end();
+    else res.end();
+  });
+  return download.stream.pipe(res);
 }
+
 function htmlPage(title, body, pre = true) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>
   body{margin:0;padding:24px;background:#0d1117;color:#e6edf3;font:15px/1.6 Arial,sans-serif}
@@ -43,49 +68,74 @@ function htmlPage(title, body, pre = true) {
   img{max-width:100%} .content{overflow-wrap:anywhere}
   </style></head><body><main><h1>${escapeHtml(title)}</h1><div class="content">${pre ? `<pre>${escapeHtml(body)}</pre>` : body}</div></main></body></html>`;
 }
+
 async function previewFile(res, stored, originalName, mimeType) {
-  let filePath;
-  try { filePath = safePath(stored); } catch (_) { return res.status(400).send("Invalid stored file path."); }
-  if (!fs.existsSync(filePath)) return res.status(404).send("File not found.");
+  let materialized;
+  try {
+    if (!(await storedFiles.exists(stored))) {
+      return res.status(404).send("File not found.");
+    }
+    materialized = await storedFiles.materialize(stored);
+  } catch (error) {
+    if (error.message === "Invalid file path.") {
+      return res.status(400).send("Invalid stored file path.");
+    }
+    if (error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).send(error.message);
+    }
+    return res.status(404).send("File not found.");
+  }
+
+  const filePath = materialized.path;
   const ext = path.extname(originalName || filePath).toLowerCase();
 
-  // Serve PDFs unchanged so the browser's native viewer preserves page layout, colors and size.
-  if (ext === ".pdf") return sendFile(res, stored, originalName, mimeType || "application/pdf", true);
-
-  if (ext === ".docx") {
-    try {
-      const { value } = await mammoth.convertToHtml({ path: filePath });
-      return res.type("html").send(htmlPage(originalName || "Document", value, false));
-    } catch (error) {
-      console.warn("DOCX preview failed:", error.message);
+  try {
+    // Serve PDFs unchanged so the browser's native viewer preserves page layout, colors and size.
+    if (ext === ".pdf") {
+      await materialized.cleanup();
+      return sendFile(res, stored, originalName, mimeType || "application/pdf", true);
     }
-  }
 
-  // Office formats with extractable text are displayed as readable text instead of a dead-end preview.
-  if ([".pptx", ".xlsx", ".xls", ".xlsm", ".ods"].includes(ext)) {
-    try {
-      const text = await extractText(filePath);
-      if (text.trim()) return res.type("html").send(htmlPage(originalName || "File preview", text));
-      if (ext === ".pdf") return sendFile(res, stored, originalName, mimeType || "application/pdf", true);
-      return res.status(422).type("html").send(htmlPage(originalName || "File preview",
-        "This file opened, but no readable text could be extracted. Download the original file to view its complete layout.", true));
-    } catch (_error) {
-      return res.status(422).type("html").send(htmlPage(originalName || "File preview",
-        "Preview/text extraction failed. Download the original file to open it in a compatible application."));
+    if (ext === ".docx") {
+      try {
+        const { value } = await mammoth.convertToHtml({ path: filePath });
+        return res.type("html").send(htmlPage(originalName || "Document", value, false));
+      } catch (error) {
+        console.warn("DOCX preview failed:", error.message);
+      }
     }
+
+    // Office formats with extractable text are displayed as readable text instead of a dead-end preview.
+    if ([".pptx", ".xlsx", ".xls", ".xlsm", ".ods"].includes(ext)) {
+      try {
+        const text = await extractText(filePath);
+        if (text.trim()) return res.type("html").send(htmlPage(originalName || "File preview", text));
+        return res.status(422).type("html").send(htmlPage(originalName || "File preview",
+          "This file opened, but no readable text could be extracted. Download the original file to view its complete layout.", true));
+      } catch (_error) {
+        return res.status(422).type("html").send(htmlPage(originalName || "File preview",
+          "Preview/text extraction failed. Download the original file to open it in a compatible application."));
+      }
+    }
+
+    const textType = contentTypeFromExt(ext);
+    if (textType) {
+      const raw = fs.readFileSync(filePath, "utf8");
+      return res.type("html").send(htmlPage(originalName || "Text file", raw));
+    }
+
+    const native = [".pdf",".png",".jpg",".jpeg",".gif",".webp",".bmp",".svg",".mp4",".webm",".mov",".mp3",".wav",".ogg",".m4a",".aac"];
+    if (native.includes(ext)) {
+      await materialized.cleanup();
+      return sendFile(res, stored, originalName, mimeType, true);
+    }
+
+    return res.type("html").send(htmlPage(originalName || "File", "This format cannot be previewed directly here. Download the original file to open it in a compatible application."));
+  } finally {
+    await materialized.cleanup();
   }
-
-  const textType = contentTypeFromExt(ext);
-  if (textType) {
-    const raw = fs.readFileSync(filePath, "utf8");
-    return res.type("html").send(htmlPage(originalName || "Text file", raw));
-  }
-
-  const native = [".pdf",".png",".jpg",".jpeg",".gif",".webp",".bmp",".svg",".mp4",".webm",".mov",".mp3",".wav",".ogg",".m4a",".aac"];
-  if (native.includes(ext)) return sendFile(res, stored, originalName, mimeType, true);
-
-  return res.type("html").send(htmlPage(originalName || "File", "This format cannot be previewed directly here. Download the original file to open it in a compatible application."));
 }
+
 async function getAssignment(req) {
   const a = await Assignment.findById(req.params.id);
   if (!a) return { error: [404, "Assignment not found."] };

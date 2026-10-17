@@ -21,22 +21,66 @@ const aiChatRoutes = require("./routes/aiChatRoutes");
 
 const app = express();
 
-/* ===============================
-    Connect to MongoDB Database
-================================= */
-connectDB();
+const isVercel = process.env.VERCEL === "1";
 
 /* ===============================
     Global Middleware
 ================================= */
-// Hostinger sits behind one reverse proxy. Required so req.ip is the client
-// hop Express trusts — password-reset rate limits must not read raw XFF.
+// Hostinger / Vercel sit behind reverse proxies. Required so req.ip is the
+// client hop Express trusts — password-reset rate limits must not read raw XFF.
 app.set("trust proxy", 1);
 
-app.use(cors({ exposedHeaders: ["Content-Disposition"] }));
+// Separate Vercel frontend: set CLIENT_ORIGIN (or FRONTEND_URL) to the SPA origin.
+// Unset keeps permissive reflection (Hostinger same-origin / local).
+const allowedOrigins = String(
+  process.env.CLIENT_ORIGIN || process.env.FRONTEND_URL || ""
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ limit: "100mb", extended: true }));
+app.use(
+  cors({
+    origin: allowedOrigins.length
+      ? (origin, callback) => {
+          if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+          return callback(null, false);
+        }
+      : true,
+    exposedHeaders: ["Content-Disposition"],
+  })
+);
+
+// Vercel request body limit is ~4.5MB on Hobby; keep Hostinger's larger ceiling.
+const bodyLimit = isVercel ? "4.5mb" : "100mb";
+app.use(express.json({ limit: bodyLimit }));
+app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
+
+/* ===============================
+    MongoDB
+    - Hostinger/local: connect at boot (process.exit on failure, unchanged).
+    - Vercel: await on API/upload requests; never process.exit.
+================================= */
+if (!isVercel) {
+  connectDB();
+}
+
+app.use(async (req, res, next) => {
+  const p = req.path || "";
+  if (p === "/health" || p === "/api/health") return next();
+  if (!p.startsWith("/api") && !p.startsWith("/uploads")) return next();
+  try {
+    await connectDB();
+    return next();
+  } catch (error) {
+    console.error("MongoDB unavailable for request:", error.message);
+    return res.status(503).json({
+      message: "Database unavailable. Check MONGO_URI and Atlas network access.",
+    });
+  }
+});
 
 /* ===============================
     Upload storage (not publicly browsable for academic files)
@@ -125,6 +169,20 @@ if (fs.existsSync(frontendDist)) {
     return res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
+
+/* ===============================
+    Safe API error handler (after routes)
+================================= */
+app.use((err, req, res, next) => {
+  if (err && err.code === "R2_NOT_CONFIGURED") {
+    return res.status(503).json({
+      message:
+        err.message ||
+        "Cloudflare R2 is required on Vercel but is not configured.",
+    });
+  }
+  return next(err);
+});
 
 /* ===============================
     Listen (Hostinger / local). Skip on Vercel serverless.

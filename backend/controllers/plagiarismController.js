@@ -1,13 +1,19 @@
 const Submission = require("../models/Submission");
-const fs = require("fs");
 const { extractText, compareTexts } = require("../services/plagiarismService");
-const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
-function resolveAcademicFile(stored) {
+async function extractStoredText(stored) {
+  if (!stored) return "";
+  let materialized;
   try {
-    return resolveStoredUploadPath(stored);
-  } catch (_) {
-    return null;
+    if (!(await storedFiles.exists(stored))) return "";
+    materialized = await storedFiles.materialize(stored);
+    return await extractText(materialized.path);
+  } catch (error) {
+    if (error.code === "R2_NOT_CONFIGURED") throw error;
+    return "";
+  } finally {
+    if (materialized) await materialized.cleanup();
   }
 }
 
@@ -44,13 +50,11 @@ exports.check = async (req, res) => {
         "name email registrationNumber"
       );
 
-      const currentPath = resolveAcademicFile(submission.file);
-      const currentText = currentPath && fs.existsSync(currentPath) ? await extractText(currentPath) : "";
+      const currentText = await extractStoredText(submission.file);
 
       const comparisons = [];
       for (const other of sameAssignment) {
-        const otherPath = resolveAcademicFile(other.file);
-        const otherText = otherPath && fs.existsSync(otherPath) ? await extractText(otherPath) : "";
+        const otherText = await extractStoredText(other.file);
         comparisons.push({
           submissionId: other._id,
           student: other.student?.name || "Student",
@@ -75,6 +79,9 @@ exports.check = async (req, res) => {
 
     res.json({ results });
   } catch (error) {
+    if (error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).json({ message: error.message });
+    }
     res.status(500).json({ message: "Plagiarism check failed", error: error.message });
   }
 };

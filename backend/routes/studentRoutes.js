@@ -6,30 +6,18 @@ const Submission = require("../models/Submission");
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/multerMiddleware");
 const { create: createNotification } = require("../controllers/notificationController");
-const { resolveStoredUploadPath, getUploadsRoot } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 const path = require("path");
 
 // Students only — marks/feedback shown after teacher publish.
 router.use(protect, authorize("student"));
 
 const PUBLISHED = ["PUBLISHED"];
-const resolveStoredPath = (stored) => {
-  try {
-    return resolveStoredUploadPath(stored);
-  } catch (_) {
-    return null;
-  }
-};
 
 async function removeSubmissionFile(row) {
   if (!row?.file) return;
-  const filePath = resolveStoredPath(row.file);
-  if (!filePath) {
-    console.warn("Skipped submission file outside uploads directory.");
-    return;
-  }
   try {
-    if (fs.existsSync(filePath)) await fs.promises.unlink(filePath);
+    await storedFiles.remove(row.file);
   } catch (error) {
     console.warn("Could not remove submission file:", error.message);
   }
@@ -211,7 +199,7 @@ router.post("/submissions/bulk-delete", async (req, res) => {
 });
 
 router.post("/assignments/:id/submit", upload.single("file"), async (req, res) => {
-  let createdTextPath = null;
+  let createdTextStored = null;
   try {
     const assignment = await Assignment.findById(req.params.id);
     if (!assignment) return res.status(404).json({ message: "Assignment not found" });
@@ -236,17 +224,18 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
     let storedFile = req.file;
     if (!storedFile && answerText) {
       // Text answer path: persist as a .txt under submissions for Gemini extract + demo durability.
-      const uploadsRoot = getUploadsRoot();
-      const submissionsDir = path.join(uploadsRoot, "submissions");
-      if (!fs.existsSync(submissionsDir)) fs.mkdirSync(submissionsDir, { recursive: true });
       const safeBase = `text-${req.user._id}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.txt`;
-      createdTextPath = path.join(submissionsDir, safeBase);
-      fs.writeFileSync(createdTextPath, answerText.slice(0, 120000), "utf8");
+      createdTextStored = `uploads/submissions/${safeBase}`;
+      await storedFiles.writeBuffer(
+        createdTextStored,
+        Buffer.from(answerText.slice(0, 120000), "utf8"),
+        "text/plain"
+      );
       storedFile = {
         filename: safeBase,
         originalname: "answer.txt",
         mimetype: "text/plain",
-        path: createdTextPath,
+        path: createdTextStored,
       };
     }
 
@@ -261,16 +250,20 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       student: req.user._id,
     });
     if (exists) {
-      const uploadedPath = path.resolve(storedFile.path);
-      const uploadsRoot = path.resolve(getUploadsRoot());
-      if (uploadedPath.startsWith(uploadsRoot + path.sep) && fs.existsSync(uploadedPath)) {
-        await fs.promises.unlink(uploadedPath).catch(() => {});
+      if (createdTextStored) {
+        await storedFiles.remove(createdTextStored).catch(() => {});
+      } else if (storedFile.path && !storedFiles.usesObjectStorage()) {
+        try {
+          if (fs.existsSync(storedFile.path)) await fs.promises.unlink(storedFile.path);
+        } catch (_) {}
+      } else if (storedFile.filename && storedFiles.usesObjectStorage() && req.file) {
+        await storedFiles.remove(`uploads/submissions/${storedFile.filename}`).catch(() => {});
       }
       return res.status(400).json({ message: "Already submitted" });
     }
     if (!assignment.teacher) {
-      if (createdTextPath && fs.existsSync(createdTextPath)) {
-        await fs.promises.unlink(createdTextPath).catch(() => {});
+      if (createdTextStored) {
+        await storedFiles.remove(createdTextStored).catch(() => {});
       }
       return res.status(400).json({ message: "Assignment is not linked to a teacher." });
     }
@@ -301,8 +294,11 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       submission,
     });
   } catch (error) {
-    if (createdTextPath && fs.existsSync(createdTextPath)) {
-      await fs.promises.unlink(createdTextPath).catch(() => {});
+    if (createdTextStored) {
+      await storedFiles.remove(createdTextStored).catch(() => {});
+    }
+    if (error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).json({ message: error.message });
     }
     console.error("SUBMISSION ERROR:", error);
     res.status(500).json({ message: "Server error while submitting assignment." });

@@ -1,6 +1,5 @@
 const User = require("../models/User");
-const fs = require("fs");
-const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
 exports.getProfile = async (req, res) => {
   try {
@@ -27,8 +26,7 @@ exports.updateProfile = async (req, res) => {
       update.profilePicture = `uploads/profilePictures/${req.file.filename}`;
       if (currentUser?.profilePicture) {
         try {
-          const oldPath = resolveStoredUploadPath(currentUser.profilePicture);
-          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+          await storedFiles.remove(currentUser.profilePicture);
         } catch (_) {
           /* ignore unsafe/missing prior avatar path */
         }
@@ -37,6 +35,9 @@ exports.updateProfile = async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true, runValidators: true }).select("-password");
     res.json({ ...user.toObject(), regNo: user.registrationNumber || "N/A" });
   } catch (error) {
+    if (error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).json({ message: error.message });
+    }
     res.status(500).json({ message: "Profile update failed", error: error.message });
   }
 };

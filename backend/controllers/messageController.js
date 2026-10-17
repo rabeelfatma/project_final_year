@@ -1,14 +1,14 @@
 const Message = require("../models/Message");
-const fs = require("fs");
 const User = require("../models/User");
 const { create: createNotification } = require("./notificationController");
-const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
-function resolveMessageFile(stored) {
+async function removeMessageFile(stored) {
+  if (!stored) return;
   try {
-    return resolveStoredUploadPath(stored);
+    await storedFiles.remove(stored);
   } catch (_) {
-    return null;
+    /* ignore missing/unsafe prior voice path */
   }
 }
 
@@ -104,10 +104,7 @@ exports.removeMany = async (req, res) => {
     });
 
     for (const message of rows) {
-      if (message.voiceFile) {
-        const filePath = resolveMessageFile(message.voiceFile);
-        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      }
+      await removeMessageFile(message.voiceFile);
     }
 
     await Message.deleteMany({ _id: { $in: rows.map((row) => row._id) } });
@@ -121,10 +118,7 @@ exports.clearAll = async (req, res) => {
   try {
     const rows = await Message.find({ $or: [{ sender: req.user._id }, { recipient: req.user._id }] });
     for (const message of rows) {
-      if (message.voiceFile) {
-        const filePath = resolveMessageFile(message.voiceFile);
-        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      }
+      await removeMessageFile(message.voiceFile);
     }
     await Message.deleteMany({ $or: [{ sender: req.user._id }, { recipient: req.user._id }] });
     res.json({ success: true, deleted: rows.length });
@@ -140,10 +134,7 @@ exports.remove = async (req,res) => {
       $or:[{sender:req.user._id},{recipient:req.user._id}]
     });
     if (!message) return res.status(404).json({message:"Message not found."});
-    if (message.voiceFile) {
-      const filePath = resolveMessageFile(message.voiceFile);
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
+    await removeMessageFile(message.voiceFile);
     await message.deleteOne();
     res.json({success:true,message:"Message deleted."});
   } catch(e) { res.status(500).json({message:"Message could not be deleted",error:e.message}); }

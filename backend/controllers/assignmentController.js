@@ -1,10 +1,9 @@
-const fs = require("fs");
 const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
 const User = require("../models/User");
 const { checkAssignment } = require("../services/geminiService");
 const { extractText } = require("../services/plagiarismService");
-const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
 // 1. TEACHER: Create Assignment
 exports.teacherCreateAssignment = async (req, res) => {
@@ -63,24 +62,32 @@ exports.evaluateWithGemini = async (req, res) => {
       try {
         const submission = await Submission.findById(id).populate("assignment", "title points");
         if (!submission) { results.push({ id, status: "Not Found" }); continue; }
-        let filePath;
+        let materialized;
         try {
-          filePath = resolveStoredUploadPath(submission.file);
-        } catch (_) {
-          results.push({ id, status: "Failed", error: "Submitted file was not found." });
-          continue;
+          if (!(await storedFiles.exists(submission.file))) {
+            results.push({ id, status: "Failed", error: "Submitted file was not found." });
+            continue;
+          }
+          materialized = await storedFiles.materialize(submission.file);
+          const text = await extractText(materialized.path);
+          const totalMarks = Number(submission.totalMarks || submission.assignment?.points);
+          const ai = await checkAssignment(text, instructions, totalMarks);
+          submission.aiScore = ai.score;
+          submission.aiFeedback = ai.feedback;
+          submission.totalMarks = totalMarks;
+          submission.status = "AI_GRADED";
+          await submission.save();
+          results.push({ id, status: "Success", aiScore: ai.score, totalMarks });
+        } finally {
+          if (materialized) await materialized.cleanup();
         }
-        if (!fs.existsSync(filePath)) { results.push({ id, status: "Failed", error: "Submitted file was not found." }); continue; }
-        const text = await extractText(filePath);
-        const totalMarks = Number(submission.totalMarks || submission.assignment?.points);
-        const ai = await checkAssignment(text, instructions, totalMarks);
-        submission.aiScore = ai.score;
-        submission.aiFeedback = ai.feedback;
-        submission.totalMarks = totalMarks;
-        submission.status = "AI_GRADED";
-        await submission.save();
-        results.push({ id, status: "Success", aiScore: ai.score, totalMarks });
-      } catch (err) { results.push({ id, status: "Failed", error: err.message }); }
+      } catch (err) {
+        if (err.code === "R2_NOT_CONFIGURED") {
+          results.push({ id, status: "Failed", error: err.message });
+        } else {
+          results.push({ id, status: "Failed", error: err.message });
+        }
+      }
     }
     res.status(200).json({ success: true, results });
   } catch (error) {

@@ -3,7 +3,7 @@ const { checkAssignment } = require("../services/geminiService");
 const mammoth = require("mammoth");
 const path = require("path");
 const fs = require("fs");
-const { resolveStoredUploadPath } = require("../utils/uploadsPath");
+const storedFiles = require("../utils/storedFiles");
 
 function ownedQuery(req, extra = {}) {
   return { ...extra, teacherId: req.user._id };
@@ -40,36 +40,43 @@ exports.evaluateAssignment = async (req, res) => {
             };
           }
 
-          let filePath;
+          let materialized;
           try {
-            filePath = resolveStoredUploadPath(sub.file);
-          } catch (_) {
+            if (!(await storedFiles.exists(sub.file))) {
+              return { id, status: "Failed", error: "Submitted file was not found." };
+            }
+            materialized = await storedFiles.materialize(sub.file);
+          } catch (error) {
+            if (error.code === "R2_NOT_CONFIGURED") {
+              throw error;
+            }
             return {
               id,
               status: "Failed",
-              error: "Invalid stored file path.",
+              error: error.message === "Invalid file path." ? "Invalid stored file path." : "Submitted file was not found.",
             };
           }
 
-          if (!fs.existsSync(filePath)) {
-            return { id, status: "Failed", error: "Submitted file was not found." };
-          }
-
+          const filePath = materialized.path;
           let extractedText = "";
           const ext = path.extname(filePath).toLowerCase();
 
-          if (ext === ".docx") {
-            const result = await mammoth.extractRawText({ path: filePath });
-            extractedText = result.value;
-          } else if ([".txt", ".md", ".py", ".js", ".java", ".cpp", ".sql"].includes(ext)) {
-            extractedText = fs.readFileSync(filePath, "utf8");
-          } else {
-            // Do not invent placeholder text for unsupported formats.
-            return {
-              id,
-              status: "Failed",
-              error: `Unsupported file format ${ext || "(unknown)"} for legacy evaluation path.`,
-            };
+          try {
+            if (ext === ".docx") {
+              const result = await mammoth.extractRawText({ path: filePath });
+              extractedText = result.value;
+            } else if ([".txt", ".md", ".py", ".js", ".java", ".cpp", ".sql"].includes(ext)) {
+              extractedText = fs.readFileSync(filePath, "utf8");
+            } else {
+              // Do not invent placeholder text for unsupported formats.
+              return {
+                id,
+                status: "Failed",
+                error: `Unsupported file format ${ext || "(unknown)"} for legacy evaluation path.`,
+              };
+            }
+          } finally {
+            await materialized.cleanup();
           }
 
           if (!extractedText || extractedText.trim() === "") {
@@ -93,6 +100,9 @@ exports.evaluateAssignment = async (req, res) => {
             { new: true }
           );
         } catch (innerError) {
+          if (innerError && innerError.code === "R2_NOT_CONFIGURED") {
+            throw innerError;
+          }
           console.error(`Error processing submission ${id}:`, innerError.message);
           // Do not mark AI_GRADED on provider/processing failure.
           return {
@@ -106,6 +116,9 @@ exports.evaluateAssignment = async (req, res) => {
 
     return res.json({ message: "Bulk AI grading completed", data: results });
   } catch (error) {
+    if (error && error.code === "R2_NOT_CONFIGURED") {
+      return res.status(503).json({ message: error.message });
+    }
     console.error("Critical Controller Error:", error);
     res.status(500).json({ error: "AI grading request failed." });
   }
