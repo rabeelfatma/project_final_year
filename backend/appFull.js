@@ -32,21 +32,19 @@ app.set("trust proxy", 1);
 
 // Separate Vercel frontend: set CLIENT_ORIGIN (or FRONTEND_URL) to the SPA origin.
 // Unset keeps permissive reflection (Hostinger same-origin / local).
-const allowedOrigins = String(
-  process.env.CLIENT_ORIGIN || process.env.FRONTEND_URL || ""
-)
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// Non-production also allows private-LAN origins for same-Wi-Fi mobile testing
+// without weakening production allowlists (see utils/corsOrigins.js).
+const {
+  parseAllowedOrigins,
+  resolveCorsOriginOption,
+} = require("./utils/corsOrigins");
+const allowedOrigins = parseAllowedOrigins();
 
 app.use(
   cors({
     origin: allowedOrigins.length
       ? (origin, callback) => {
-          if (!origin || allowedOrigins.includes(origin)) {
-            return callback(null, true);
-          }
-          return callback(null, false);
+          return callback(null, resolveCorsOriginOption(origin));
         }
       : true,
     exposedHeaders: ["Content-Disposition"],

@@ -12,12 +12,21 @@ const {
   resolvePublicAppUrl,
   isUsablePublicAppUrl,
   isLoopbackPublicUrl,
+  isPrivateLanPublicUrl,
 } = require("../utils/publicAppUrl");
+const {
+  resolveCorsOriginOption,
+  isDevLanBrowserOrigin,
+} = require("../utils/corsOrigins");
 const { approvedRoleFilter } = require("../utils/approvedUserQuery");
 const {
   getEmailConfig,
   buildVerificationLink,
 } = require("../services/transactionalEmail");
+const {
+  buildResetLink,
+  getResetEmailConfig,
+} = require("../services/passwordResetEmail");
 const {
   verifyEmailWithToken,
   issueEmailVerificationToken,
@@ -127,6 +136,71 @@ describe("public app URL construction (local vs configured)", () => {
     assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "development" }), true);
   });
 
+  it("builds Hostinger production HTTPS verification links", () => {
+    const base = resolvePublicAppUrl({
+      NODE_ENV: "production",
+      PUBLIC_APP_URL: "https://duke.com.pk/",
+    });
+    assert.equal(base, "https://duke.com.pk");
+    assert.equal(
+      buildVerificationLink(base, "hostinger-tok"),
+      "https://duke.com.pk/verify-email?token=hostinger-tok"
+    );
+    assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "production" }), true);
+  });
+
+  it("builds Vercel frontend verification links from PUBLIC_APP_URL (placeholder)", () => {
+    // Repo does not contain the live Vercel SPA domain — use a verified-shape placeholder.
+    const vercelFrontend = "https://quickcheck-hub-frontend.vercel.app";
+    const base = resolvePublicAppUrl({
+      NODE_ENV: "production",
+      PUBLIC_APP_URL: vercelFrontend,
+      CLIENT_ORIGIN: vercelFrontend,
+    });
+    assert.equal(base, vercelFrontend);
+    assert.equal(
+      buildVerificationLink(base, "vercel-tok"),
+      `${vercelFrontend}/verify-email?token=vercel-tok`
+    );
+    assert.doesNotMatch(base, /api\.|localhost|127\.0\.0\.1/i);
+    assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "production" }), true);
+  });
+
+  it("builds local LAN verification links for same-Wi-Fi mobile testing", () => {
+    const lan = "http://192.168.8.101:5173";
+    const base = resolvePublicAppUrl({ PUBLIC_APP_URL: `${lan}/` });
+    assert.equal(base, lan);
+    assert.equal(isPrivateLanPublicUrl(base), true);
+    assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "development" }), true);
+    assert.equal(
+      buildVerificationLink(base, "lan-tok"),
+      `${lan}/verify-email?token=lan-tok`
+    );
+  });
+
+  it("prefers LAN CLIENT_ORIGIN over localhost when PUBLIC_APP_URL is unset", () => {
+    const base = resolvePublicAppUrl({
+      CLIENT_ORIGIN: "http://localhost:5173,http://192.168.1.50:5173",
+    });
+    assert.equal(base, "http://192.168.1.50:5173");
+    assert.equal(isLoopbackPublicUrl(base), false);
+  });
+
+  it("builds password-reset links from the same public origin rules", () => {
+    assert.equal(
+      buildResetLink("https://duke.com.pk/", "reset-tok"),
+      "https://duke.com.pk/reset-password#reset-tok"
+    );
+    const resetCfg = getResetEmailConfig({
+      NODE_ENV: "production",
+      RESEND_API_KEY: "re_x",
+      PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@duke.com.pk>",
+      PUBLIC_APP_URL: "https://duke.com.pk",
+    });
+    assert.equal(resetCfg.configured, true);
+    assert.equal(resetCfg.publicAppUrl, "https://duke.com.pk");
+  });
+
   it("builds configured production links and preserves token query", () => {
     const base = resolvePublicAppUrl({
       PUBLIC_APP_URL: "https://app.example.com/",
@@ -167,6 +241,21 @@ describe("public app URL construction (local vs configured)", () => {
     assert.equal(cfg.publicAppUrl, "");
   });
 
+  it("fails closed in production when only private LAN URL is configured", () => {
+    const cfg = getEmailConfig({
+      NODE_ENV: "production",
+      RESEND_API_KEY: "re_x",
+      PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+      PUBLIC_APP_URL: "http://192.168.8.101:5173",
+    });
+    assert.equal(cfg.configured, false);
+    assert.equal(cfg.publicAppUrl, "");
+    assert.equal(
+      isUsablePublicAppUrl("http://10.0.0.5:5173", { NODE_ENV: "production" }),
+      false
+    );
+  });
+
   it("accepts production PUBLIC_APP_URL for email config", () => {
     const cfg = getEmailConfig({
       NODE_ENV: "production",
@@ -176,6 +265,41 @@ describe("public app URL construction (local vs configured)", () => {
     });
     assert.equal(cfg.configured, true);
     assert.equal(cfg.publicAppUrl, "https://app.example.com");
+  });
+});
+
+describe("CORS origins (production vs local LAN)", () => {
+  it("allows listed Vercel frontend origin in production", () => {
+    const env = {
+      NODE_ENV: "production",
+      CLIENT_ORIGIN: "https://quickcheck-hub-frontend.vercel.app",
+    };
+    assert.equal(
+      resolveCorsOriginOption("https://quickcheck-hub-frontend.vercel.app", env),
+      true
+    );
+    assert.equal(
+      resolveCorsOriginOption("https://evil.example.com", env),
+      false
+    );
+    assert.equal(
+      resolveCorsOriginOption("http://192.168.8.101:5173", env),
+      false
+    );
+  });
+
+  it("allows private LAN browser origins only outside production", () => {
+    assert.equal(isDevLanBrowserOrigin("http://192.168.8.101:5173"), true);
+    assert.equal(isDevLanBrowserOrigin("http://localhost:5173"), true);
+    assert.equal(isDevLanBrowserOrigin("https://duke.com.pk"), false);
+    const env = {
+      NODE_ENV: "development",
+      CLIENT_ORIGIN: "http://localhost:5173",
+    };
+    assert.equal(
+      resolveCorsOriginOption("http://192.168.8.101:5173", env),
+      true
+    );
   });
 });
 

@@ -37,7 +37,13 @@ QuickCheck Hub is a React + Node/Express + MongoDB academic assignment checking 
 
 ## Project backlog
 
-**Recommended next step:** After Vercel picks up `ui/professional-blue-theme`, confirm backend `/` is non-500, set Resend trio + frontend `PUBLIC_APP_URL` in Vercel env if signup/reset email is needed, then run an authorized live smoke (not claimed from unit tests alone).
+**Recommended next step:** On the local laptop, set real Resend trio values in `backend/.env` (names only in `.env.example`), keep `PUBLIC_APP_URL=http://localhost:5173` for laptop email links (or temporarily the laptop LAN origin for phone email tests), then run one authorized signup → verify → Admin notify smoke. Do not claim Hostinger/Vercel live until those deploys are tested separately.
+
+### DONE (email verification URL / LAN / CORS — local code, 2026-10-18)
+- Root causes: DEV API base hardcoded to `localhost:5000` (phone could not reach laptop API); Vite localhost-only bind blocked LAN UI; production public URL rejected only loopback (not private LAN); Admin notify link fell back to `duke.com.pk` when origin missing; Vercel SPA domain is not in the repo.
+- Fix: hostname-based DEV API URL; opt-in `npm run dev:lan` / `VITE_LAN=1`; production fail-closed on private-LAN `PUBLIC_APP_URL`; non-prod CORS allows private-LAN origins without weakening production allowlists; Admin links use configured origin only.
+- Isolated tests: Hostinger `https://duke.com.pk`, Vercel frontend placeholder, localhost + LAN links, production loopback/LAN rejection, reset-link + CORS — **PASS**. Frontend `npm run build` — **PASS**. Live email / deployed envs — **NOT TESTED**.
+- Commit/push/deploy — **NOT AUTHORIZED** (local worktree only).
 
 ### DONE (Vercel optional web-push disablement — 2026-10-18)
 - Root causes at module load of `backend/config/push.js`: (1) invalid `VAPID_SUBJECT` (not `mailto:` / `https:`), and/or (2) invalid VAPID key material (e.g. Base64 with `=` → `Vapid public key must be a URL safe Base 64 (without "=")`). Either threw from `webpush.setVapidDetails` and crashed Vercel startup (`/` / `/favicon.ico` → 500).
@@ -57,25 +63,28 @@ QuickCheck Hub is a React + Node/Express + MongoDB academic assignment checking 
 - Hostinger production assumptions for `duke.com.pk` documented in `backend/.env.example` (names/comments only).
 - Isolated email/auth/security suite exercised locally before push (`authPassword`, `provisionFirstAdmin`, `qc18aEmailVerification`, `authSignupValidation`, `passwordReset`, `aiChatbotDownloadSecurity`, `demoSeed`) — all **mocked**; **not** live Resend delivery.
 
+### ACTIVE
+- Local Resend credentials + one authorized laptop verification smoke (code path ready; live send not claimed).
+- Optional same-Wi-Fi mobile: `npm run dev:lan`, phone opens `http://<laptop-lan-ip>:5173`, temporarily set `PUBLIC_APP_URL` to that LAN origin for email links; allow Windows Firewall for Node/Vite.
+
 ### BLOCKED
-- **Live email delivery (local):** `backend/.env` may still have empty placeholders for `RESEND_API_KEY` and `PASSWORD_RESET_FROM_EMAIL`. Signup correctly fails closed until real Resend values are set. Secrets must never be committed.
-- **Live Resend smoke test:** not run (no real sends claimed from this push).
-- **Vercel deployment proof:** git push alone is not proof; confirm the preview/production deployment after Vercel builds.
+- **Live email delivery (local):** real `RESEND_API_KEY` + `PASSWORD_RESET_FROM_EMAIL` must be set by operator in `backend/.env` (never commit). Until then signup/reset correctly return `503 EMAIL_NOT_CONFIGURED`.
+- **Vercel frontend public domain:** not present in repo/config evidence — operator must paste the real Vercel SPA HTTPS origin into backend `PUBLIC_APP_URL` + `CLIENT_ORIGIN`, and frontend build `VITE_API_BASE_URL` to the backend `/api` URL.
+- **Hostinger / Vercel live verification:** not exercised from this session (code-tested only).
 
-### PENDING (pre-deploy email)
-1. Operator pastes real local `RESEND_API_KEY` + verified `PASSWORD_RESET_FROM_EMAIL` into `backend/.env` (placeholders already present; `PUBLIC_APP_URL` already set to local Vite origin).
-2. Authorized live smoke: signup → verify link → Admin notify → approve → login; plus password-reset link open from email.
-3. For Vercel backend deploy: set the Resend trio with `PUBLIC_APP_URL` = actual Vercel **frontend** origin (not the API URL). Hostinger same-origin uses `PUBLIC_APP_URL=https://duke.com.pk`.
-4. Frontend build: `VITE_API_BASE_URL` pointing at the backend `/api` base when frontend and API are on separate origins (see `frontend/.env.example`).
-
-### PENDING (Vercel VAPID / push after code fix)
-1. Optional: in the Vercel **backend** project env, set valid `VAPID_SUBJECT` (`mailto:` / `https:`) plus URL-safe Base64 `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` if browser push is desired; otherwise omit/leave invalid and keep push disabled (in-app bell still works).
-2. After deploy: confirm `/` and `/favicon.ico` return non-500; optional push smoke only when keys + subject are valid.
+### NEXT
+1. Operator configures local Resend trio; run laptop signup → email link → verify page → Admin notify.
+2. If mobile LAN email testing is needed: `dev:lan` + temporary LAN `PUBLIC_APP_URL` (never commit the IP; restore localhost afterward).
+3. For Vercel: set dashboard env from the real frontend/backend project URLs (do not invent).
+4. For Hostinger: confirm `PUBLIC_APP_URL=https://duke.com.pk` (+ Resend trio) in Hostinger Node env, then live smoke.
 
 ### FUTURE
 - Visual QA pass in a running browser: toggle Light/Dark on Admin, Teacher, and Student dashboards and confirm charts, active nav, and CTAs all use the shared blue.
+- Optional Vercel VAPID keys if browser push is desired (in-app bell works without them).
 
 ### MANUAL GROUP TESTING
-- After Resend credentials are configured: authorized provider smoke test of verification link, password-reset link, and Admin new-registration email (mocked unit coverage exists; live delivery not claimed).
+- Laptop: signup verification + password-reset link from a real inbox after Resend is configured.
+- Mobile LAN: open Vite via laptop private IP; confirm API calls hit laptop `:5000`; open a verification email whose link uses the LAN origin.
+- Hostinger `https://duke.com.pk`: live verification/reset after Hostinger env confirmed.
+- Vercel SPA + API: live verification/reset after dashboard env set to the real frontend origin (not the API domain).
 - Browser Light/Dark visual QA across Admin, Teacher, and Student dashboards.
-- After Vercel deploy of push soft-fail: hit `/` and confirm no module-load 500; push subscribe only if intentionally enabled with valid VAPID env.
