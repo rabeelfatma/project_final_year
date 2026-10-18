@@ -8,10 +8,10 @@ const {
   isBcryptHash,
   MIN_PASSWORD_LENGTH,
 } = require("../../utils/authPassword");
+const { validateEmailInput } = require("../../utils/emailValidation");
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** Stronger than general signup minimum for the bootstrap admin. */
-const FIRST_ADMIN_MIN_PASSWORD_LENGTH = Math.max(10, MIN_PASSWORD_LENGTH);
+/** Same length/complexity policy as signup and password reset (via validatePasswordInput). */
+const FIRST_ADMIN_MIN_PASSWORD_LENGTH = MIN_PASSWORD_LENGTH;
 
 function sanitizeError(error) {
   const message = error && error.message ? String(error.message) : "Unknown error";
@@ -22,8 +22,6 @@ function sanitizeError(error) {
 
 function validateIdentity({ name, email }) {
   const trimmedName = typeof name === "string" ? name.trim() : "";
-  const normalizedEmail =
-    typeof email === "string" ? email.toLowerCase().trim() : "";
 
   if (!trimmedName) {
     return { ok: false, message: "Admin name is required." };
@@ -31,14 +29,18 @@ function validateIdentity({ name, email }) {
   if (trimmedName.length < 2) {
     return { ok: false, message: "Admin name must be at least 2 characters." };
   }
-  if (!normalizedEmail) {
-    return { ok: false, message: "Admin email is required." };
-  }
-  if (!EMAIL_RE.test(normalizedEmail)) {
-    return { ok: false, message: "Admin email format is invalid." };
+  const emailCheck = validateEmailInput(email);
+  if (!emailCheck.ok) {
+    return {
+      ok: false,
+      message:
+        emailCheck.message === "Email is required"
+          ? "Admin email is required."
+          : "Admin email format is invalid.",
+    };
   }
 
-  return { ok: true, name: trimmedName, email: normalizedEmail };
+  return { ok: true, name: trimmedName, email: emailCheck.email };
 }
 
 function validateFirstAdminPassword(password) {

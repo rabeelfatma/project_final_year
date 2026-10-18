@@ -198,6 +198,24 @@ if (shouldListen) {
     if (fs.existsSync(frontendDist)) {
       console.log(`🌐 Serving frontend build from: ${frontendDist}`);
     }
+    // Resend trio: names only — never log secret values.
+    try {
+      const { getEmailConfig } = require("./services/transactionalEmail");
+      const emailCfg = getEmailConfig();
+      if (!emailCfg.configured) {
+        const missing = [];
+        if (!emailCfg.apiKey) missing.push("RESEND_API_KEY");
+        if (!emailCfg.fromEmail) missing.push("PASSWORD_RESET_FROM_EMAIL");
+        if (!emailCfg.publicAppUrl) {
+          missing.push("PUBLIC_APP_URL (or FRONTEND_URL / CLIENT_ORIGIN)");
+        }
+        console.warn(
+          `⚠️  Transactional email not configured (missing: ${missing.join(", ")}). Public signup and password reset return 503 EMAIL_NOT_CONFIGURED until set.`
+        );
+      }
+    } catch (_) {
+      /* ignore — email module optional at boot */
+    }
   });
 }
 

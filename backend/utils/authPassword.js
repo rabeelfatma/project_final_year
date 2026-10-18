@@ -1,8 +1,12 @@
 const bcrypt = require("bcryptjs");
 
-const MIN_PASSWORD_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 8;
 const ALLOWED_ROLES = ["student", "admin", "teacher"];
 const BCRYPT_HASH_RE = /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/;
+const SPECIAL_CHAR_RE = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/;
+
+const PASSWORD_POLICY_MESSAGE =
+  "Password must be at least 8 characters and include uppercase, lowercase, a digit, and a special character (e.g. @ # $ !).";
 
 function normalizeRole(role) {
   return role ? String(role).toLowerCase().trim() : "student";
@@ -12,6 +16,10 @@ function isBcryptHash(value) {
   return typeof value === "string" && BCRYPT_HASH_RE.test(value);
 }
 
+/**
+ * Complexity rules for setting a new password (signup, reset, admin create).
+ * Does not trim or alter the password value.
+ */
 function validatePasswordInput(password) {
   if (password == null || typeof password !== "string" || password.length === 0) {
     return { ok: false, message: "Password is required" };
@@ -21,7 +29,33 @@ function validatePasswordInput(password) {
     return { ok: false, message: "Invalid password format" };
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
-    return { ok: false, message: "Password must be at least 6 characters" };
+    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  }
+  if (!SPECIAL_CHAR_RE.test(password)) {
+    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  }
+  return { ok: true, password };
+}
+
+/**
+ * Login only checks presence / non-hash shape.
+ * Existing accounts may predate the stronger signup policy.
+ */
+function validateLoginPasswordInput(password) {
+  if (password == null || typeof password !== "string" || password.length === 0) {
+    return { ok: false, message: "Password is required" };
+  }
+  if (isBcryptHash(password)) {
+    return { ok: false, message: "Invalid password format" };
   }
   return { ok: true, password };
 }
@@ -87,12 +121,14 @@ function canUserLogin(user) {
 
 module.exports = {
   MIN_PASSWORD_LENGTH,
+  PASSWORD_POLICY_MESSAGE,
   ALLOWED_ROLES,
   APPROVAL_STATUSES,
   normalizeRole,
   isBcryptHash,
   isPublicAdminBootstrapAllowed,
   validatePasswordInput,
+  validateLoginPasswordInput,
   hashPassword,
   passwordsMatch,
   toPublicUser,

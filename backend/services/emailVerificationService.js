@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { assertWithinRateLimit, DEFAULT_WINDOW_MS } = require("./authRateLimit");
+const { validateEmailInput } = require("../utils/emailValidation");
 const {
   getEmailConfig,
   buildVerificationLink,
@@ -216,18 +217,19 @@ async function verifyEmailWithToken(rawToken, deps = createDefaultDeps()) {
 }
 
 async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()) {
-  const normalized =
-    typeof email === "string" ? email.toLowerCase().trim().slice(0, 254) : "";
-  if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+  const emailCheck = validateEmailInput(email);
+  if (!emailCheck.ok) {
     return {
       ok: false,
       status: 400,
       message: "A valid email address is required.",
     };
   }
+  const normalized = emailCheck.email;
 
   const config = deps.getEmailConfig(deps.env);
   if (!config.configured) {
+    console.error("RESEND VERIFICATION BLOCKED: EMAIL_NOT_CONFIGURED");
     return {
       ok: false,
       status: 503,
@@ -282,6 +284,10 @@ async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()
   const issued = await issueEmailVerificationToken(user, deps);
   const sent = await sendSignupVerificationEmail(user, issued.rawToken, deps);
   if (!sent.ok) {
+    console.error(
+      "RESEND VERIFICATION DELIVERY FAILED:",
+      sent.code || "EMAIL_PROVIDER_ERROR"
+    );
     return {
       ok: false,
       status: 503,

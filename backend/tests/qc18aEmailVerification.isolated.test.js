@@ -124,6 +124,14 @@ describe("QC-18A email templates and config", () => {
       }).configured,
       true
     );
+    assert.equal(
+      getEmailConfig({
+        RESEND_API_KEY: "re_x",
+        PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+        FRONTEND_URL: "https://duke.com.pk",
+      }).configured,
+      true
+    );
   });
 
   it("builds production verification links from PUBLIC_APP_URL", () => {

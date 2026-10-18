@@ -68,18 +68,43 @@ describe("provisionFirstAdmin CLI argument safety", () => {
 });
 
 describe("provisionFirstAdmin validation", () => {
-  it("rejects weak / short passwords for first admin", () => {
-    assert.equal(validateFirstAdminPassword("short").ok, false);
-    assert.equal(validateFirstAdminPassword("123456789").ok, false); // 9 chars if min is 10
-    const okLen = "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH);
-    assert.equal(validateFirstAdminPassword(okLen).ok, true);
+  it("aligns first-admin minimum with the shared 8-character policy", () => {
+    assert.equal(FIRST_ADMIN_MIN_PASSWORD_LENGTH, 8);
+  });
+
+  it("accepts a valid exact 8-character first-admin password", () => {
+    const result = validateFirstAdminPassword("Secure1!");
+    assert.equal(result.ok, true);
+    assert.equal(result.password.length, 8);
+  });
+
+  it("rejects passwords shorter than 8 characters", () => {
+    // 7 chars with all required character classes still fails length.
+    assert.equal(validateFirstAdminPassword("Secur1!").ok, false);
+    assert.equal(validateFirstAdminPassword("Ab1!xy").ok, false);
+  });
+
+  it("rejects passwords missing required character types", () => {
+    assert.equal(validateFirstAdminPassword("alllower1!").ok, false);
+    assert.equal(validateFirstAdminPassword("ALLUPPER1!").ok, false);
+    assert.equal(validateFirstAdminPassword("NoDigits!!").ok, false);
+    assert.equal(validateFirstAdminPassword("NoSpecial1").ok, false);
+    assert.equal(
+      validateFirstAdminPassword("a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH)).ok,
+      false
+    );
+  });
+
+  it("accepts longer valid first-admin passwords", () => {
+    assert.equal(validateFirstAdminPassword("AdminPass1!").ok, true);
+    assert.equal(validateFirstAdminPassword("LongerAdminPass99!").ok, true);
   });
 
   it("dry-run rejects missing identity without connecting", () => {
     const result = planFirstAdminProvision({
       name: "",
       email: "admin@example.com",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
     });
     assert.equal(result.ok, false);
     assert.equal(result.mode, "dry-run");
@@ -89,11 +114,12 @@ describe("provisionFirstAdmin validation", () => {
     const result = planFirstAdminProvision({
       name: "Campus Admin",
       email: "Admin@Example.COM",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
     });
     assert.equal(result.ok, true);
     assert.equal(result.planned.email, "admin@example.com");
     assert.equal(result.planned.role, "admin");
+    assert.equal(result.planned.passwordLength, 8);
     assert.match(result.message, /no database connection/i);
   });
 });
@@ -105,7 +131,7 @@ describe("provisionFirstAdmin execute safeguards", () => {
       mongoUri: "mongodb://127.0.0.1:27017/test",
       name: "Campus Admin",
       email: "admin@example.com",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
       execute: false,
       deps,
     });
@@ -121,7 +147,7 @@ describe("provisionFirstAdmin execute safeguards", () => {
       mongoUri: "",
       name: "Campus Admin",
       email: "admin@example.com",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
       execute: true,
       deps,
     });
@@ -136,7 +162,7 @@ describe("provisionFirstAdmin execute safeguards", () => {
       mongoUri: "mongodb://127.0.0.1:27017/test",
       name: "Campus Admin",
       email: "admin@example.com",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
       execute: true,
       deps,
     });
@@ -155,7 +181,7 @@ describe("provisionFirstAdmin execute safeguards", () => {
       mongoUri: "mongodb://127.0.0.1:27017/test",
       name: "Campus Admin",
       email: "taken@example.com",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
       execute: true,
       deps,
     });
@@ -166,7 +192,7 @@ describe("provisionFirstAdmin execute safeguards", () => {
 
   it("creates a bcrypt-hashed admin once when safeguards pass", async () => {
     const deps = createMockDeps({ adminCount: 0 });
-    const plain = `SecureAdmin!${FIRST_ADMIN_MIN_PASSWORD_LENGTH}`;
+    const plain = "Secure1!";
     const result = await provisionFirstAdmin({
       mongoUri: "mongodb://127.0.0.1:27017/test",
       name: "Campus Admin",
@@ -195,7 +221,7 @@ describe("provisionFirstAdmin execute safeguards", () => {
       mongoUri: "mongodb://secret-user:secret-pass@host/db",
       name: "Campus Admin",
       email: "admin@example.com",
-      password: "a".repeat(FIRST_ADMIN_MIN_PASSWORD_LENGTH),
+      password: "Secure1!",
       execute: true,
       deps,
     });

@@ -4,12 +4,14 @@ const {
   ALLOWED_ROLES,
   normalizeRole,
   validatePasswordInput,
+  validateLoginPasswordInput,
   hashPassword,
   passwordsMatch,
   toPublicUser,
   isPublicAdminBootstrapAllowed,
   getLoginDenialReason,
 } = require("../utils/authPassword");
+const { validateEmailInput } = require("../utils/emailValidation");
 const AuthRateLimit = require("../models/AuthRateLimit");
 const { assertWithinRateLimit, DEFAULT_WINDOW_MS } = require("../services/authRateLimit");
 
@@ -25,10 +27,15 @@ exports.registerUser = async (req, res) => {
   try {
     const { name, email, password, role, department, program, subject } = req.body;
 
-    if (!name || !email) {
+    if (!name) {
       return res.status(400).json({
         message: "Name and email are required"
       });
+    }
+
+    const emailCheck = validateEmailInput(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ message: emailCheck.message });
     }
 
     const userRole = normalizeRole(role);
@@ -62,7 +69,7 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ message: passwordCheck.message });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = emailCheck.email;
 
     const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
@@ -143,16 +150,23 @@ exports.loginUser = async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+    const emailCheck = validateEmailInput(email);
+    if (!emailCheck.ok) {
+      // Avoid leaking whether a malformed address could exist; still reject clearly.
+      return res.status(400).json({
+        message:
+          emailCheck.message === "Email is required"
+            ? "Email is required"
+            : "Invalid email or password",
+      });
     }
 
-    const passwordCheck = validatePasswordInput(password);
+    const passwordCheck = validateLoginPasswordInput(password);
     if (!passwordCheck.ok) {
       return res.status(400).json({ message: passwordCheck.message });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = emailCheck.email;
     const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
@@ -226,6 +240,10 @@ exports.requestPublicSignup = async (req, res) => {
 
     const emailConfig = getEmailConfig();
     if (!emailConfig.configured) {
+      // Fail closed before creating an account when delivery cannot run.
+      // Operator must set RESEND_API_KEY, PASSWORD_RESET_FROM_EMAIL, and PUBLIC_APP_URL
+      // (FRONTEND_URL / CLIENT_ORIGIN accepted as public URL fallback). Never log secrets.
+      console.error("PUBLIC SIGNUP BLOCKED: EMAIL_NOT_CONFIGURED");
       return res.status(503).json({
         message:
           "Registration email verification is temporarily unavailable. Please try again later.",
@@ -238,8 +256,9 @@ exports.requestPublicSignup = async (req, res) => {
       return res.status(400).json({ message: "Full name is required" });
     }
 
-    if (!email || typeof email !== "string") {
-      return res.status(400).json({ message: "Email is required" });
+    const emailCheck = validateEmailInput(email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ message: emailCheck.message });
     }
 
     const userRole = normalizeRole(role);
@@ -267,10 +286,7 @@ exports.requestPublicSignup = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim().slice(0, 254);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      return res.status(400).json({ message: "Invalid email format" });
-    }
+    const normalizedEmail = emailCheck.email;
 
     const emailLimit = await assertWithinRateLimit(
       AuthRateLimit,
@@ -359,11 +375,16 @@ exports.requestPublicSignup = async (req, res) => {
     const sent = await sendSignupVerificationEmail(created, issued.rawToken);
     if (!sent.ok) {
       // Account stays pending/unverified; applicant can use resend later when email recovers.
+      console.error(
+        "PUBLIC SIGNUP EMAIL DELIVERY FAILED:",
+        sent.code || "EMAIL_PROVIDER_ERROR"
+      );
       return res.status(201).json({
         message:
           "Your registration was saved, but the verification email could not be sent. Use Resend verification later or contact an administrator.",
         status: "pending_verification",
         verificationEmailSent: false,
+        code: "VERIFICATION_EMAIL_FAILED",
       });
     }
 

@@ -31,14 +31,14 @@ describe("demo seed dry-run safety", () => {
   it("requires admin email and confirmation token", () => {
     const missing = planDemoSeed({
       adminEmail: "",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       confirmToken: "DEMO_SEED_OK",
     });
     assert.equal(missing.ok, false);
 
     const noConfirm = planDemoSeed({
       adminEmail: "operator@example.com",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       confirmToken: "NOPE",
     });
     assert.equal(noConfirm.ok, false);
@@ -47,7 +47,7 @@ describe("demo seed dry-run safety", () => {
   it("plans without connecting when inputs are valid", () => {
     const plan = planDemoSeed({
       adminEmail: "operator@example.com",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       confirmToken: "DEMO_SEED_OK",
     });
     assert.equal(plan.ok, true);
@@ -76,7 +76,7 @@ describe("demo seed execute safeguards", () => {
       execute: true,
       confirmToken: "WRONG",
       adminEmail: "a@b.co",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       mongoUri: "mongodb://127.0.0.1:27017/quickcheck_hub_demo",
       deps: {},
     });
@@ -86,7 +86,7 @@ describe("demo seed execute safeguards", () => {
       execute: true,
       confirmToken: "DEMO_SEED_OK",
       adminEmail: "a@b.co",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       mongoUri: "mongodb://127.0.0.1:27017/something_else",
       deps: { mongoose: {}, User: {}, Assignment: {} },
     });
@@ -100,7 +100,7 @@ describe("demo seed execute safeguards", () => {
       execute: false,
       confirmToken: "DEMO_SEED_OK",
       adminEmail: "a@b.co",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       mongoUri: "mongodb://127.0.0.1:27017/quickcheck_hub_demo",
       deps: {
         mongoose: {
@@ -154,7 +154,7 @@ describe("demo seed execute safeguards", () => {
       execute: true,
       confirmToken: "DEMO_SEED_OK",
       adminEmail: "operator@example.com",
-      password: "ValidPass12",
+      password: "ValidPass12!",
       mongoUri: "mongodb://127.0.0.1:27017/quickcheck_hub_demo",
       deps: {
         mongoose: {

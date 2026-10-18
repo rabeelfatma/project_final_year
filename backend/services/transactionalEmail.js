@@ -3,15 +3,22 @@
  * Reuses the same env convention as password-reset mail:
  *   RESEND_API_KEY
  *   PASSWORD_RESET_FROM_EMAIL  (verified sender)
- *   PUBLIC_APP_URL
+ *   PUBLIC_APP_URL  (FRONTEND_URL / first CLIENT_ORIGIN as fallback)
  */
+
+function resolvePublicAppUrl(env = process.env) {
+  const primary = String(env.PUBLIC_APP_URL || "").trim();
+  const frontend = String(env.FRONTEND_URL || "").trim();
+  const clientOrigin = String(env.CLIENT_ORIGIN || "")
+    .split(",")[0]
+    .trim();
+  return (primary || frontend || clientOrigin).replace(/\/+$/, "");
+}
 
 function getEmailConfig(env = process.env) {
   const apiKey = String(env.RESEND_API_KEY || "").trim();
   const fromEmail = String(env.PASSWORD_RESET_FROM_EMAIL || "").trim();
-  const publicAppUrl = String(env.PUBLIC_APP_URL || "")
-    .trim()
-    .replace(/\/+$/, "");
+  const publicAppUrl = resolvePublicAppUrl(env);
 
   return {
     apiKey,

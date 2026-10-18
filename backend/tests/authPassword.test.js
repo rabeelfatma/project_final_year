@@ -2,11 +2,13 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   validatePasswordInput,
+  validateLoginPasswordInput,
   hashPassword,
   passwordsMatch,
   toPublicUser,
   normalizeRole,
   ALLOWED_ROLES,
+  MIN_PASSWORD_LENGTH,
 } = require("../utils/authPassword");
 
 describe("authPassword helpers", () => {
@@ -19,13 +21,26 @@ describe("authPassword helpers", () => {
   it("rejects short passwords", () => {
     const result = validatePasswordInput("Ab1!");
     assert.equal(result.ok, false);
-    assert.match(result.message, /at least 6/i);
+    assert.match(result.message, /at least 8/i);
   });
 
-  it("accepts passwords of sufficient length", () => {
+  it("rejects passwords missing complexity rules", () => {
+    assert.equal(validatePasswordInput("alllower1!").ok, false);
+    assert.equal(validatePasswordInput("ALLUPPER1!").ok, false);
+    assert.equal(validatePasswordInput("NoDigits!!").ok, false);
+    assert.equal(validatePasswordInput("NoSpecial1").ok, false);
+  });
+
+  it("accepts passwords that meet the policy", () => {
     const result = validatePasswordInput("Secure1!");
     assert.equal(result.ok, true);
     assert.equal(result.password, "Secure1!");
+    assert.ok(MIN_PASSWORD_LENGTH >= 8);
+  });
+
+  it("does not enforce complexity on login presence check", () => {
+    assert.equal(validateLoginPasswordInput("legacy6").ok, true);
+    assert.equal(validateLoginPasswordInput("").ok, false);
   });
 
   it("hashes passwords and verifies matches", async () => {

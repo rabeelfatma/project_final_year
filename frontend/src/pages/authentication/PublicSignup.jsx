@@ -4,11 +4,22 @@ import { Eye, EyeOff } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail } from "../../utils/validators";
+import {
+  validateEmail,
+  validatePassword,
+  passwordValidationMessage,
+  PASSWORD_REQUIREMENTS,
+} from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 function messageForSignupConflict(data) {
   const code = data?.code;
+  if (code === "EMAIL_NOT_CONFIGURED") {
+    return (
+      data.message ||
+      "Registration email verification is temporarily unavailable. Please try again later."
+    );
+  }
   if (code === "PENDING_VERIFICATION") {
     return (
       data.message ||
@@ -36,6 +47,10 @@ function messageForSignupConflict(data) {
   return data?.message || "Unable to submit registration request.";
 }
 
+function fieldErrorClass(hasError) {
+  return hasError ? "ring-1 ring-rose-400/80 rounded-qc" : "";
+}
+
 export default function PublicSignup() {
   const navigate = useNavigate();
   const submitLock = useRef(false);
@@ -46,15 +61,48 @@ export default function PublicSignup() {
     confirmPassword: "",
     role: "student",
   });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [msg, setMsg] = useState("");
   const [success, setSuccess] = useState(false);
+  const [emailSent, setEmailSent] = useState(true);
   const [submittedEmail, setSubmittedEmail] = useState("");
   const [conflictCode, setConflictCode] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+    if (fieldErrors[name]) {
+      setFieldErrors({ ...fieldErrors, [name]: "" });
+    }
+  };
+
+  const validateFields = () => {
+    const next = {};
+    if (!form.name.trim() || form.name.trim().length < 2) {
+      next.name = "Full name is required (at least 2 characters).";
+    }
+    if (!form.email.trim()) {
+      next.email = "Email address is required.";
+    } else if (!validateEmail(form.email)) {
+      next.email = "Enter a valid email address.";
+    }
+    if (!form.password) {
+      next.password = "Password is required.";
+    } else if (!validatePassword(form.password)) {
+      next.password = passwordValidationMessage(form.password);
+    }
+    if (!form.confirmPassword) {
+      next.confirmPassword = "Confirm your password.";
+    } else if (form.password !== form.confirmPassword) {
+      next.confirmPassword = "Password confirmation does not match.";
+    }
+    if (form.role !== "teacher" && form.role !== "student") {
+      next.role = "Select Teacher or Student.";
+    }
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
   };
 
   const handleSubmit = async (e) => {
@@ -63,21 +111,7 @@ export default function PublicSignup() {
     setMsg("");
     setConflictCode("");
 
-    if (!form.name.trim() || form.name.trim().length < 2) {
-      return setMsg("Full name is required.");
-    }
-    if (!form.email) return setMsg("Email address is required.");
-    if (!validateEmail(form.email)) return setMsg("Enter a valid email address.");
-    if (!form.password) return setMsg("Password is required.");
-    if (form.password.length < 6) {
-      return setMsg("Password must be at least 6 characters.");
-    }
-    if (form.password !== form.confirmPassword) {
-      return setMsg("Password confirmation does not match.");
-    }
-    if (form.role !== "teacher" && form.role !== "student") {
-      return setMsg("Select Teacher or Student.");
-    }
+    if (!validateFields()) return;
 
     submitLock.current = true;
     setSubmitting(true);
@@ -108,6 +142,7 @@ export default function PublicSignup() {
 
       created = true;
       setSuccess(true);
+      setEmailSent(data.verificationEmailSent !== false);
       setSubmittedEmail(form.email.trim());
       setMsg("");
     } catch {
@@ -123,12 +158,8 @@ export default function PublicSignup() {
     <div className="qc-auth-shell">
       <div className="qc-auth-card max-w-lg">
         <div className="text-center mb-7">
-          <p className="qc-auth-brand">
-            QuickCheck Hub
-          </p>
-          <h1 className="qc-auth-title">
-            Create Account
-          </h1>
+          <p className="qc-auth-brand">QuickCheck Hub</p>
+          <h1 className="qc-auth-title">Create Account</h1>
           <p className="qc-auth-subtitle">
             Verify your email, then wait for Admin approval
           </p>
@@ -141,12 +172,22 @@ export default function PublicSignup() {
             <p className="text-sm text-[var(--text)] text-center font-semibold">
               Registration submitted.
             </p>
-            <p className="text-sm text-[var(--text-faint)] text-center">
-              A verification link was sent to{" "}
-              <span className="text-sky-400 break-all">{submittedEmail}</span>.
-              Open that email and click the link. After verifying, an administrator
-              must approve your account before you can sign in.
-            </p>
+            {emailSent ? (
+              <p className="text-sm text-[var(--text-faint)] text-center">
+                A verification link was sent to{" "}
+                <span className="text-sky-400 break-all">{submittedEmail}</span>.
+                Open that email and click the link. After verifying, an
+                administrator must approve your account before you can sign in.
+              </p>
+            ) : (
+              <p className="text-sm text-[var(--text-faint)] text-center">
+                Your registration for{" "}
+                <span className="text-sky-400 break-all">{submittedEmail}</span>{" "}
+                was saved, but the verification email could not be sent. Use
+                Resend Verification Email when email delivery is available, or
+                contact an administrator.
+              </p>
+            )}
             <Button
               text="Resend Verification Email"
               type="button"
@@ -165,29 +206,58 @@ export default function PublicSignup() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} noValidate>
-            <InputField
-              name="name"
-              type="text"
-              placeholder="FULL NAME"
-              value={form.name}
-              onChange={handleChange}
-            />
-            <InputField
-              name="email"
-              type="email"
-              placeholder="EMAIL ADDRESS"
-              value={form.email}
-              onChange={handleChange}
-            />
-
-            <div className="relative">
+            <div className={`mb-1 ${fieldErrorClass(Boolean(fieldErrors.name))}`}>
+              <label className="sr-only" htmlFor="name">
+                Full name (required)
+              </label>
               <InputField
-                name="password"
-                type={showPass ? "text" : "password"}
-                placeholder="PASSWORD"
-                value={form.password}
+                name="name"
+                type="text"
+                placeholder="FULL NAME *"
+                value={form.name}
                 onChange={handleChange}
+                autoComplete="name"
               />
+            </div>
+            {fieldErrors.name && (
+              <p className="mb-3 text-xs text-rose-400" role="alert">
+                {fieldErrors.name}
+              </p>
+            )}
+
+            <div className={`mb-1 ${fieldErrorClass(Boolean(fieldErrors.email))}`}>
+              <label className="sr-only" htmlFor="email">
+                Email address (required)
+              </label>
+              <InputField
+                name="email"
+                type="email"
+                placeholder="EMAIL ADDRESS *"
+                value={form.email}
+                onChange={handleChange}
+                autoComplete="email"
+              />
+            </div>
+            {fieldErrors.email && (
+              <p className="mb-3 text-xs text-rose-400" role="alert">
+                {fieldErrors.email}
+              </p>
+            )}
+
+            <div className="relative mb-1">
+              <div className={fieldErrorClass(Boolean(fieldErrors.password))}>
+                <label className="sr-only" htmlFor="password">
+                  Password (required)
+                </label>
+                <InputField
+                  name="password"
+                  type={showPass ? "text" : "password"}
+                  placeholder="PASSWORD *"
+                  value={form.password}
+                  onChange={handleChange}
+                  autoComplete="new-password"
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setShowPass((v) => !v)}
@@ -198,18 +268,42 @@ export default function PublicSignup() {
                 {showPass ? "Hide" : "Show"}
               </button>
             </div>
+            {fieldErrors.password && (
+              <p className="mb-2 text-xs text-rose-400" role="alert">
+                {fieldErrors.password}
+              </p>
+            )}
+            <ul
+              className="mb-4 text-[11px] text-[var(--text-faint)] space-y-0.5 list-disc list-inside"
+              aria-label="Password requirements"
+            >
+              {PASSWORD_REQUIREMENTS.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ul>
 
-            <InputField
-              name="confirmPassword"
-              type={showPass ? "text" : "password"}
-              placeholder="CONFIRM PASSWORD"
-              value={form.confirmPassword}
-              onChange={handleChange}
-            />
+            <div className={`mb-1 ${fieldErrorClass(Boolean(fieldErrors.confirmPassword))}`}>
+              <label className="sr-only" htmlFor="confirmPassword">
+                Confirm password (required)
+              </label>
+              <InputField
+                name="confirmPassword"
+                type={showPass ? "text" : "password"}
+                placeholder="CONFIRM PASSWORD *"
+                value={form.confirmPassword}
+                onChange={handleChange}
+                autoComplete="new-password"
+              />
+            </div>
+            {fieldErrors.confirmPassword && (
+              <p className="mb-4 text-xs text-rose-400" role="alert">
+                {fieldErrors.confirmPassword}
+              </p>
+            )}
 
             <fieldset className="mb-6">
               <legend className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">
-                Requested Role
+                Requested Role *
               </legend>
               <div className="grid grid-cols-2 gap-3">
                 {["teacher", "student"].map((role) => (
@@ -233,6 +327,11 @@ export default function PublicSignup() {
                   </label>
                 ))}
               </div>
+              {fieldErrors.role && (
+                <p className="mt-2 text-xs text-rose-400" role="alert">
+                  {fieldErrors.role}
+                </p>
+              )}
             </fieldset>
 
             <Button
@@ -244,7 +343,8 @@ export default function PublicSignup() {
 
             {(conflictCode === "PENDING_VERIFICATION" ||
               conflictCode === "PENDING_APPROVAL" ||
-              conflictCode === "ALREADY_REGISTERED") && (
+              conflictCode === "ALREADY_REGISTERED" ||
+              conflictCode === "EMAIL_NOT_CONFIGURED") && (
               <div className="mt-4 flex flex-col gap-2">
                 {conflictCode === "PENDING_VERIFICATION" && (
                   <Button

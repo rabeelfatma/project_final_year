@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
+import {
+  validatePassword,
+  passwordValidationMessage,
+  PASSWORD_REQUIREMENTS,
+} from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 function readTokenFromHash() {
-  const raw = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
+  const raw =
+    typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
   if (!raw) return "";
   try {
     return decodeURIComponent(raw).trim();
@@ -38,20 +45,25 @@ export default function ResetPassword() {
     setToken(t);
     // Remove token from the address bar so it is less likely to linger in history/referrers.
     if (typeof window !== "undefined" && window.history?.replaceState) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search
+      );
     }
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (busy) return;
     setMsg("");
 
     if (linkInvalid || !token) {
       return setMsg("This reset link is invalid or expired.");
     }
 
-    if (!password || password.length < 6) {
-      return setMsg("Password must be at least 6 characters");
+    if (!password || !validatePassword(password)) {
+      return setMsg(passwordValidationMessage(password));
     }
 
     if (password !== confirmPassword) {
@@ -90,51 +102,71 @@ export default function ResetPassword() {
 
   return (
     <div className="qc-auth-shell">
-      <form
-        className="qc-auth-card"
-        onSubmit={handleSubmit}
-      >
+      <form className="qc-auth-card" onSubmit={handleSubmit} noValidate>
         <p className="qc-auth-brand text-center">QuickCheck Hub</p>
-        <h2 className="qc-auth-title text-center mb-5">
-          Reset Password
-        </h2>
+        <h2 className="qc-auth-title text-center mb-5">Reset Password</h2>
 
         {msg && <Alert message={msg} />}
 
         {!success && !linkInvalid && (
           <>
             <div className="relative">
+              <label className="sr-only" htmlFor="password">
+                New password
+              </label>
               <InputField
                 name="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="New Password"
+                placeholder="New Password *"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={busy}
+                autoComplete="new-password"
               />
-              <span
+              <button
+                type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-sky-400 cursor-pointer text-sm"
+                className="absolute right-3 top-2.5 text-sky-400 hover:text-sky-300 text-[10px] font-bold uppercase inline-flex items-center gap-1"
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                 {showPassword ? "Hide" : "Show"}
-              </span>
+              </button>
             </div>
 
+            <ul
+              className="mb-4 text-[11px] text-[var(--text-faint)] space-y-0.5 list-disc list-inside"
+              aria-label="Password requirements"
+            >
+              {PASSWORD_REQUIREMENTS.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ul>
+
             <div className="relative">
+              <label className="sr-only" htmlFor="confirmPassword">
+                Confirm new password
+              </label>
               <InputField
                 name="confirmPassword"
                 type={showConfirm ? "text" : "password"}
-                placeholder="Confirm Password"
+                placeholder="Confirm Password *"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={busy}
+                autoComplete="new-password"
               />
-              <span
+              <button
+                type="button"
                 onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute right-3 top-3 text-sky-400 cursor-pointer text-sm"
+                className="absolute right-3 top-2.5 text-sky-400 hover:text-sky-300 text-[10px] font-bold uppercase inline-flex items-center gap-1"
+                aria-label={
+                  showConfirm ? "Hide confirm password" : "Show confirm password"
+                }
               >
+                {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
                 {showConfirm ? "Hide" : "Show"}
-              </span>
+              </button>
             </div>
 
             <Button
