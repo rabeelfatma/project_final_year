@@ -15,20 +15,25 @@ export default function VerifyEmail() {
   const [msg, setMsg] = useState("");
   const [resendEmail, setResendEmail] = useState(emailFromQuery);
   const [resending, setResending] = useState(false);
-  const verifyStarted = useRef(false);
+  // Tracks in-flight token only; reset on cleanup so React Strict Mode remounts retry.
+  const verifyStarted = useRef(null);
   const resendLock = useRef(false);
 
   useEffect(() => {
-    if (!tokenFromQuery || verifyStarted.current) return;
-    verifyStarted.current = true;
+    if (!tokenFromQuery) return;
+    if (verifyStarted.current === tokenFromQuery) return;
+    verifyStarted.current = tokenFromQuery;
 
     let cancelled = false;
+    const controller = new AbortController();
+
     (async () => {
       try {
         const res = await fetch(`${getApiBaseUrl()}/auth/verify-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: tokenFromQuery }),
+          signal: controller.signal,
         });
         let data = {};
         try {
@@ -38,23 +43,34 @@ export default function VerifyEmail() {
         }
         if (cancelled) return;
         if (!res.ok) {
-          setStatus("error");
-          setMsg(data.message || "This verification link is invalid or has expired.");
+          if (data.code === "TOKEN_EXPIRED") {
+            setStatus("expired");
+          } else {
+            setStatus("error");
+          }
+          setMsg(
+            data.message ||
+              "This verification link is invalid or has expired."
+          );
           return;
         }
         setStatus("success");
         // Single success surface — do not also echo into Alert below.
         setMsg("");
-      } catch {
-        if (!cancelled) {
-          setStatus("error");
-          setMsg("Server unavailable. Please try again later.");
-        }
+      } catch (err) {
+        if (cancelled || err?.name === "AbortError") return;
+        setStatus("error");
+        setMsg("Server unavailable. Please try again later.");
       }
     })();
 
     return () => {
       cancelled = true;
+      controller.abort();
+      // Allow Strict Mode remount to start a fresh request; backend is idempotent.
+      if (verifyStarted.current === tokenFromQuery) {
+        verifyStarted.current = null;
+      }
     };
   }, [tokenFromQuery]);
 
@@ -91,6 +107,9 @@ export default function VerifyEmail() {
       resendLock.current = false;
     }
   };
+
+  const showResendForm =
+    status === "error" || status === "idle" || status === "expired";
 
   return (
     <div className="qc-auth-shell">
@@ -130,7 +149,13 @@ export default function VerifyEmail() {
           </div>
         )}
 
-        {(status === "error" || status === "idle") && (
+        {status === "expired" && (
+          <p className="text-sm text-amber-400 text-center font-semibold mb-4">
+            This verification link has expired. Request a new link below.
+          </p>
+        )}
+
+        {showResendForm && (
           <form onSubmit={handleResend} noValidate className="space-y-4">
             <p className="text-xs text-[var(--text-faint)] text-center">
               {tokenFromQuery

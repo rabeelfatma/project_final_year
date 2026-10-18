@@ -106,7 +106,19 @@ export default function AdminDashboard() {
         if (activeTab === 'Students') data = await adminService.getRecentUsers();
         else if (activeTab === 'Teachers') data = await adminService.getAllTeachers();
         else if (activeTab === 'Assignments') data = await adminService.getAllAssignments();
-        
+
+        // Defense in depth: backend already filters; exclude pending/rejected if present.
+        if (
+          (activeTab === 'Students' || activeTab === 'Teachers') &&
+          Array.isArray(data)
+        ) {
+          data = data.filter(
+            (row) =>
+              row?.approvalStatus !== 'pending' &&
+              row?.approvalStatus !== 'rejected'
+          );
+        }
+
         setViewData(Array.isArray(data) ? data : []);
       }
     } catch (err) {
