@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
+import { buildArtifactDownloadRequest } from "../../utils/artifactDownloadUrl";
 
 const MAX_CHAT_FILES = 40;
 const ACCEPTED = ".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a";
@@ -169,11 +170,15 @@ export default function AIChatbot({ role, showTrigger = true }) {
   };
 
   const downloadArtifact = async (artifact) => {
-    if (!artifact?.downloadUrl) return;
-    const token = localStorage.getItem("token");
-    const apiOrigin = getApiOrigin();
-    const targetUrl = /^https?:\/\//i.test(artifact.downloadUrl) ? artifact.downloadUrl : `${apiOrigin}${artifact.downloadUrl}`;
-    const response = await fetch(targetUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    // Only same-origin relative /api/ai/generated/... paths may receive the JWT.
+    // Absolute, protocol-relative, and unexpected URLs are rejected without fetching.
+    const request = buildArtifactDownloadRequest(
+      artifact?.downloadUrl,
+      getApiOrigin(),
+      localStorage.getItem("token")
+    );
+    if (!request) return alert("Generated file download failed.");
+    const response = await fetch(request.url, { headers: request.headers });
     if (!response.ok) return alert("Generated file download failed.");
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
@@ -275,7 +280,7 @@ export default function AIChatbot({ role, showTrigger = true }) {
     {showTrigger && <button onClick={() => setOpen((value) => !value)} className="ai-float" title={`${role} AI assistant`}><Bot size={20}/><span>AI</span></button>}
     {open && <div className="ai-chat-panel" role="dialog" aria-label="QuickCheck AI" style={{display:"flex", flexDirection:"column"}}>
       <div className="flex items-center justify-between border-b p-4 shrink-0" style={{ borderColor: "var(--border)" }}>
-        <div><b className="flex items-center gap-2"><Sparkles size={16} className="accent-text"/> QuickCheck AI</b><p className="theme-muted text-[10px]">{role} workspace assistant</p></div>
+        <div><b className="flex items-center gap-2"><Sparkles size={16} style={{ color: "var(--qc-primary)" }}/> QuickCheck AI</b><p className="theme-muted text-[10px]">{role} workspace assistant</p></div>
         <button type="button" onClick={() => setOpen(false)} className="icon-btn" title="Close AI assistant" aria-label="Close AI assistant"><X size={18}/></button>
       </div>
 

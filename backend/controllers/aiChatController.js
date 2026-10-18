@@ -1,4 +1,5 @@
 const AIChat = require("../models/AIChat");
+const { sanitizeArtifacts } = require("../utils/artifactDownloadUrl");
 
 const validRole = (role) => ["admin", "teacher", "student"].includes(role);
 const normalizeMessages = (messages) => (Array.isArray(messages) ? messages : []).slice(-500).map((m) => ({
@@ -6,16 +7,29 @@ const normalizeMessages = (messages) => (Array.isArray(messages) ? messages : []
   from: ["user", "ai", "system"].includes(m?.from) ? m.from : "ai",
   text: String(m?.text || "").slice(0, 100000),
   attachments: Array.isArray(m?.attachments) ? m.attachments.slice(0, 40).map((x) => String(x).slice(0, 255)) : [],
-  artifacts: Array.isArray(m?.artifacts) ? m.artifacts.slice(0, 20) : [],
+  // Strip crafted external downloadUrl values so persisted history cannot reintroduce token leaks.
+  artifacts: sanitizeArtifacts(m?.artifacts),
   createdAt: m?.createdAt ? new Date(m.createdAt) : new Date()
 }));
+
+const sanitizeStoredMessages = (messages) => (Array.isArray(messages) ? messages : []).map((m) => ({
+  ...m,
+  artifacts: sanitizeArtifacts(m?.artifacts),
+}));
+
+exports.normalizeMessages = normalizeMessages;
 
 exports.list = async (req, res) => {
   try {
     const role = String(req.query.role || req.user.role);
     if (!validRole(role) || role !== req.user.role) return res.status(403).json({ message: "You can only access your own role's chat history." });
     const chats = await AIChat.find({ owner: req.user._id, role }).sort({ updatedAt: -1 }).limit(200).lean();
-    res.json(chats.map((chat) => ({ id: chat.clientId, title: chat.title, messages: chat.messages || [], updatedAt: chat.updatedAt })));
+    res.json(chats.map((chat) => ({
+      id: chat.clientId,
+      title: chat.title,
+      messages: sanitizeStoredMessages(chat.messages || []),
+      updatedAt: chat.updatedAt,
+    })));
   } catch (error) {
     console.error("AI chat history load failed:", error);
     res.status(500).json({ message: "Unable to load chat history." });
