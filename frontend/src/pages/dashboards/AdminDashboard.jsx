@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Layout, Users, GraduationCap, FileText, Activity, 
-  Trash2, Plus, Edit2, X, UserRound, UsersRound, ClipboardList,
+  Trash2, Edit2, X, UserRound, UsersRound, ClipboardList,
   UserPlus, Check, Ban
 } from 'lucide-react';
 import { 
@@ -55,7 +55,6 @@ export default function AdminDashboard() {
 
   const COLORS = ['var(--chart-primary)', 'var(--chart-secondary)', 'var(--chart-tertiary)', 'var(--chart-quaternary)'];
 
-  // List of 40 Subjects
   const SUBJECTS = [
     "Introduction to IT (CS)", "Programming Fundamentals (CS)", "Object Oriented Programming (CS)",
     "Data Structures (CS)", "Digital Logic Design (CS)", "Operating Systems (CS)",
@@ -182,12 +181,47 @@ export default function AdminDashboard() {
     setActiveTab(tab);
   };
 
+  const PAGE_COPY = {
+    Dashboard: {
+      title: 'Dashboard',
+      subtitle: 'System overview, growth trends, and approval activity.',
+    },
+    Students: {
+      title: 'Students',
+      subtitle: 'Review student accounts, departments, and registration numbers.',
+    },
+    Teachers: {
+      title: 'Teachers',
+      subtitle: 'Manage teacher accounts, departments, and assigned subjects.',
+    },
+    Assignments: {
+      title: 'Assignments',
+      subtitle: 'Monitor assignments created across the platform.',
+    },
+    'Registration Requests': {
+      title: 'Registration Requests',
+      subtitle: 'Approve or reject new teacher and student registrations.',
+    },
+  };
+
+  const pageCopy = PAGE_COPY[activeTab] || {
+    title: activeTab,
+    subtitle: 'Manage users, assignments, and registration approvals.',
+  };
+
   const pageTitle =
     shellView === 'profile'
       ? 'My Profile'
       : shellView === 'settings'
         ? 'Settings'
-        : activeTab;
+        : pageCopy.title;
+
+  const editEntityLabel =
+    activeTab === 'Students'
+      ? 'Student'
+      : activeTab === 'Teachers'
+        ? 'Teacher'
+        : 'Record';
 
   return (
     <DashboardNavShell
@@ -243,18 +277,9 @@ export default function AdminDashboard() {
         <>
         <div className="qc-page-header">
           <div>
-            <h2 className="qc-page-title">{activeTab}</h2>
-            <p className="qc-page-subtitle">Manage users, assignments, and registration approvals.</p>
+            <h2 className="qc-page-title">{pageCopy.title}</h2>
+            <p className="qc-page-subtitle">{pageCopy.subtitle}</p>
           </div>
-          {(activeTab === 'Students' || activeTab === 'Teachers') && (
-            <button
-              type="button"
-              onClick={() => navigate(activeTab === 'Students' ? '/signup/student' : '/signup/teacher')}
-              className="qc-btn qc-btn-primary"
-            >
-              <Plus size={16}/> Add {activeTab.slice(0, -1)}
-            </button>
-          )}
         </div>
 
         {loading ? (
@@ -389,7 +414,7 @@ export default function AdminDashboard() {
             <button type="button" onClick={() => setIsEditModalOpen(false)} className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]" aria-label="Close edit dialog">
               <X size={20}/>
             </button>
-            <h2 className="qc-page-title pr-10 mb-5">Edit {activeTab.slice(0,-1)}</h2>
+            <h2 className="qc-page-title pr-10 mb-5">Edit {editEntityLabel}</h2>
             
             <form onSubmit={handleUpdate} className="space-y-4 custom-scrollbar">
               <div>

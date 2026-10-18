@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
+import {
+  getInAppNotificationsEnabled,
+  IN_APP_NOTIFICATIONS_EVENT,
+} from "../../utils/notificationPrefs";
 import DashboardLogoutButton from "./DashboardLogoutButton";
 
 const API_ORIGIN = getApiOrigin();
@@ -19,6 +23,7 @@ const API_ORIGIN = getApiOrigin();
 function NotificationsPanel({
   role,
   status,
+  enabled,
   notifications,
   onClose,
   onMarkAllRead,
@@ -65,44 +70,53 @@ function NotificationsPanel({
           </button>
         </div>
 
-        <div className="flex items-center justify-end gap-3 mb-3">
-          <button
-            type="button"
-            className="accent-text text-[10px] flex items-center gap-1"
-            onClick={onMarkAllRead}
-            disabled={status !== "ready"}
-          >
-            <CheckCheck size={13} />
-            Read all
-          </button>
-          <button
-            type="button"
-            className="text-red-400 text-[10px] font-bold disabled:opacity-40"
-            onClick={onClearAll}
-            disabled={!notifications.length}
-          >
-            Clear all
-          </button>
-        </div>
+        {enabled && (
+          <div className="flex items-center justify-end gap-3 mb-3">
+            <button
+              type="button"
+              className="accent-text text-[10px] flex items-center gap-1"
+              onClick={onMarkAllRead}
+              disabled={status !== "ready"}
+            >
+              <CheckCheck size={13} />
+              Read all
+            </button>
+            <button
+              type="button"
+              className="text-red-400 text-[10px] font-bold disabled:opacity-40"
+              onClick={onClearAll}
+              disabled={!notifications.length}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
 
         <div className="max-h-[min(24rem,55vh)] overflow-y-auto space-y-1">
-          {status === "loading" && (
+          {!enabled && (
+            <p className="theme-muted text-sm py-8 text-center px-2">
+              The notification centre is turned off in Settings. Turn it on to
+              review account updates. Existing history is preserved.
+            </p>
+          )}
+          {enabled && status === "loading" && (
             <p className="theme-muted text-sm py-8 text-center">
               Loading notifications…
             </p>
           )}
-          {status === "unavailable" && (
+          {enabled && status === "unavailable" && (
             <p className="theme-muted text-sm py-8 text-center px-2">
               Notifications are unavailable until the server and database are
               connected. No messages were fabricated.
             </p>
           )}
-          {status === "ready" && !notifications.length && (
+          {enabled && status === "ready" && !notifications.length && (
             <p className="theme-muted text-sm py-8 text-center">
               No notifications yet.
             </p>
           )}
-          {status === "ready" &&
+          {enabled &&
+            status === "ready" &&
             notifications.map((item) => (
               <div
                 key={item._id}
@@ -161,6 +175,9 @@ export default function DashboardTopBar({
   const [notificationsStatus, setNotificationsStatus] = useState("idle");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() =>
+    getInAppNotificationsEnabled()
+  );
 
   const menuRef = useRef(null);
   const notificationPanelRef = useRef(null);
@@ -187,6 +204,11 @@ export default function DashboardTopBar({
   };
 
   const loadNotifications = async () => {
+    if (!getInAppNotificationsEnabled()) {
+      setNotifications([]);
+      setNotificationsStatus("disabled");
+      return;
+    }
     if (!token) {
       setNotifications([]);
       setNotificationsStatus("unavailable");
@@ -209,10 +231,15 @@ export default function DashboardTopBar({
   useEffect(() => {
     if (!token) return undefined;
     loadProfile();
-    loadNotifications();
-    const timer = setInterval(loadNotifications, 10000);
-    return () => clearInterval(timer);
-  }, [token]);
+    if (notificationsEnabled) {
+      loadNotifications();
+      const timer = setInterval(loadNotifications, 10000);
+      return () => clearInterval(timer);
+    }
+    setNotifications([]);
+    setNotificationsStatus("disabled");
+    return undefined;
+  }, [token, notificationsEnabled]);
 
   useEffect(() => {
     const onProfileSaved = (event) => {
@@ -225,6 +252,11 @@ export default function DashboardTopBar({
       });
     };
     const closeNotifications = () => setNotificationsOpen(false);
+    const onPrefChange = (event) => {
+      const enabled = event?.detail?.enabled ?? getInAppNotificationsEnabled();
+      setNotificationsEnabled(Boolean(enabled));
+      if (!enabled) setNotificationsOpen(false);
+    };
     const handleEscape = (event) => {
       if (event.key === "Escape") {
         setNotificationsOpen(false);
@@ -233,10 +265,12 @@ export default function DashboardTopBar({
     };
     window.addEventListener("quickcheck:profile-saved", onProfileSaved);
     window.addEventListener("quickcheck:close-notifications", closeNotifications);
+    window.addEventListener(IN_APP_NOTIFICATIONS_EVENT, onPrefChange);
     document.addEventListener("keydown", handleEscape);
     return () => {
       window.removeEventListener("quickcheck:profile-saved", onProfileSaved);
       window.removeEventListener("quickcheck:close-notifications", closeNotifications);
+      window.removeEventListener(IN_APP_NOTIFICATIONS_EVENT, onPrefChange);
       document.removeEventListener("keydown", handleEscape);
     };
   }, []);
@@ -257,7 +291,7 @@ export default function DashboardTopBar({
     window.dispatchEvent(new CustomEvent("quickcheck:close-messages"));
     setMenuOpen(false);
     setNotificationsOpen(true);
-    loadNotifications();
+    if (notificationsEnabled) loadNotifications();
   };
 
   const markAllRead = async () => {
@@ -320,7 +354,9 @@ export default function DashboardTopBar({
     }
   };
 
-  const unread = notifications.filter((item) => !item.read).length;
+  const unread = notificationsEnabled
+    ? notifications.filter((item) => !item.read).length
+    : 0;
   const picture = profile.profilePicture
     ? `${API_ORIGIN}/${String(profile.profilePicture).replace(/^\/+/, "")}?v=${encodeURIComponent(profile.profilePicture)}`
     : "";
@@ -331,11 +367,22 @@ export default function DashboardTopBar({
         type="button"
         aria-expanded={notificationsOpen}
         aria-controls="qc-notifications-panel"
-        aria-label="Notifications"
+        aria-label={
+          notificationsEnabled
+            ? "Notifications"
+            : "Notifications (disabled in Settings)"
+        }
+        title={
+          notificationsEnabled
+            ? "Notifications"
+            : "Notification centre is off — enable in Settings"
+        }
         onClick={() =>
           notificationsOpen ? setNotificationsOpen(false) : openNotifications()
         }
-        className="relative inline-flex items-center justify-center w-9 h-9 rounded-qc border theme-surface hover:border-[var(--accent)] transition-colors"
+        className={`relative inline-flex items-center justify-center w-9 h-9 rounded-qc border theme-surface hover:border-[var(--accent)] transition-colors ${
+          notificationsEnabled ? "" : "opacity-60"
+        }`}
         style={{ borderColor: "var(--border)" }}
       >
         <Bell size={17} />
@@ -436,6 +483,7 @@ export default function DashboardTopBar({
         <NotificationsPanel
           role={role}
           status={notificationsStatus}
+          enabled={notificationsEnabled}
           notifications={notifications}
           onClose={() => setNotificationsOpen(false)}
           onMarkAllRead={markAllRead}

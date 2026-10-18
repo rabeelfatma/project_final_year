@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,6 +10,10 @@ import {
   Sun,
 } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
+import {
+  getInAppNotificationsEnabled,
+  setInAppNotificationsEnabled,
+} from "../../utils/notificationPrefs";
 
 const TABS = [
   { id: "appearance", label: "Appearance", icon: Palette },
@@ -19,12 +23,25 @@ const TABS = [
 
 /**
  * Dedicated settings page wired only to real, existing preferences:
- * theme mode, accent colour, and password-reset link.
+ * theme mode, accent colour, in-app notification centre, and password-reset link.
  * Does not add browser push notifications.
  */
 export default function SettingsPage({ onBack, role = "user" }) {
   const { theme, setTheme, accent, accents, setAccent } = useTheme();
   const [activeTab, setActiveTab] = useState("appearance");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() =>
+    getInAppNotificationsEnabled()
+  );
+
+  useEffect(() => {
+    setNotificationsEnabled(getInAppNotificationsEnabled());
+  }, []);
+
+  const toggleNotifications = () => {
+    const next = !notificationsEnabled;
+    setInAppNotificationsEnabled(next);
+    setNotificationsEnabled(next);
+  };
 
   return (
     <div className="max-w-3xl">
@@ -123,19 +140,27 @@ export default function SettingsPage({ onBack, role = "user" }) {
             bell in the top bar. Open the bell to review, mark as read, or clear
             messages. Browser push notifications are not used.
           </p>
-          <div className="settings-row pointer-events-none opacity-90">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={notificationsEnabled}
+            aria-label="In-app notification centre"
+            onClick={toggleNotifications}
+            className="settings-row w-full text-left"
+          >
             <span>
-              <Bell size={15} />
+              <Bell size={15} aria-hidden="true" />
               In-app notification centre
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wide accent-text">
-              Always on
-            </span>
-          </div>
+            <span
+              className={`toggle ${notificationsEnabled ? "on" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
           <p className="theme-muted text-xs leading-relaxed">
-            Notification history requires a connected server and database. When
-            unavailable, the centre shows a clear status instead of fabricated
-            messages.
+            {notificationsEnabled
+              ? "On — the notification centre is available from the top bar. History still requires a connected server and database."
+              : "Off — the notification centre is disabled on this device. Existing history is preserved and can be viewed again when you turn this back on."}
           </p>
         </section>
       )}
@@ -153,9 +178,9 @@ export default function SettingsPage({ onBack, role = "user" }) {
             Change or reset password
           </Link>
           <p className="theme-muted text-xs leading-relaxed">
-            Theme preferences stay on this device. Profile name, email, and
-            academic data are stored in your QuickCheck Hub account when the
-            database is connected.
+            Theme and notification preferences stay on this device. Profile name,
+            email, and academic data are stored in your QuickCheck Hub account
+            when the database is connected.
           </p>
         </section>
       )}

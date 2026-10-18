@@ -199,6 +199,20 @@ exports.submissionPreview = async (req, res) => {
     return res.status(500).send("Unable to preview submission file.");
   }
 };
+function normalizeVoiceMime(raw, originalName) {
+  const base = String(raw || "").split(";")[0].trim().toLowerCase();
+  if (base.startsWith("audio/")) return base;
+  if (base === "video/webm" || base === "application/octet-stream" || !base) {
+    const ext = path.extname(String(originalName || "")).toLowerCase();
+    if (ext === ".ogg" || ext === ".oga") return "audio/ogg";
+    if (ext === ".mp3") return "audio/mpeg";
+    if (ext === ".wav") return "audio/wav";
+    if (ext === ".m4a") return "audio/mp4";
+    return "audio/webm";
+  }
+  return base;
+}
+
 exports.message = async (req, res) => {
   try {
     const m = await Message.findById(req.params.id);
@@ -206,7 +220,13 @@ exports.message = async (req, res) => {
     if (String(m.sender) !== String(req.user._id) && String(m.recipient) !== String(req.user._id)) {
       return res.status(403).json({ message: "Access denied." });
     }
-    return sendFile(res, m.voiceFile, m.originalFileName, m.mimeType);
+    if (!m.voiceFile) {
+      return res.status(404).json({ message: "Voice recording not found." });
+    }
+    // Serve inline with a clean audio/* Content-Type so <audio> / blob players
+    // can decode MediaRecorder webm (often stored as audio/webm;codecs=opus).
+    const mime = normalizeVoiceMime(m.mimeType, m.originalFileName || m.voiceFile);
+    return sendFile(res, m.voiceFile, m.originalFileName || "voice-message.webm", mime, true);
   } catch (e) {
     console.error("message file error:", e.message);
     return res.status(500).json({ message: "Unable to load voice message." });

@@ -7,6 +7,7 @@ import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
 import { buildArtifactDownloadRequest } from "../../utils/artifactDownloadUrl";
 
+
 const MAX_CHAT_FILES = 40;
 const ACCEPTED = ".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a";
 
@@ -40,6 +41,7 @@ export default function AIChatbot({ role, showTrigger = true }) {
     [conversations, activeChatId]
   );
   const messages = activeChat?.messages || [];
+  const allChatsSelected = conversations.length > 0 && selectedChats.length === conversations.length;
 
   // Load this user's chat history from MongoDB. Existing browser-only chats are
   // migrated once when the database does not yet contain chat history.
@@ -152,9 +154,13 @@ export default function AIChatbot({ role, showTrigger = true }) {
     }
   };
 
+  const toggleSelectAllChats = () => {
+    setSelectedChats(allChatsSelected ? [] : conversations.map((chat) => chat.id));
+  };
+
   const deleteSelectedChats = async () => {
     if (!selectedChats.length) return;
-    if (!window.confirm(`Delete ${selectedChats.length} selected chat(s)?`)) return;
+    if (!window.confirm(`Delete ${selectedChats.length} selected chat${selectedChats.length === 1 ? "" : "s"}?`)) return;
     try {
       if (localStorage.getItem("token")) await api.post("/ai-chats/bulk-delete", { ids: selectedChats });
     } catch (error) {
@@ -209,7 +215,7 @@ export default function AIChatbot({ role, showTrigger = true }) {
     }
 
     const userMessageId = editingMessageId || makeId();
-    const userMessage = { id: userMessageId, from: "user", text: q, attachments: attachedNames };
+    const userMessage = { id: userMessageId, from: "user", text: q, attachments: attachedNames, createdAt: Date.now() };
     setConversations((previous) => {
       const existing = previous.find((chat) => chat.id === chatId);
       if (!existing) {
@@ -239,7 +245,7 @@ export default function AIChatbot({ role, showTrigger = true }) {
       formData.append("question", q);
       files.forEach((file) => formData.append("files", file));
       const { data } = await api.post("/ai/chat", formData);
-      const aiMessage = { id: makeId(), from: "ai", text: data.answer || "No answer returned.", artifacts: data.artifacts || [] };
+      const aiMessage = { id: makeId(), from: "ai", text: data.answer || "No answer returned.", artifacts: data.artifacts || [], createdAt: Date.now() };
       setConversations((previous) => previous.map((chat) =>
         chat.id === chatId
           ? { ...chat, messages: [...chat.messages, aiMessage], updatedAt: Date.now() }
@@ -253,7 +259,8 @@ export default function AIChatbot({ role, showTrigger = true }) {
       const aiMessage = {
         id: makeId(),
         from: "ai",
-        text: serverMessage || "AI service is unavailable. Check GEMINI_API_KEY and GEMINI_MODEL in backend/.env.",
+        text: serverMessage || "The AI assistant is temporarily unavailable. Please try again shortly.",
+        createdAt: Date.now(),
       };
       setConversations((previous) => previous.map((chat) =>
         chat.id === chatId
@@ -276,67 +283,194 @@ export default function AIChatbot({ role, showTrigger = true }) {
     ? ["How many assignments have I created?", "Create a Python starter file for a new assignment.", "Create a 6-slide PPTX lesson outline and give me a download."]
     : ["How many students, teachers and assignments are in the system?", "How many assignments were created recently?", "Give me a system summary."];
 
+  const roleLabel = role === "admin" ? "Admin" : role === "teacher" ? "Teacher" : role === "student" ? "Student" : "Workspace";
+
   return <>
-    {showTrigger && <button onClick={() => setOpen((value) => !value)} className="ai-float" title={`${role} AI assistant`}><Bot size={20}/><span>AI</span></button>}
-    {open && <div className="ai-chat-panel" role="dialog" aria-label="QuickCheck AI" style={{display:"flex", flexDirection:"column"}}>
+    {showTrigger && <button onClick={() => setOpen((value) => !value)} className="ai-float" title={`${roleLabel} AI assistant`}><Bot size={20}/><span>AI</span></button>}
+    {open && <div className="ai-chat-panel" role="dialog" aria-label="QuickCheck AI">
       <div className="flex items-center justify-between border-b p-4 shrink-0" style={{ borderColor: "var(--border)" }}>
-        <div><b className="flex items-center gap-2"><Sparkles size={16} style={{ color: "var(--qc-primary)" }}/> QuickCheck AI</b><p className="theme-muted text-[10px]">{role} workspace assistant</p></div>
+        <div>
+          <b className="flex items-center gap-2">
+            <Sparkles size={16} className="accent-text" aria-hidden="true" />
+            QuickCheck AI
+          </b>
+          <p className="theme-muted text-[10px]">{roleLabel} workspace assistant</p>
+        </div>
         <button type="button" onClick={() => setOpen(false)} className="icon-btn" title="Close AI assistant" aria-label="Close AI assistant"><X size={18}/></button>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="w-[145px] sm:w-[175px] shrink-0 border-r p-2 flex flex-col gap-2 min-h-0" style={{borderColor:"var(--border)"}}>
-          <button type="button" onClick={createChat} className="ai-suggestion flex items-center justify-center gap-1"><Plus size={13}/> New chat</button>
-          {conversations.length > 0 && <label className="theme-muted text-[9px] flex items-center gap-1 px-1">
-            <input type="checkbox" checked={selectedChats.length > 0 && selectedChats.length === conversations.length} onChange={(event) => setSelectedChats(event.target.checked ? conversations.map((chat) => chat.id) : [])}/>
-            Select all
-          </label>}
-          {selectedChats.length > 0 && <button type="button" onClick={deleteSelectedChats} className="text-red-400 text-[10px] flex items-center gap-1 px-1"><Trash2 size={12}/> Delete selected</button>}
-          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            {conversations.map((chat) => <div key={chat.id} className={`group flex items-start gap-1 rounded-lg p-1 ${activeChatId === chat.id ? "accent-soft" : "hover:bg-white/5"}`}>
-              <input className="mt-2" aria-label={`Select chat ${chat.title}`} type="checkbox" checked={selectedChats.includes(chat.id)} onChange={(event) => setSelectedChats((previous) => event.target.checked ? [...previous, chat.id] : previous.filter((id) => id !== chat.id))}/>
-              <button type="button" onClick={() => {setActiveChatId(chat.id); setEditingMessageId(null); setQuestion("");}} className="flex-1 min-w-0 text-left py-1">
-                <span className="flex items-center gap-1"><MessageSquare size={11}/><span className="truncate text-[10px] font-semibold">{chat.title || "New chat"}</span></span>
+        <aside className="ai-chat-sidebar shrink-0 border-r p-2 flex flex-col gap-2 min-h-0" style={{ borderColor: "var(--border)" }}>
+          <button type="button" onClick={createChat} className="ai-suggestion flex items-center justify-center gap-1">
+            <Plus size={13} aria-hidden="true" /> New chat
+          </button>
+          {conversations.length > 0 && (
+            <div className="qc-chat-selection-bar !mt-0 !px-0">
+              <button type="button" onClick={toggleSelectAllChats} className="qc-chat-toolbar-btn accent">
+                <CheckSquare size={13} aria-hidden="true" />
+                {allChatsSelected ? "Unselect all" : "Select all"}
               </button>
-              <button type="button" onClick={() => deleteChat(chat.id)} className="text-slate-500 hover:text-red-400 p-1" title="Delete chat"><Trash2 size={11}/></button>
-            </div>)}
+              <span className="qc-chat-selection-count" aria-live="polite">
+                {selectedChats.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={deleteSelectedChats}
+                disabled={!selectedChats.length}
+                className="qc-chat-toolbar-btn danger"
+              >
+                <Trash2 size={12} aria-hidden="true" /> Delete
+              </button>
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+            {conversations.map((chat) => (
+              <div
+                key={chat.id}
+                className={`qc-ai-chat-item ${activeChatId === chat.id ? "is-active" : ""} ${selectedChats.includes(chat.id) ? "is-selected" : ""}`}
+              >
+                <label className="qc-chat-select !mb-0">
+                  <input
+                    className="qc-chat-checkbox"
+                    aria-label={`Select chat ${chat.title || "New chat"}`}
+                    type="checkbox"
+                    checked={selectedChats.includes(chat.id)}
+                    onChange={(event) => setSelectedChats((previous) => event.target.checked ? [...previous, chat.id] : previous.filter((id) => id !== chat.id))}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setActiveChatId(chat.id); setEditingMessageId(null); setQuestion(""); }}
+                  className="flex-1 min-w-0 text-left py-1"
+                >
+                  <span className="flex items-center gap-1">
+                    <MessageSquare size={11} aria-hidden="true" />
+                    <span className="truncate text-[10px] font-semibold">{chat.title || "New chat"}</span>
+                  </span>
+                </button>
+                <button type="button" onClick={() => deleteChat(chat.id)} className="message-action danger !p-1" title="Delete chat" aria-label={`Delete chat ${chat.title || "New chat"}`}>
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+            {!conversations.length && (
+              <p className="theme-muted text-[10px] text-center px-1 py-6">No chats yet. Start a new conversation.</p>
+            )}
           </div>
         </aside>
 
         <div className="flex-1 min-w-0 flex flex-col min-h-0">
           <div className="p-3 flex flex-wrap gap-2 shrink-0">
-            {suggestions.map((suggestion) => <button key={suggestion} onClick={() => setQuestion(suggestion)} className="ai-suggestion">{suggestion}</button>)}
+            {suggestions.map((suggestion) => (
+              <button key={suggestion} type="button" onClick={() => setQuestion(suggestion)} className="ai-suggestion">
+                {suggestion}
+              </button>
+            ))}
           </div>
-          <div ref={messageListRef} className="flex-1 overflow-y-auto px-3 pb-3 space-y-2 min-h-0">
-            {messages.length === 0 && <div className="theme-muted text-sm text-center py-12">What can I help you with?</div>}
-            {messages.map((message) => <div key={message.id} className={`p-3 rounded-2xl text-sm whitespace-pre-wrap break-words ${message.from === "user" ? "accent-soft ml-3" : "theme-surface mr-3 border"}`} style={{ borderColor: "var(--border)" }}>
-              <div>{message.text}</div>
-              {message.attachments?.length > 0 && <div className="theme-muted text-[10px] mt-2">Attached: {message.attachments.join(", ")}</div>}
-              {message.from === "user" && <div className="mt-2 flex justify-end">
-                <button type="button" onClick={() => editMessage(message)} className="theme-muted hover:accent-text text-[10px] flex items-center gap-1"><Edit3 size={12}/> Edit and resend</button>
-              </div>}
-              {message.artifacts?.length > 0 && <div className="mt-3 space-y-2">{message.artifacts.map((artifact, index) => (
-                <button key={`${artifact.name}-${index}`} type="button" onClick={() => downloadArtifact(artifact)} className="w-full flex items-center gap-2 p-2 rounded-xl border hover:border-[var(--accent)] text-left" style={{borderColor:"var(--border)"}}>
-                  <FileText size={14} className="accent-text"/><span className="flex-1 truncate text-xs font-bold">{artifact.name}</span><Download size={14}/>
+          <div ref={messageListRef} className="ai-message-thread flex-1 overflow-y-auto px-3 pb-3 space-y-2 min-h-0">
+            {messages.length === 0 && (
+              <div className="theme-muted text-sm text-center py-12">Ask a question to begin this chat.</div>
+            )}
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`qc-chat-bubble ${message.from === "user" ? "is-mine" : "is-theirs"}`}
+              >
+                <div className="qc-chat-bubble__meta">
+                  <span className="theme-muted text-[10px]">
+                    {message.from === "user" ? "You" : "Assistant"}
+                    {message.createdAt ? ` · ${new Date(message.createdAt).toLocaleString()}` : ""}
+                  </span>
+                </div>
+                <div className="qc-chat-bubble__text">{message.text}</div>
+                {message.attachments?.length > 0 && (
+                  <div className="theme-muted text-[10px] mt-2">Attached: {message.attachments.join(", ")}</div>
+                )}
+                {message.from === "user" && (
+                  <div className="mt-2 flex justify-end">
+                    <button type="button" onClick={() => editMessage(message)} className="theme-muted hover:accent-text text-[10px] flex items-center gap-1">
+                      <Edit3 size={12} aria-hidden="true" /> Edit and resend
+                    </button>
+                  </div>
+                )}
+                {message.artifacts?.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {message.artifacts.map((artifact, index) => (
+                      <button
+                        key={`${artifact.name}-${index}`}
+                        type="button"
+                        onClick={() => downloadArtifact(artifact)}
+                        className="w-full flex items-center gap-2 p-2 rounded-xl border hover:border-[var(--accent)] text-left"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <FileText size={14} className="accent-text" aria-hidden="true" />
+                        <span className="flex-1 truncate text-xs font-bold">{artifact.name}</span>
+                        <Download size={14} aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {loading && <div className="theme-muted text-xs px-1">Thinking…</div>}
+          </div>
+          {role === "teacher" && (
+            <div className="px-3 pb-2 shrink-0">
+              <input ref={fileRef} type="file" multiple accept={ACCEPTED} className="hidden" onChange={(event) => addFiles(event.target.files)} />
+              <input ref={imageRef} type="file" multiple accept="image/*" className="hidden" onChange={(event) => addFiles(event.target.files)} />
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => fileRef.current?.click()} className="ai-suggestion flex items-center gap-1">
+                  <Paperclip size={13} aria-hidden="true" /> Files
                 </button>
-              ))}</div>}
-            </div>)}
-            {loading && <div className="theme-muted text-xs">Thinking...</div>}
-          </div>
-          {role === "teacher" && <div className="px-3 pb-2 shrink-0">
-            <input ref={fileRef} type="file" multiple accept={ACCEPTED} className="hidden" onChange={(event) => addFiles(event.target.files)} />
-            <input ref={imageRef} type="file" multiple accept="image/*" className="hidden" onChange={(event) => addFiles(event.target.files)} />
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => fileRef.current?.click()} className="ai-suggestion flex items-center gap-1"><Paperclip size={13}/> Files</button>
-              <button type="button" onClick={() => imageRef.current?.click()} className="ai-suggestion flex items-center gap-1"><ImageIcon size={13}/> Images</button>
-              {files.length > 0 && <button type="button" onClick={() => {setFiles([]); if(fileRef.current) fileRef.current.value=""; if(imageRef.current) imageRef.current.value="";}} className="theme-muted ml-auto" title="Clear attachments"><Trash2 size={14}/></button>}
+                <button type="button" onClick={() => imageRef.current?.click()} className="ai-suggestion flex items-center gap-1">
+                  <ImageIcon size={13} aria-hidden="true" /> Images
+                </button>
+                {files.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setFiles([]); if (fileRef.current) fileRef.current.value = ""; if (imageRef.current) imageRef.current.value = ""; }}
+                    className="theme-muted ml-auto"
+                    title="Clear attachments"
+                    aria-label="Clear attachments"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              {files.length > 0 && (
+                <div className="mt-2 max-h-20 overflow-y-auto flex flex-wrap gap-1">
+                  {files.map((file, index) => (
+                    <span key={`${file.name}-${index}`} className="text-[9px] px-2 py-1 rounded-lg accent-soft max-w-[150px] truncate">
+                      {file.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            {files.length > 0 && <div className="mt-2 max-h-20 overflow-y-auto flex flex-wrap gap-1">{files.map((file, index) => <span key={`${file.name}-${index}`} className="text-[9px] px-2 py-1 rounded-lg accent-soft max-w-[150px] truncate">{file.name}</span>)}</div>}
-          </div>}
-          <form onSubmit={ask} className="p-3 border-t flex gap-2 shrink-0" style={{ borderColor: "var(--border)" }}>
-            <textarea rows={2} className="qc-input ai-command-input flex-1 min-w-0 resize-y" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={editingMessageId ? "Edit message and resend..." : "Ask, generate code/files/slides..."} aria-label="AI assistant command" onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); ask(event); } }}/>
-            {editingMessageId && <button type="button" onClick={() => {setEditingMessageId(null); setQuestion("");}} className="theme-muted" title="Cancel edit"><X size={16}/></button>}
-            <button type="submit" disabled={loading} className="btn-primary px-4"><Send size={16}/></button>
+          )}
+          <form onSubmit={ask} className="message-composer p-3 border-t flex gap-2 shrink-0" style={{ borderColor: "var(--border)" }}>
+            <textarea
+              rows={2}
+              className="qc-input ai-command-input flex-1 min-w-0 resize-y"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder={editingMessageId ? "Edit message and resend…" : "Ask a question or request a file…"}
+              aria-label="AI assistant message"
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  ask(event);
+                }
+              }}
+            />
+            {editingMessageId && (
+              <button type="button" onClick={() => { setEditingMessageId(null); setQuestion(""); }} className="theme-muted" title="Cancel edit" aria-label="Cancel edit">
+                <X size={16} />
+              </button>
+            )}
+            <button type="submit" disabled={loading} className="btn-primary px-4" aria-label="Send to AI assistant">
+              <Send size={16} />
+            </button>
           </form>
         </div>
       </div>

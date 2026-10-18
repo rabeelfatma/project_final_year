@@ -60,10 +60,13 @@ exports.sendVoice = async (req,res) => {
     const recipient = await User.findById(req.body.recipient).select("_id name role");
     if (!recipient || String(recipient._id) === String(req.user._id)) return res.status(400).json({message:"Choose a valid recipient."});
     const voiceFile = `uploads/messages/${req.file.filename}`;
+    // Store a player-safe MIME (strip codecs=…); browsers need a plain audio/* type.
+    const rawMime = String(req.file.mimetype || "audio/webm").split(";")[0].trim() || "audio/webm";
+    const mimeType = rawMime === "video/webm" ? "audio/webm" : rawMime;
     const message = await Message.create({
       sender:req.user._id, recipient:recipient._id, voiceFile,
       originalFileName:req.file.originalname || "voice-message.webm",
-      mimeType:req.file.mimetype || "audio/webm"
+      mimeType
     });
     await createNotification({
       recipient:recipient._id,
