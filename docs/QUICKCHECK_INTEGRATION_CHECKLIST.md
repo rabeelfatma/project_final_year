@@ -87,6 +87,8 @@ Code prep (local, Hostinger untouched):
 - [x] Frontend `VITE_API_BASE_URL` supports separate API origin
 - [x] MongoDB connection reuse + no `process.exit` on Vercel
 - [x] VAPID via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (no startup write on Vercel)
+- [x] Invalid `VAPID_SUBJECT` no longer crashes module load (disable push + warn; mailto:/https: only)
+- [x] Invalid VAPID key material (e.g. Base64 with `=`) soft-fails `setVapidDetails` — push disabled, app still boots; in-app Mongo notifications unchanged
 - [x] CORS allowlist via `CLIENT_ORIGIN` / `FRONTEND_URL`
 - [x] Body limit capped to ~4.5mb when `VERCEL=1`
 - [x] Private Cloudflare R2 adapter (`backend/utils/objectStorage.js` + `storedFiles.js`)

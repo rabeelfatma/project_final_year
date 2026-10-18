@@ -1,8 +1,10 @@
 const fs = require("fs");
 const path = require("path");
+const { URL } = require("url");
 const webpush = require("web-push");
 
 const keyFile = path.join(__dirname, "..", ".vapid.json");
+const DEFAULT_VAPID_SUBJECT = "mailto:admin@quickcheckhub.local";
 
 /**
  * Prefer VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY from the environment (required on Vercel).
@@ -49,18 +51,54 @@ function loadVapidKeys() {
   };
 }
 
+/**
+ * web-push accepts only https: or mailto: subjects (see vapid-helper validateSubject).
+ * Returns null when the configured value is present but invalid — never invent a replacement.
+ */
+function resolveVapidSubject() {
+  const configured = String(process.env.VAPID_SUBJECT || "").trim();
+  if (!configured) {
+    return { ok: true, subject: DEFAULT_VAPID_SUBJECT, fromEnv: false };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(configured);
+  } catch (_) {
+    return { ok: false, subject: null, fromEnv: true };
+  }
+
+  if (!["https:", "mailto:"].includes(parsed.protocol)) {
+    return { ok: false, subject: null, fromEnv: true };
+  }
+
+  return { ok: true, subject: configured, fromEnv: true };
+}
+
 const keys = loadVapidKeys();
+let vapidConfigured = false;
 
 if (keys.publicKey && keys.privateKey) {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || "mailto:admin@quickcheckhub.local",
-    keys.publicKey,
-    keys.privateKey
-  );
+  const resolved = resolveVapidSubject();
+  if (!resolved.ok) {
+    console.warn(
+      "VAPID_SUBJECT must be a valid mailto: or https: URL. Web push is disabled until VAPID_SUBJECT is corrected."
+    );
+  } else {
+    try {
+      webpush.setVapidDetails(resolved.subject, keys.publicKey, keys.privateKey);
+      vapidConfigured = true;
+    } catch (_) {
+      // Do not echo subject/keys from library errors (may include configured values).
+      console.warn(
+        "Web push VAPID setup failed. Web push is disabled until VAPID configuration is corrected."
+      );
+    }
+  }
 }
 
 module.exports = {
   publicKey: keys.publicKey,
   webpush,
-  vapidConfigured: Boolean(keys.publicKey && keys.privateKey),
+  vapidConfigured,
 };

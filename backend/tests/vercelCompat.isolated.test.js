@@ -101,6 +101,7 @@ describe("Vercel VAPID push config", () => {
     prev.VERCEL = process.env.VERCEL;
     prev.VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
     prev.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+    prev.VAPID_SUBJECT = process.env.VAPID_SUBJECT;
     prev.cwd = process.cwd();
     clearModule(pushPath);
   });
@@ -112,14 +113,15 @@ describe("Vercel VAPID push config", () => {
     else process.env.VAPID_PUBLIC_KEY = prev.VAPID_PUBLIC_KEY;
     if (prev.VAPID_PRIVATE_KEY === undefined) delete process.env.VAPID_PRIVATE_KEY;
     else process.env.VAPID_PRIVATE_KEY = prev.VAPID_PRIVATE_KEY;
+    if (prev.VAPID_SUBJECT === undefined) delete process.env.VAPID_SUBJECT;
+    else process.env.VAPID_SUBJECT = prev.VAPID_SUBJECT;
     clearModule(pushPath);
     if (tempDir && fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
-  it("loads keys from env without writing .vapid.json on Vercel", () => {
-    process.env.VERCEL = "1";
+  function installRealVapidEnvKeys() {
     const webpush = require("web-push");
     // Real ECDH P-256 keys only — placeholders decode to the wrong length and
     // make setVapidDetails throw: "Vapid public key should be 65 bytes long...".
@@ -128,6 +130,13 @@ describe("Vercel VAPID push config", () => {
     assert.equal(Buffer.from(generated.privateKey, "base64url").length, 32);
     process.env.VAPID_PUBLIC_KEY = generated.publicKey;
     process.env.VAPID_PRIVATE_KEY = generated.privateKey;
+    return generated;
+  }
+
+  it("loads keys from env without writing .vapid.json on Vercel", () => {
+    process.env.VERCEL = "1";
+    delete process.env.VAPID_SUBJECT;
+    const generated = installRealVapidEnvKeys();
     clearModule(pushPath);
 
     let writeCalls = 0;
@@ -147,10 +156,93 @@ describe("Vercel VAPID push config", () => {
     }
   });
 
+  it("accepts a valid mailto: VAPID_SUBJECT", () => {
+    process.env.VERCEL = "1";
+    process.env.VAPID_SUBJECT = "mailto:ops@example.com";
+    const generated = installRealVapidEnvKeys();
+    clearModule(pushPath);
+
+    const push = require(pushPath);
+    assert.equal(push.publicKey, generated.publicKey);
+    assert.equal(push.vapidConfigured, true);
+  });
+
+  it("accepts a valid https: VAPID_SUBJECT", () => {
+    process.env.VERCEL = "1";
+    process.env.VAPID_SUBJECT = "https://example.com/contact";
+    const generated = installRealVapidEnvKeys();
+    clearModule(pushPath);
+
+    const push = require(pushPath);
+    assert.equal(push.publicKey, generated.publicKey);
+    assert.equal(push.vapidConfigured, true);
+  });
+
+  it("disables push without crashing when VAPID_SUBJECT is invalid", () => {
+    process.env.VERCEL = "1";
+    // Mirrors the production misconfiguration that threw at module load.
+    process.env.VAPID_SUBJECT = "Existing push subject";
+    const generated = installRealVapidEnvKeys();
+    clearModule(pushPath);
+
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      assert.doesNotThrow(() => require(pushPath));
+      const push = require(pushPath);
+      assert.equal(push.publicKey, generated.publicKey);
+      assert.equal(push.vapidConfigured, false);
+      assert.ok(
+        warnings.some((line) => /VAPID_SUBJECT must be a valid mailto: or https: URL/i.test(line))
+      );
+      assert.ok(
+        warnings.every((line) => !line.includes("Existing push subject")),
+        "warning must not echo the invalid subject value"
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("disables push without crashing when VAPID public key is not URL-safe Base64", () => {
+    process.env.VERCEL = "1";
+    delete process.env.VAPID_SUBJECT;
+    // Standard Base64 with "=" padding — web-push rejects at setVapidDetails.
+    process.env.VAPID_PUBLIC_KEY = "AAAA====";
+    process.env.VAPID_PRIVATE_KEY = "BBBB====";
+    clearModule(pushPath);
+
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      assert.doesNotThrow(() => require(pushPath));
+      const push = require(pushPath);
+      assert.equal(push.vapidConfigured, false);
+      assert.ok(
+        warnings.some((line) => /Web push VAPID setup failed/i.test(line))
+      );
+      assert.ok(
+        warnings.every((line) => !line.includes("AAAA====") && !line.includes("BBBB====")),
+        "warning must not echo invalid key material"
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it("does not write .vapid.json when Vercel env keys are missing", () => {
     process.env.VERCEL = "1";
     delete process.env.VAPID_PUBLIC_KEY;
     delete process.env.VAPID_PRIVATE_KEY;
+    delete process.env.VAPID_SUBJECT;
 
     let writeCalls = 0;
     const originalWrite = fs.writeFileSync;
