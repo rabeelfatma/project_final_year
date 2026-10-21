@@ -124,6 +124,16 @@ function sendHealth(_req, res) {
 app.get("/api/health", sendHealth);
 app.get("/health", sendHealth);
 
+// Intentional API root — not an SPA. Safe public status only (no secrets/env/DB).
+app.get("/", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "QuickCheck Hub",
+    message: "QuickCheck Hub API is running. Use /api/health for health checks.",
+    health: "/api/health",
+  });
+});
+
 /* ===============================
     API Routes
 ================================= */
