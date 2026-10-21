@@ -124,14 +124,14 @@ function mockUserStore(seed) {
 }
 
 describe("public app URL construction (local vs configured)", () => {
-  it("builds local verification links from PUBLIC_APP_URL", () => {
+  it("builds local verification links from the API origin", () => {
     const base = resolvePublicAppUrl({
       PUBLIC_APP_URL: "http://localhost:5173/",
     });
     assert.equal(base, "http://localhost:5173");
     assert.equal(
-      buildVerificationLink(base, "tok123"),
-      "http://localhost:5173/verify-email?token=tok123"
+      buildVerificationLink("http://127.0.0.1:5000", "tok123"),
+      "http://127.0.0.1:5000/api/auth/verify-email?token=tok123"
     );
     assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "development" }), true);
   });
@@ -141,8 +141,8 @@ describe("public app URL construction (local vs configured)", () => {
     const base = resolvePublicAppUrl({ NODE_ENV: "production" });
     assert.equal(base, PRODUCTION_FRONTEND_ORIGIN);
     assert.equal(
-      buildVerificationLink(base, "vercel-default"),
-      `${PRODUCTION_FRONTEND_ORIGIN}/verify-email?token=vercel-default`
+      buildVerificationLink("https://quickcheck-hub-backend.vercel.app", "vercel-default"),
+      "https://quickcheck-hub-backend.vercel.app/api/auth/verify-email?token=vercel-default"
     );
     assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "production" }), true);
     assert.doesNotMatch(base, /quickcheck-hub-backend|localhost|192\.168|duke\.com\.pk/i);
@@ -175,7 +175,7 @@ describe("public app URL construction (local vs configured)", () => {
     }
   });
 
-  it("builds Vercel frontend verification links from PUBLIC_APP_URL", () => {
+  it("builds Vercel API verification links while PUBLIC_APP_URL stays on the frontend", () => {
     const vercelFrontend = "https://quickcheck-hub-frontend.vercel.app";
     const base = resolvePublicAppUrl({
       NODE_ENV: "production",
@@ -184,22 +184,23 @@ describe("public app URL construction (local vs configured)", () => {
     });
     assert.equal(base, vercelFrontend);
     assert.equal(
-      buildVerificationLink(base, "vercel-tok"),
-      `${vercelFrontend}/verify-email?token=vercel-tok`
+      buildVerificationLink("https://quickcheck-hub-backend.vercel.app", "vercel-tok"),
+      "https://quickcheck-hub-backend.vercel.app/api/auth/verify-email?token=vercel-tok"
     );
     assert.doesNotMatch(base, /api\.|localhost|127\.0\.0\.1/i);
     assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "production" }), true);
   });
 
-  it("builds local LAN verification links for same-Wi-Fi mobile testing", () => {
+  it("builds local LAN API verification links for same-Wi-Fi mobile testing", () => {
     const lan = "http://192.168.8.101:5173";
+    const apiLan = "http://192.168.8.101:5000";
     const base = resolvePublicAppUrl({ PUBLIC_APP_URL: `${lan}/` });
     assert.equal(base, lan);
     assert.equal(isPrivateLanPublicUrl(base), true);
     assert.equal(isUsablePublicAppUrl(base, { NODE_ENV: "development" }), true);
     assert.equal(
-      buildVerificationLink(base, "lan-tok"),
-      `${lan}/verify-email?token=lan-tok`
+      buildVerificationLink(apiLan, "lan-tok"),
+      `${apiLan}/api/auth/verify-email?token=lan-tok`
     );
   });
 
@@ -227,14 +228,15 @@ describe("public app URL construction (local vs configured)", () => {
     assert.doesNotMatch(resetCfg.publicAppUrl, /quickcheck-hub-backend|duke\.com\.pk/i);
   });
 
-  it("builds configured production links and preserves token query", () => {
+  it("builds configured production API links and preserves token query", () => {
     const base = resolvePublicAppUrl({
       PUBLIC_APP_URL: "https://app.example.com/",
     });
-    const link = buildVerificationLink(base, "abc def");
+    assert.equal(base, "https://app.example.com");
+    const link = buildVerificationLink("https://api.example.com", "abc def");
     assert.equal(
       link,
-      "https://app.example.com/verify-email?token=abc%20def"
+      "https://api.example.com/api/auth/verify-email?token=abc%20def"
     );
     assert.doesNotMatch(link, /localhost/i);
     assert.match(link, /[?&]token=/);

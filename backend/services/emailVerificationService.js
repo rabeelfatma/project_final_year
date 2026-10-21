@@ -70,7 +70,7 @@ async function sendSignupVerificationEmail(user, rawToken, deps = createDefaultD
       message: "Email verification is not configured.",
     };
   }
-  const verifyLink = buildVerificationLink(config.publicAppUrl, rawToken);
+  const verifyLink = buildVerificationLink(config.publicApiUrl, rawToken);
   const content = templateSignupVerification({
     name: user.name || "Applicant",
     verifyLink,

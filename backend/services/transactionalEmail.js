@@ -10,24 +10,37 @@ const {
   resolvePublicAppUrl,
   isUsablePublicAppUrl,
 } = require("../utils/publicAppUrl");
+const {
+  resolvePublicApiUrl,
+  resolvePublicApiRoot,
+} = require("../utils/publicApiUrl");
 
 function getEmailConfig(env = process.env) {
   const apiKey = String(env.RESEND_API_KEY || "").trim();
   const fromEmail = String(env.PASSWORD_RESET_FROM_EMAIL || "").trim();
   const resolved = resolvePublicAppUrl(env);
   const publicAppUrl = isUsablePublicAppUrl(resolved, env) ? resolved : "";
+  const publicApiUrl = resolvePublicApiUrl(env);
 
   return {
     apiKey,
     fromEmail,
     publicAppUrl,
-    configured: Boolean(apiKey && fromEmail && publicAppUrl),
+    publicApiUrl,
+    configured: Boolean(apiKey && fromEmail && publicAppUrl && publicApiUrl),
   };
 }
 
-function buildVerificationLink(publicAppUrl, rawToken) {
-  const base = String(publicAppUrl || "").replace(/\/+$/, "");
-  return `${base}/verify-email?token=${encodeURIComponent(rawToken)}`;
+/**
+ * Email verification links hit the API (server-owned). The handler validates the
+ * token and redirects to the allowlisted frontend with a non-sensitive status.
+ * @param {string} publicApiUrlOrRoot API origin or .../api root
+ * @param {string} rawToken
+ */
+function buildVerificationLink(publicApiUrlOrRoot, rawToken) {
+  const raw = String(publicApiUrlOrRoot || "").replace(/\/+$/, "");
+  const apiRoot = /\/api$/i.test(raw) ? raw : `${raw}/api`;
+  return `${apiRoot}/auth/verify-email?token=${encodeURIComponent(rawToken)}`;
 }
 
 function buildAdminRegistrationsLink(publicAppUrl) {
@@ -194,6 +207,8 @@ async function sendTransactionalEmail(
 module.exports = {
   getEmailConfig,
   resolvePublicAppUrl,
+  resolvePublicApiUrl,
+  resolvePublicApiRoot,
   buildVerificationLink,
   buildAdminRegistrationsLink,
   templateSignupVerification,
