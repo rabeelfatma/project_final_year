@@ -84,7 +84,7 @@ Copy-Item backend\.env.example backend\.env
 
 | Variable | Purpose |
 |----------|---------|
-| `APP_RUNTIME_MODE=full` | Local full app (Hostinger stays maintenance until approved) |
+| `APP_RUNTIME_MODE=full` | Local full app. `npm start` stays maintenance until this is set. The Vercel API project must set `full`. |
 | `MONGO_URI` | Your Atlas/local URI including database name |
 | `JWT_SECRET` | Long random secret (generate a new one) |
 | `GEMINI_API_KEY` | Only if AI grading is required |
@@ -92,7 +92,7 @@ Copy-Item backend\.env.example backend\.env
 | `RESEND_API_KEY` / `PASSWORD_RESET_FROM_EMAIL` / `PUBLIC_APP_URL` | Only if password recovery email is required |
 | `UPLOADS_DIR` | Optional absolute folder for durable uploads |
 
-Never paste production Hostinger secrets into chat or screenshots.
+Never paste production secrets into chat or screenshots.
 
 ---
 
@@ -174,7 +174,7 @@ $env:APP_RUNTIME_MODE = "full"
 npm start
 ```
 
-Default Hostinger/`npm start` without `full` stays in **maintenance** mode on purpose.
+Default local `npm start` without `full` stays in **maintenance** mode on purpose. The Vercel API project sets `APP_RUNTIME_MODE=full` in its own environment.
 
 Optional public **preview** page only (no APIs/DB):
 
@@ -202,8 +202,8 @@ npm start
 |---------|----------------|
 | MongoDB connection failure | URI, DB user password, Atlas IP allowlist, database name in URI |
 | Invalid login | Account exists, password correct, `isAllowedLogin`, tokenVersion after password reset |
-| CORS / API routing | Frontend API origin vs backend port; prefer same-origin production build |
-| Missing uploaded files | Files live under `backend/uploads` or `UPLOADS_DIR`; Hostinger disk may reset on redeploy |
+| CORS / API routing | Local API is `http://<page-hostname>:5000/api`. Production frontend calls `https://quickcheck-hub-backend.vercel.app/api`. |
+| Missing uploaded files | Local files live under `backend/uploads` or `UPLOADS_DIR`. Vercel durable files use R2. |
 | Gemini error | `GEMINI_API_KEY`, verify `GEMINI_MODEL` in Google AI Studio |
 | Resend / forgot password | Server-only Resend vars; without them recovery fails closed |
 | Port in use | Change `PORT` or stop the other process |
@@ -212,13 +212,15 @@ npm start
 
 ---
 
-## 12. Hostinger vs laptop
+## 12. Laptop vs Vercel
 
-| | Laptop local | Hostinger duke.com.pk |
-|--|--------------|------------------------|
-| Purpose | Development / evaluation demo | Staging / future production |
-| Default mode | `full` via `npm run dev` | `maintenance` unless approved |
-| Uploads | Local disk / optional `UPLOADS_DIR` | Not assumed durable without a volume |
-| Secrets | Your local `.env` | Hostinger env panel (operator only) |
+| | Laptop local | Vercel |
+|--|--------------|--------|
+| Purpose | Development / evaluation demo | Frontend and API deployment |
+| Frontend | `npm run dev` at `http://localhost:5173` | https://quick-check-hub-frontend.vercel.app |
+| API | `http://localhost:5000/api` | https://quickcheck-hub-backend.vercel.app/api |
+| Default mode | `full` via `npm run dev` | API project must set `APP_RUNTIME_MODE=full` |
+| Uploads | Local disk / optional `UPLOADS_DIR` | Private R2 bucket |
+| Secrets | Your local `.env` | Vercel project env (operator only) |
 
-Do not unlock Hostinger `APP_RUNTIME_MODE=full` until MongoDB, secrets, DNS/SSL and evaluation readiness are approved.
+`duke.com.pk` / Hostinger is retired and is not a deployment target. Do not point `PUBLIC_APP_URL` or `CLIENT_ORIGIN` at it.

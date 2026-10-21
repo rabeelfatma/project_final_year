@@ -6,6 +6,8 @@ const User = require("../models/User");
 
 const Submission = require("../models/Submission");
 
+const { approvedRoleFilter } = require("../utils/approvedUserQuery");
+
 const path = require("path");
 
 const fs = require("fs");
@@ -1664,11 +1666,13 @@ exports.getStudents = async (req, res) => {
 
   try {
 
-    const students = await User.find({
+    // Approved Students only — pending/rejected stay in Registration Requests.
 
-      role: "student",
+    const students = await User.find(approvedRoleFilter("student")).select(
 
-    }).select("name email registrationNumber");
+      "name email registrationNumber"
+
+    );
 
 
 
@@ -1692,11 +1696,13 @@ exports.getTeachers = async (_req, res) => {
 
   try {
 
-    const teachers = await User.find({
+    // Approved Teachers only — email verification alone is not Admin approval.
 
-      role: "teacher",
+    const teachers = await User.find(approvedRoleFilter("teacher")).select(
 
-    }).select("name email subject");
+      "name email subject"
+
+    );
 
 
 

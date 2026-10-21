@@ -50,9 +50,12 @@ async function notifyAdminsOfVerifiedRegistration(user, deps = createDefaultDeps
     .select("_id email name")
     .lean();
 
-  const adminLink = buildAdminRegistrationsLink(
-    deps.getEmailConfig(deps.env).publicAppUrl || "https://duke.com.pk"
-  );
+  // Use only the configured public frontend origin — never invent a host or
+  // fall back to a different deployment's domain (e.g. Hostinger vs Vercel).
+  const publicAppUrl = deps.getEmailConfig(deps.env).publicAppUrl || "";
+  const adminLink = publicAppUrl
+    ? buildAdminRegistrationsLink(publicAppUrl)
+    : "";
 
   const title = "New registration awaiting approval";
   const message = `${claimed.name} (${claimed.email}) requested ${claimed.role} access.`;

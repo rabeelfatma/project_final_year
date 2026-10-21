@@ -5,6 +5,15 @@ import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
 const API_ORIGIN = getApiOrigin();
 
+function normalizeAudioMime(raw) {
+  const value = String(raw || "").split(";")[0].trim().toLowerCase();
+  if (value.startsWith("audio/") || value.startsWith("video/webm") || value === "application/ogg") {
+    if (value === "video/webm") return "audio/webm";
+    return value;
+  }
+  return "audio/webm";
+}
+
 function VoiceMessage({ id }) {
   const [url, setUrl] = useState("");
   const [playing, setPlaying] = useState(false);
@@ -20,8 +29,10 @@ function VoiceMessage({ id }) {
           headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
         });
         if (!response.ok) throw new Error("Unable to load voice message.");
-        const blob = await response.blob();
-        if (!blob.size) throw new Error("Empty voice file.");
+        const buffer = await response.arrayBuffer();
+        if (!buffer.byteLength) throw new Error("Empty voice file.");
+        const mime = normalizeAudioMime(response.headers.get("content-type"));
+        const blob = new Blob([buffer], { type: mime });
         objectUrl = URL.createObjectURL(blob);
         if (!cancelled) setUrl(objectUrl);
       } catch (_) {
@@ -36,18 +47,35 @@ function VoiceMessage({ id }) {
   }, [id]);
 
   if (error) return <p className="theme-muted text-xs mt-2">Voice message could not be loaded.</p>;
-  if (!url) return <p className="theme-muted text-xs mt-2">Loading voice message...</p>;
+  if (!url) return <p className="theme-muted text-xs mt-2">Loading voice message…</p>;
 
   return (
-    <div className="flex items-center gap-2 mt-2">
-      <button type="button" className="icon-btn" onClick={() => {
-        const audio = audioRef.current;
-        if (!audio) return;
-        if (audio.paused) audio.play().catch(() => setError(true)); else audio.pause();
-      }} title={playing ? "Pause voice message" : "Play voice message"}>
-        {playing ? <Pause size={15}/> : <Play size={15}/>} 
+    <div className="qc-voice-player mt-2">
+      <button
+        type="button"
+        className="icon-btn !p-2"
+        onClick={() => {
+          const audio = audioRef.current;
+          if (!audio) return;
+          if (audio.paused) audio.play().catch(() => setError(true));
+          else audio.pause();
+        }}
+        title={playing ? "Pause voice message" : "Play voice message"}
+        aria-label={playing ? "Pause voice message" : "Play voice message"}
+      >
+        {playing ? <Pause size={15} /> : <Play size={15} />}
       </button>
-      <audio ref={audioRef} controls preload="metadata" className="w-full max-w-[250px]" src={url} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onError={() => setError(true)} />
+      <audio
+        ref={audioRef}
+        controls
+        preload="metadata"
+        className="qc-voice-audio"
+        src={url}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        onError={() => setError(true)}
+      />
     </div>
   );
 }
@@ -64,6 +92,7 @@ export default function MessagePanel({ role, showTrigger = true }) {
   const [editText, setEditText] = useState("");
   const [selectedMessages, setSelectedMessages] = useState([]);
   const panelRef = useRef(null);
+  const threadRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
 
@@ -111,6 +140,16 @@ export default function MessagePanel({ role, showTrigger = true }) {
     return () => clearInterval(t);
   }, [open]);
 
+  const visible = recipient
+    ? messages.filter((m) => String(m.sender?._id) === String(recipient) || String(m.recipient?._id) === String(recipient))
+    : messages;
+
+  useEffect(() => {
+    if (threadRef.current) {
+      threadRef.current.scrollTop = threadRef.current.scrollHeight;
+    }
+  }, [visible.length, open, recipient]);
+
   const sendText = async () => {
     if (!recipient || !text.trim()) return;
     setSending(true);
@@ -153,11 +192,9 @@ export default function MessagePanel({ role, showTrigger = true }) {
     }
   };
 
-  const visible = recipient
-    ? messages.filter((m) => String(m.sender?._id) === String(recipient) || String(m.recipient?._id) === String(recipient))
-    : messages;
   const visibleIds = visible.map((m) => m._id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedMessages.includes(id));
+  const selectedUser = users.find((u) => String(u._id) === String(recipient));
 
   const toggleMessageSelection = (id) => {
     setSelectedMessages((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
@@ -233,56 +270,130 @@ export default function MessagePanel({ role, showTrigger = true }) {
   return <>
     {showTrigger && <button onClick={() => { const next = !open; setOpen(next); if (next) window.dispatchEvent(new CustomEvent("quickcheck:close-notifications")); }} className="message-float" title={open ? "Close messages" : "Open messages"}><MessageCircle size={20}/><span>Messages</span></button>}
     {open && <div ref={panelRef} className="message-panel" role="dialog" aria-modal="false" aria-label="Messages">
-      <div className="message-panel-header flex items-center justify-between p-4 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
-        <div><b>Messages</b><p className="theme-muted text-[10px]">Text and voice messages</p></div>
+      <div className="message-panel-header flex items-center justify-between gap-3 p-4 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
+        <div>
+          <b>Messages</b>
+          <p className="theme-muted text-[10px]">
+            {role ? `${role} conversations` : "Text and voice messages"}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={clearAllMessages} className="text-red-400 text-[10px] font-bold" disabled={!messages.length}>Clear All</button>
+          <button type="button" onClick={clearAllMessages} className="qc-chat-toolbar-btn danger" disabled={!messages.length}>Clear all</button>
           <button type="button" onClick={() => setOpen(false)} className="icon-btn" title="Close messages" aria-label="Close messages"><X size={18}/></button>
         </div>
       </div>
 
-      <div className="p-3 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
-        <select className="qc-input" value={recipient} onChange={(e) => { setRecipient(e.target.value); setEditingId(null); setSelectedMessages([]); }}>
-          <option value="">Select a user</option>
-          {users.map((u) => <option key={u._id} value={u._id}>{u.name} — {u.role} — {u.email}</option>)}
+      <div className="message-panel-toolbar p-3 border-b shrink-0 space-y-2" style={{ borderColor: "var(--border)" }}>
+        <label className="sr-only" htmlFor="qc-message-recipient">Conversation</label>
+        <select
+          id="qc-message-recipient"
+          className="qc-input"
+          value={recipient}
+          onChange={(e) => { setRecipient(e.target.value); setEditingId(null); setSelectedMessages([]); }}
+        >
+          <option value="">Select a conversation</option>
+          {users.map((u) => (
+            <option key={u._id} value={u._id}>
+              {u.name} — {u.role} — {u.email}
+            </option>
+          ))}
         </select>
-        <div className="flex items-center justify-between gap-2 mt-2">
-          <button type="button" onClick={toggleSelectAll} disabled={!visibleIds.length} className="text-[10px] font-bold accent-text flex items-center gap-1 disabled:opacity-40">
-            <CheckSquare size={13}/> {allVisibleSelected ? "Unselect All" : "Select All"}
+        <div className="qc-chat-selection-bar">
+          <button type="button" onClick={toggleSelectAll} disabled={!visibleIds.length} className="qc-chat-toolbar-btn accent">
+            <CheckSquare size={13} aria-hidden="true" /> {allVisibleSelected ? "Unselect all" : "Select all"}
           </button>
-          <div className="flex items-center gap-2">
-            <span className="theme-muted text-[10px]">{selectedMessages.length} selected</span>
-            <button type="button" onClick={deleteSelected} disabled={!selectedMessages.length} className="text-[10px] font-bold text-red-400 disabled:opacity-40 flex items-center gap-1"><Trash2 size={13}/> Delete Selected</button>
-          </div>
+          <span className="qc-chat-selection-count" aria-live="polite">
+            {selectedMessages.length} selected
+          </span>
+          <button type="button" onClick={deleteSelected} disabled={!selectedMessages.length} className="qc-chat-toolbar-btn danger">
+            <Trash2 size={13} aria-hidden="true" /> Delete selected
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
-        {!recipient ? <p className="theme-muted text-center py-12 text-sm">Choose a user to start a conversation.</p> :
-          visible.length ? visible.map((m) => {
-            const mine = Boolean(m.isMine);
-            const isText = Boolean(m.text);
-            const selected = selectedMessages.includes(m._id);
-            return <div key={m._id} className={`p-3 rounded-2xl border ${selected || mine ? "accent-soft" : "theme-surface"}`} style={{ borderColor: selected ? "var(--accent)" : "var(--border)" }}>
-              <div className="flex items-start justify-between gap-2">
-                <label className="flex items-start gap-2 cursor-pointer min-w-0">
-                  <input type="checkbox" checked={selected} onChange={() => toggleMessageSelection(m._id)} className="mt-0.5" style={{ accentColor: "var(--accent)" }} />
-                  <p className="text-[9px] theme-muted mb-1">{mine ? "You" : (m.sender?.name || "User")} · {new Date(m.createdAt).toLocaleString()}{m.editedAt ? " · edited" : ""}</p>
+      <div ref={threadRef} className="message-thread flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+        {!recipient ? (
+          <p className="theme-muted text-center py-12 text-sm">Choose a user to start a conversation.</p>
+        ) : visible.length ? visible.map((m) => {
+          const mine = Boolean(m.isMine);
+          const isText = Boolean(m.text);
+          const selected = selectedMessages.includes(m._id);
+          return (
+            <div
+              key={m._id}
+              className={`qc-chat-bubble ${mine ? "is-mine" : "is-theirs"} ${selected ? "is-selected" : ""}`}
+            >
+              <div className="qc-chat-bubble__meta">
+                <label className="qc-chat-select">
+                  <input
+                    type="checkbox"
+                    className="qc-chat-checkbox"
+                    checked={selected}
+                    onChange={() => toggleMessageSelection(m._id)}
+                    aria-label={`Select message from ${mine ? "you" : (m.sender?.name || "user")}`}
+                  />
+                  <span>
+                    {mine ? "You" : (m.sender?.name || selectedUser?.name || "User")}
+                    {" · "}
+                    {new Date(m.createdAt).toLocaleString()}
+                    {m.editedAt ? " · edited" : ""}
+                  </span>
                 </label>
-                <div className="flex gap-1">
-                  {mine && isText && <button type="button" className="message-action" title="Edit message" onClick={() => startEdit(m)}><Pencil size={13}/></button>}
-                  <button type="button" className="message-action danger" title="Delete message" onClick={() => deleteMessage(m._id)}><Trash2 size={13}/></button>
+                <div className="qc-chat-bubble__actions">
+                  {mine && isText && (
+                    <button type="button" className="message-action" title="Edit message" aria-label="Edit message" onClick={() => startEdit(m)}>
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  <button type="button" className="message-action danger" title="Delete message" aria-label="Delete message" onClick={() => deleteMessage(m._id)}>
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
-              {editingId === m._id ? <div className="space-y-2"><textarea className="qc-input" value={editText} onChange={(e) => setEditText(e.target.value)} rows={2}/><div className="flex gap-2"><button type="button" className="btn-primary text-xs" onClick={() => saveEdit(m._id)}>Save</button><button type="button" className="icon-btn text-xs" onClick={() => setEditingId(null)}>Cancel</button></div></div> : <>{isText && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>}{m.voiceFile && <VoiceMessage id={m._id}/>}</>}
-            </div>;
-          }) : <p className="theme-muted text-center py-12 text-sm">No messages yet.</p>}
+              {editingId === m._id ? (
+                <div className="space-y-2">
+                  <textarea className="qc-input" value={editText} onChange={(e) => setEditText(e.target.value)} rows={2} />
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-primary text-xs" onClick={() => saveEdit(m._id)}>Save</button>
+                    <button type="button" className="icon-btn text-xs" onClick={() => setEditingId(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {isText && <p className="qc-chat-bubble__text">{m.text}</p>}
+                  {m.voiceFile && <VoiceMessage id={m._id} />}
+                </>
+              )}
+            </div>
+          );
+        }) : (
+          <p className="theme-muted text-center py-12 text-sm">No messages yet. Send a text or voice message below.</p>
+        )}
       </div>
 
-      <div className="p-3 border-t flex gap-2 shrink-0" style={{ borderColor: "var(--border)" }}>
-        <input className="qc-input flex-1 min-w-0" value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a message..." onKeyDown={(e) => { if (e.key === "Enter") sendText(); }}/>
-        <button type="button" className={`icon-btn ${recording ? "accent-soft" : ""}`} onClick={recording ? stopRecording : startRecording} title={recording ? "Stop recording" : "Voice message"}>{recording ? <Square size={16}/> : <Mic size={16}/>}</button>
-        <button type="button" disabled={sending} className="btn-primary px-4" onClick={sendText}><Send size={16}/></button>
+      <div className="message-composer p-3 border-t flex gap-2 shrink-0" style={{ borderColor: "var(--border)" }}>
+        <input
+          className="qc-input flex-1 min-w-0"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={recipient ? "Write a message…" : "Select a conversation first"}
+          disabled={!recipient || sending}
+          aria-label="Message text"
+          onKeyDown={(e) => { if (e.key === "Enter") sendText(); }}
+        />
+        <button
+          type="button"
+          className={`icon-btn ${recording ? "accent-soft" : ""}`}
+          onClick={recording ? stopRecording : startRecording}
+          disabled={!recipient || sending}
+          title={recording ? "Stop recording" : "Voice message"}
+          aria-label={recording ? "Stop recording" : "Record voice message"}
+        >
+          {recording ? <Square size={16} /> : <Mic size={16} />}
+        </button>
+        <button type="button" disabled={sending || !recipient} className="btn-primary px-4" onClick={sendText} aria-label="Send message">
+          <Send size={16} />
+        </button>
       </div>
     </div>}
   </>;

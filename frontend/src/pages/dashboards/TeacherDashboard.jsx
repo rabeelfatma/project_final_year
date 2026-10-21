@@ -121,9 +121,6 @@ export default function TeacherDashboard() {
       const safeSubmissions = Array.isArray(subData) ? subData : [];
       const safeStudents    = Array.isArray(stData) ? stData : [];
 
-      // ✅ FIX: Debug log — check what's coming from backend
-      console.log("SUBMISSIONS:", safeSubmissions);
-
       const pending = safeSubmissions.filter(s => !['graded','GRADED','PUBLISHED','AI_GRADED'].includes(s.status)).length;
       const graded  = safeSubmissions.filter(s =>  ['graded','GRADED','PUBLISHED','AI_GRADED'].includes(s.status)).length;
 
@@ -180,7 +177,7 @@ export default function TeacherDashboard() {
   // ── AI Evaluation ─────────────────────────────────────────
   const handleAiEvaluation = async () => {
     if (selectedSubmissions.length === 0) return;
-    if (!aiInstructions.trim()) return alert('❌ Please provide grading instructions first!');
+    if (!aiInstructions.trim()) return alert('Please provide grading instructions first.');
     try {
       setAiLoading(true);
       const result = await teacherService.evaluateWithAiBulk({
@@ -201,7 +198,7 @@ export default function TeacherDashboard() {
       setSelectedSubmissions([]);
       fetchAllData();
     } catch (err) {
-      alert('❌ AI Grading Failed. Check Server Console.');
+      alert('AI grading failed. Please try again or check the server connection.');
     } finally {
       setAiLoading(false);
     }
@@ -544,7 +541,7 @@ export default function TeacherDashboard() {
           </div>
           <nav className="space-y-1" aria-label="Teacher navigation">
             <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab==='dashboard'} onClick={() => openMainTab('dashboard')} />
-            <DashboardNavItem icon={<PlusCircle size={18}/>} label={editingId ? 'Editing Mode' : 'Create Assignment'} active={shellView === 'main' && activeTab==='create'} onClick={() => { setShellView('main'); setActiveTab('create'); }} />
+            <DashboardNavItem icon={<PlusCircle size={18}/>} label={editingId ? 'Edit Assignment' : 'Create Assignment'} active={shellView === 'main' && activeTab==='create'} onClick={() => { setShellView('main'); setActiveTab('create'); }} />
             <DashboardNavItem icon={<BookOpen size={18}/>} label="My Assignments" active={shellView === 'main' && activeTab==='assignments'} onClick={() => openMainTab('assignments')} />
             <DashboardNavItem icon={<ClipboardCheck size={18}/>} label="Submissions" active={shellView === 'main' && activeTab==='submissions'} onClick={() => openMainTab('submissions')} />
             <DashboardNavItem icon={<ShieldAlert size={18}/>} label="Similarity" active={shellView === 'main' && activeTab==='plagiarism'} onClick={() => openMainTab('plagiarism')} />

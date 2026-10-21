@@ -397,6 +397,54 @@ describe("authenticated file routes authorization", () => {
       }
     );
   });
+
+  it("serves voice messages inline with codecs stripped from Content-Type", async () => {
+    fs.writeFileSync(path.join(tempRoot, "messages", "voice-message.webm"), "fake-webm-bytes");
+    const voiceMessage = {
+      _id: "msg1",
+      sender: "teacher-owner",
+      recipient: "student-owner",
+      voiceFile: "uploads/messages/voice-message.webm",
+      originalFileName: "voice-message.webm",
+      mimeType: "audio/webm;codecs=opus",
+    };
+    const router = loadFileRouter({
+      authedUser: { _id: "teacher-owner", role: "teacher" },
+      message: voiceMessage,
+    });
+    await withServer(
+      (app) => app.use("/api/files", router),
+      async (port) => {
+        const r = await request(port, "GET", "/api/files/message/msg1");
+        assert.equal(r.status, 200);
+        assert.equal(r.headers["content-type"], "audio/webm");
+        assert.match(String(r.headers["content-disposition"] || ""), /inline/i);
+        assert.equal(r.text, "fake-webm-bytes");
+      }
+    );
+  });
+
+  it("denies voice message download to non-participants", async () => {
+    const voiceMessage = {
+      _id: "msg2",
+      sender: "teacher-owner",
+      recipient: "student-owner",
+      voiceFile: "uploads/messages/voice-message.webm",
+      originalFileName: "voice-message.webm",
+      mimeType: "audio/webm",
+    };
+    const router = loadFileRouter({
+      authedUser: { _id: "outsider", role: "student" },
+      message: voiceMessage,
+    });
+    await withServer(
+      (app) => app.use("/api/files", router),
+      async (port) => {
+        const r = await request(port, "GET", "/api/files/message/msg2");
+        assert.equal(r.status, 403);
+      }
+    );
+  });
 });
 
 describe("multer type/size policy (unit)", () => {

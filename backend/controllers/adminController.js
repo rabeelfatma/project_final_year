@@ -6,6 +6,7 @@ const {
     toPublicUser,
     normalizeRole,
 } = require('../utils/authPassword');
+const { approvedRoleFilter } = require('../utils/approvedUserQuery');
 
 /* =========================================================
    1. DASHBOARD INSIGHTS
@@ -80,7 +81,8 @@ exports.getSystemInsights = async (req, res) => {
 ========================================================= */
 exports.getAllTeachers = async (req, res) => {
     try {
-        const teachers = await User.find({ role: 'teacher' })
+        // Approved Teachers only — pending/rejected stay in Registration Requests.
+        const teachers = await User.find(approvedRoleFilter('teacher'))
             .select('name email subject department role createdAt') // Explicitly select subject
             .lean();
 
@@ -96,7 +98,8 @@ exports.getAllTeachers = async (req, res) => {
 ========================================================= */
 exports.getRecentUsers = async (req, res) => {
     try {
-        const students = await User.find({ role: 'student' })
+        // Approved Students only — pending/rejected stay in Registration Requests.
+        const students = await User.find(approvedRoleFilter('student'))
             .select('-password')
             .sort({ createdAt: -1 })
             .lean();

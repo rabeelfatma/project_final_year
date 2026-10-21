@@ -65,7 +65,7 @@ Use this sequence for university evaluation. Steps marked **UNVERIFIED** need a 
 ### 9) Reports / messages / notifications (optional) — IMPLEMENTED / TESTED WITH MOCKS
 - Show dashboard stats/reports for the logged-in role.
 - Send a short message Teacher ↔ Student if time allows.
-- Notifications are recipient-scoped in code; live push depends on browser permission setup (**UNVERIFIED** on Hostinger).
+- Notifications are recipient-scoped in code; live push depends on browser permission setup (**UNVERIFIED** on the Vercel deploy).
 
 ---
 
@@ -75,8 +75,8 @@ Use this sequence for university evaluation. Steps marked **UNVERIFIED** need a 
 |------|-------------------------------|
 | Local/full-mode academic UI flows | Ready after Mongo + accounts |
 | Protected file downloads | Code-complete; mock-tested |
-| Hostinger public site | Maintenance-locked until approved unlock |
-| Real Gemini grading on Hostinger | Not verified in overnight automation |
+| Vercel frontend + API | Code defaults updated locally; live deploy **NOT TESTED** |
+| Real Gemini grading on Vercel | Not verified in overnight automation |
 | Real Resend email recovery | Not verified without live keys |
 | Original historical student data | Not required for demo; keep separate |
 
@@ -84,7 +84,7 @@ Use this sequence for university evaluation. Steps marked **UNVERIFIED** need a 
 
 ## If something fails during the viva
 
-1. Show maintenance/health page if Hostinger is locked.
+1. If the public Vercel sites are down, say so and do not invent a Hostinger URL. `duke.com.pk` is retired.
 2. Fall back to laptop local demo with `npm run dev`.
 3. Prefer manual grading over AI if Gemini is unavailable.
 4. Do not invent marks or pretend provider calls succeeded.

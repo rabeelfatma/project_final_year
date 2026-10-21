@@ -1,14 +1,15 @@
 /**
  * QuickCheck Hub entry point.
  *
- * Locked staging/maintenance is the DEFAULT for `npm start` / Hostinger.
+ * Locked staging/maintenance is the DEFAULT for local `npm start`.
  * Full academic application loads ONLY when APP_RUNTIME_MODE=full (exact).
+ * The Vercel API project must set APP_RUNTIME_MODE=full. Hostinger is retired.
  * Optional APP_RUNTIME_MODE=preview serves the built frontend SPA (or fallback preview page)
  * with APIs/uploads locked and no MongoDB — never enables full academic mode.
  * Local development: use `npm run dev` (via dev-start.js) which sets full mode.
  */
 const path = require("path");
-// Prefer backend/.env when started from repo root (Hostinger single-app layout).
+// Prefer backend/.env when started from the repo root.
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 require("dotenv").config();
 

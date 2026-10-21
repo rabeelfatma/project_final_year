@@ -572,7 +572,7 @@ export default function StudentDashboard() {
 
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
 
-                <StatCard label="Total Allotted" value={totalCount} color="text-sky-400" icon={<FileText size={16}/>} sub="Active Tasks" />
+                <StatCard label="Assignments" value={totalCount} color="text-sky-400" icon={<FileText size={16}/>} sub="Assigned to you" />
 
                 <StatCard label="Submitted" value={submittedCount} color="text-slate-400" icon={<CheckCircle size={16}/>} sub="Under Review" />
 

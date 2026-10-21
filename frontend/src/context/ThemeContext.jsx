@@ -2,8 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const ThemeContext = createContext(null);
 
-// Blue-family accents only. value and valueDark are identical so the shared
-// primary blue never drifts between Light and Dark themes.
+// Accent palette: first three preserve the existing blue-family look.
+// Red, purple, and teal are additional professional options.
 export const ACCENTS = {
   blue: {
     name: "Blue",
@@ -11,6 +11,8 @@ export const ACCENTS = {
     valueDark: "#1683F8",
     soft: "rgba(22, 131, 248, 0.14)",
     softDark: "rgba(22, 131, 248, 0.18)",
+    secondary: "#60B5FF",
+    tertiary: "#0969DA",
   },
   sky: {
     name: "Sky",
@@ -18,6 +20,8 @@ export const ACCENTS = {
     valueDark: "#60B5FF",
     soft: "rgba(96, 181, 255, 0.14)",
     softDark: "rgba(96, 181, 255, 0.18)",
+    secondary: "#93C5FD",
+    tertiary: "#1683F8",
   },
   deep: {
     name: "Deep",
@@ -25,15 +29,43 @@ export const ACCENTS = {
     valueDark: "#0969DA",
     soft: "rgba(9, 105, 218, 0.14)",
     softDark: "rgba(9, 105, 218, 0.18)",
+    secondary: "#1683F8",
+    tertiary: "#0550AE",
+  },
+  red: {
+    name: "Red",
+    value: "#DC2626",
+    valueDark: "#DC2626",
+    soft: "rgba(220, 38, 38, 0.12)",
+    softDark: "rgba(220, 38, 38, 0.18)",
+    secondary: "#F87171",
+    tertiary: "#B91C1C",
+  },
+  purple: {
+    name: "Purple",
+    value: "#7C3AED",
+    valueDark: "#7C3AED",
+    soft: "rgba(124, 58, 237, 0.12)",
+    softDark: "rgba(124, 58, 237, 0.18)",
+    secondary: "#A78BFA",
+    tertiary: "#5B21B6",
+  },
+  teal: {
+    name: "Teal",
+    value: "#0D9488",
+    valueDark: "#0D9488",
+    soft: "rgba(13, 148, 136, 0.12)",
+    softDark: "rgba(13, 148, 136, 0.18)",
+    secondary: "#2DD4BF",
+    tertiary: "#0F766E",
   },
 };
 
 const LEGACY_ACCENT_MAP = {
   cyan: "sky",
-  green: "deep",
-  red: "blue",
-  purple: "blue",
+  green: "teal",
   orange: "blue",
+  emerald: "teal",
 };
 
 function resolveAccentKey(stored) {
@@ -65,12 +97,16 @@ export function ThemeProvider({ children }) {
     root.style.setProperty("--accent", accentValue);
     root.style.setProperty("--accent-soft", accentSoft);
     root.style.setProperty("--accent-bg", accentSoft);
+    root.style.setProperty("--sidebar-active-bg", accentValue);
+    root.style.setProperty("--sidebar-active-indicator", accentValue);
+    root.style.setProperty("--sidebar-hover-bg", accentSoft);
+    // Brand blue tokens stay stable; charts/nav follow the selected accent.
     root.style.setProperty("--qc-primary", "#1683F8");
     root.style.setProperty("--qc-primary-deep", "#0969DA");
     root.style.setProperty("--qc-primary-light", "#60B5FF");
     root.style.setProperty("--chart-primary", accentValue);
-    root.style.setProperty("--chart-secondary", "#60B5FF");
-    root.style.setProperty("--chart-tertiary", "#0969DA");
+    root.style.setProperty("--chart-secondary", selected.secondary || "#60B5FF");
+    root.style.setProperty("--chart-tertiary", selected.tertiary || "#0969DA");
     root.style.setProperty("--chart-quaternary", `color-mix(in srgb, ${accentValue} 28%, ${mixBase})`);
     root.style.setProperty("--chart-grid", isDark ? "#263849" : "#DCE6F0");
     root.style.setProperty("--chart-axis", isDark ? "#A8B8C9" : "#52657A");
