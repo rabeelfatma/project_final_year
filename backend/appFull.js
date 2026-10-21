@@ -26,39 +26,25 @@ const isVercel = process.env.VERCEL === "1";
 /* ===============================
     Global Middleware
 ================================= */
-// Hostinger / Vercel sit behind reverse proxies. Required so req.ip is the
-// client hop Express trusts — password-reset rate limits must not read raw XFF.
+// Vercel sits behind a reverse proxy. Required so req.ip is the client hop
+// Express trusts — password-reset rate limits must not read raw XFF.
 app.set("trust proxy", 1);
 
-// Separate Vercel frontend: set CLIENT_ORIGIN (or FRONTEND_URL) to the SPA origin.
-// Unset keeps permissive reflection (Hostinger same-origin / local).
-// Non-production also allows private-LAN origins for same-Wi-Fi mobile testing
-// without weakening production allowlists (see utils/corsOrigins.js).
-const {
-  parseAllowedOrigins,
-  resolveCorsOriginOption,
-} = require("./utils/corsOrigins");
-const allowedOrigins = parseAllowedOrigins();
+// Exact production frontend origin is always allowed. CLIENT_ORIGIN /
+// FRONTEND_URL may add more. Non-production also allows loopback and
+// private-LAN origins. No production wildcard and no Host-header trust.
+const { buildCorsOptions } = require("./utils/corsOrigins");
 
-app.use(
-  cors({
-    origin: allowedOrigins.length
-      ? (origin, callback) => {
-          return callback(null, resolveCorsOriginOption(origin));
-        }
-      : true,
-    exposedHeaders: ["Content-Disposition"],
-  })
-);
+app.use(cors(buildCorsOptions()));
 
-// Vercel request body limit is ~4.5MB on Hobby; keep Hostinger's larger ceiling.
+// Vercel request body limit is ~4.5MB on Hobby; local runs keep 100mb.
 const bodyLimit = isVercel ? "4.5mb" : "100mb";
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
 
 /* ===============================
     MongoDB
-    - Hostinger/local: connect at boot (process.exit on failure, unchanged).
+    - Local: connect at boot (process.exit on failure, unchanged).
     - Vercel: await on API/upload requests; never process.exit.
 ================================= */
 if (!isVercel) {
@@ -183,7 +169,7 @@ app.use((err, req, res, next) => {
 });
 
 /* ===============================
-    Listen (Hostinger / local). Skip on Vercel serverless.
+    Listen (local). Skip on Vercel serverless.
 ================================= */
 const PORT = process.env.PORT || 5000;
 const shouldListen = process.env.VERCEL !== "1";

@@ -2,7 +2,7 @@
   "name": "quickcheck-hub",
   "version": "1.0.0",
   "private": true,
-  "description": "QuickCheck Hub — Hostinger single-app staging entry (maintenance-locked by default)",
+  "description": "QuickCheck Hub — Vercel frontend and Vercel API. Local npm start stays maintenance-locked until APP_RUNTIME_MODE=full.",
   "main": "backend/server.js",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

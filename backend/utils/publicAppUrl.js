@@ -4,10 +4,22 @@
  * When choosing among fallbacks, skip loopback hosts so local CORS origins
  * do not leak into emails opened on phones.
  *
- * Production fail-closed: loopback and RFC1918 private LAN URLs are rejected
- * so a laptop .env cannot accidentally ship into Hostinger/Vercel email links.
+ * Production with no configured origin uses the Vercel frontend:
+ *   https://quick-check-hub-frontend.vercel.app
+ * This value is not taken from request Host / X-Forwarded-Host headers.
+ *
+ * Fail closed when the configured origin is the backend API host, the retired
+ * duke.com.pk host, or (in production) loopback, private LAN, or non-HTTPS.
+ * An invalid explicit value is not replaced with the Vercel default.
  * Development may use localhost or a same-Wi-Fi LAN origin for mobile testing.
  */
+
+const PRODUCTION_FRONTEND_ORIGIN = "https://quick-check-hub-frontend.vercel.app";
+const DISALLOWED_PUBLIC_APP_HOSTS = new Set([
+  "quickcheck-hub-backend.vercel.app",
+  "duke.com.pk",
+  "www.duke.com.pk",
+]);
 
 function isLoopbackHostname(hostname) {
   const h = String(hostname || "").toLowerCase();
@@ -49,6 +61,11 @@ function isPrivateLanPublicUrl(url) {
   return false;
 }
 
+function isDisallowedPublicAppHost(url) {
+  const host = hostnameFromUrl(url).replace(/\.$/, "").toLowerCase();
+  return DISALLOWED_PUBLIC_APP_HOSTS.has(host);
+}
+
 function normalizeOrigin(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
@@ -72,7 +89,7 @@ function collectPublicAppUrlCandidates(env = process.env) {
  */
 function resolvePublicAppUrl(env = process.env) {
   const candidates = collectPublicAppUrlCandidates(env);
-  if (!candidates.length) return "";
+  if (!candidates.length) return productionFrontendDefault(env);
 
   // Explicit PUBLIC_APP_URL always wins (including localhost / LAN for local email tests).
   const primary = normalizeOrigin(env.PUBLIC_APP_URL);
@@ -84,23 +101,37 @@ function resolvePublicAppUrl(env = process.env) {
   return nonLoopback || candidates[0];
 }
 
+function productionFrontendDefault(env = process.env) {
+  if (String(env.NODE_ENV || "").toLowerCase() !== "production") return "";
+  return PRODUCTION_FRONTEND_ORIGIN;
+}
+
 /**
  * Production must not send loopback or private-LAN links.
  * Local/dev may use http://localhost:5173 or http://192.168.x.x:5173.
  */
 function isUsablePublicAppUrl(url, env = process.env) {
   if (!url) return false;
+  if (isDisallowedPublicAppHost(url)) return false;
   const isProd = String(env.NODE_ENV || "").toLowerCase() === "production";
-  if (isProd && isLoopbackPublicUrl(url)) return false;
-  if (isProd && isPrivateLanPublicUrl(url)) return false;
+  if (!isProd) return true;
+  if (isLoopbackPublicUrl(url)) return false;
+  if (isPrivateLanPublicUrl(url)) return false;
+  try {
+    if (new URL(String(url)).protocol !== "https:") return false;
+  } catch {
+    return false;
+  }
   return true;
 }
 
 module.exports = {
+  PRODUCTION_FRONTEND_ORIGIN,
   isLoopbackHostname,
   isPrivateLanHostname,
   isLoopbackPublicUrl,
   isPrivateLanPublicUrl,
+  isDisallowedPublicAppHost,
   collectPublicAppUrlCandidates,
   resolvePublicAppUrl,
   isUsablePublicAppUrl,

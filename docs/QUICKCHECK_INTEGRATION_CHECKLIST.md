@@ -1,8 +1,10 @@
 # QuickCheck Hub — Full Integration Readiness Checklist
 
-Use this before any public/full unlock of duke.com.pk.
+Use this before calling the Vercel deployment ready for a full academic demo.
 
 Legend: `[ ]` pending · `[x]` done locally in code · `[~]` partial / mock-only
+
+Retired: Hostinger and `duke.com.pk` are not deployment targets. Historical checklist items that only applied to that host are marked retired below.
 
 ---
 
@@ -10,7 +12,7 @@ Legend: `[ ]` pending · `[x]` done locally in code · `[~]` partial / mock-only
 
 - [ ] Atlas (or local) MongoDB reachable from the target runtime
 - [ ] Database name agreed (`quickcheck_hub_demo` for evaluation)
-- [ ] `MONGO_URI` set in Hostinger env / laptop `.env` (never committed)
+- [ ] `MONGO_URI` set in the Vercel API project or laptop `.env` (never committed)
 - [ ] First Admin created via offline CLI (not public signup)
 - [ ] Demo teachers/students seeded only if desired (`seedDemoData.js --execute`)
 - [ ] Historical production DB kept separate (no silent merge)
@@ -31,7 +33,7 @@ Legend: `[ ]` pending · `[x]` done locally in code · `[~]` partial / mock-only
 - [x] Authenticated `/api/files/*` with role checks
 - [x] Path traversal / uploads-root confinement
 - [x] Configurable `UPLOADS_DIR`
-- [ ] Durable Hostinger storage volume (if files must survive redeploy)
+- [ ] Durable file storage: local `UPLOADS_DIR`, or R2 on the Vercel API project
 - [ ] Synthetic demo fixtures prepared (do not reuse original 87 files)
 
 ## D. Academic workflows
@@ -53,52 +55,56 @@ Legend: `[ ]` pending · `[x]` done locally in code · `[~]` partial / mock-only
 - [ ] Live push notifications on target browsers
 - [ ] Report figures accepted against real class data
 
-## F. Hostinger / DNS / runtime
+## F. Retired Hostinger / duke.com.pk
 
-- [ ] duke.com.pk DNS/SSL confirmed healthy
-- [ ] `/health` returns expected mode
-- [ ] Hostinger env: `APP_RUNTIME_MODE`, `MONGO_URI`, `JWT_SECRET`, optional Gemini/Resend
-- [ ] `trust proxy` already set for Hostinger hop (code)
-- [ ] Deployed SHA matches intended GitHub SHA
-- [ ] Node version strategy (panel currently 20.x; engines allow 20.19+/22.12+)
-- [ ] Public unlock decision: keep `maintenance`, set `preview`, or approve `full`
+Hostinger is not a deployment target. Do not change DNS for `duke.com.pk` from this repo.
+
+- [x] Retired as the production host (2026-10-21). Email links fail closed if `PUBLIC_APP_URL` is `duke.com.pk` or `www.duke.com.pk`.
+- Historical items that are no longer operational: DNS/SSL on that domain, Hostinger Node env, Hostinger build-log audit, and unlocking `APP_RUNTIME_MODE` on that host.
 
 ## G. Security / ops
 
-- [ ] Review `npm audit` findings on Hostinger build logs (do not blind `--force`)
+- [ ] Review `npm audit` findings before a Vercel production build (do not blind `--force`)
 - [ ] Secret scan of env panels / local `.env` hygiene
 - [ ] Confirm no academic uploads committed to Git
 - [ ] Backup plan for demo DB before evaluation day
 
 ## H. Explicit non-goals until approved
 
-- Changing Hostinger DNS/SSL from automation
+- Changing DNS for the retired `duke.com.pk` host
 - Purchasing S3/R2
 - Unlocking `APP_RUNTIME_MODE=full` without Mongo + secrets
 - Using original student documents as demo data
 
-## I. Separate Vercel deployment (frontend + backend API)
+## I. Vercel deployment (frontend + backend API)
 
-Code prep (local, Hostinger untouched):
+Two projects:
+
+- Frontend `https://quick-check-hub-frontend.vercel.app` (root directory `frontend`)
+- API `https://quickcheck-hub-backend.vercel.app` (root directory `backend`)
+
+Code prep:
 
 - [x] Backend exports Express app without `listen` when `VERCEL=1`
 - [x] `backend/vercel.json` routes all traffic to `server.js` (`@vercel/node`)
-- [x] `frontend/vercel.json` SPA rewrites for client-side routing
-- [x] Frontend `VITE_API_BASE_URL` supports separate API origin
+- [x] `frontend/vercel.json` SPA rewrites for client-side routing (not an `/api` proxy)
+- [x] Production frontend API base defaults to `https://quickcheck-hub-backend.vercel.app/api`
+- [x] Production CORS allows `https://quick-check-hub-frontend.vercel.app` and rejects other production origins
+- [x] Production email links default to that frontend origin and reject the API host, loopback, private LAN, and `duke.com.pk`
 - [x] MongoDB connection reuse + no `process.exit` on Vercel
 - [x] VAPID via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (no startup write on Vercel)
 - [x] Invalid `VAPID_SUBJECT` no longer crashes module load (disable push + warn; mailto:/https: only)
 - [x] Invalid VAPID key material (e.g. Base64 with `=`) soft-fails `setVapidDetails` — push disabled, app still boots; in-app Mongo notifications unchanged
-- [x] CORS allowlist via `CLIENT_ORIGIN` / `FRONTEND_URL`
 - [x] Body limit capped to ~4.5mb when `VERCEL=1`
 - [x] Private Cloudflare R2 adapter (`backend/utils/objectStorage.js` + `storedFiles.js`)
-- [x] Vercel uploads persist to R2; Hostinger/local keep disk multer behavior
+- [x] Vercel uploads persist to R2; local runs keep disk multer behavior
 - [x] Authenticated `/api/files/*`, grading, plagiarism, generated files resolve via adapter
-- [ ] Create two Vercel projects (Root Directory `frontend` and `backend`) — operator
-- [ ] Set backend env names listed in `backend/.env.example` (Vercel + R2 section)
-- [ ] Set frontend build env `VITE_API_BASE_URL` to backend `/api` URL
+- [ ] Confirm both Vercel projects use the root directories above — operator, read-only this phase
+- [ ] Set backend secret env names listed in `backend/.env.example` (Vercel section). `VITE_API_BASE_URL`, `CLIENT_ORIGIN`, and `PUBLIC_APP_URL` have code defaults for the two known domains.
 - [ ] Atlas Network Access allows Vercel egress (or `0.0.0.0/0` for demo)
-- [ ] Live smoke after deploy (auth, role isolation, file routes, R2 upload/download) — UNVERIFIED until then
+- [ ] Live smoke after an authorized deploy (auth, role isolation, file routes, R2 upload/download) — NOT TESTED
+
+`trust proxy` is set to 1 so rate limits see the client hop behind Vercel.
 
 ### Upload storage (implemented locally; live R2 unverified)
 

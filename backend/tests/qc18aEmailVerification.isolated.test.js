@@ -120,7 +120,7 @@ describe("QC-18A email templates and config", () => {
       getEmailConfig({
         RESEND_API_KEY: "re_x",
         PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
-        PUBLIC_APP_URL: "https://duke.com.pk",
+        PUBLIC_APP_URL: "https://quick-check-hub-frontend.vercel.app",
       }).configured,
       true
     );
@@ -128,16 +128,31 @@ describe("QC-18A email templates and config", () => {
       getEmailConfig({
         RESEND_API_KEY: "re_x",
         PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
-        FRONTEND_URL: "https://duke.com.pk",
+        FRONTEND_URL: "https://quick-check-hub-frontend.vercel.app",
       }).configured,
       true
     );
+    assert.equal(
+      getEmailConfig({
+        NODE_ENV: "production",
+        RESEND_API_KEY: "re_x",
+        PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+        PUBLIC_APP_URL: "https://duke.com.pk",
+      }).configured,
+      false
+    );
   });
 
-  it("builds production verification links from PUBLIC_APP_URL", () => {
-    const link = buildVerificationLink("https://duke.com.pk/", "abc123");
-    assert.equal(link, "https://duke.com.pk/verify-email?token=abc123");
-    assert.doesNotMatch(link, /localhost/i);
+  it("builds production verification links from the Vercel frontend origin", () => {
+    const link = buildVerificationLink(
+      "https://quick-check-hub-frontend.vercel.app/",
+      "abc123"
+    );
+    assert.equal(
+      link,
+      "https://quick-check-hub-frontend.vercel.app/verify-email?token=abc123"
+    );
+    assert.doesNotMatch(link, /localhost|quickcheck-hub-backend|duke\.com\.pk/i);
   });
 
   it("templates omit secrets and include required content", () => {
