@@ -80,6 +80,13 @@ export default function ResetPassword() {
 
       const data = await res.json().catch(() => ({}));
 
+      // Rate limit is temporary — keep the form usable; do not treat as a bad link.
+      if (res.status === 429) {
+        return setMsg(
+          data.message || "Too many requests. Please try again later."
+        );
+      }
+
       if (!res.ok) {
         setLinkInvalid(true);
         return setMsg(data.message || "Invalid or expired reset link.");
