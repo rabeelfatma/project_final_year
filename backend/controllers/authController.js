@@ -414,13 +414,36 @@ exports.verifyEmail = async (req, res) => {
     const {
       notifyAdminsOfVerifiedRegistration,
     } = require("../services/registrationNotificationService");
+    const {
+      buildVerifyEmailResultRedirect,
+    } = require("../utils/verifyEmailRedirect");
 
     const deps = createDefaultDeps();
     deps.notifyAdminsOfVerifiedRegistration = notifyAdminsOfVerifiedRegistration;
 
-    const result = await verifyEmailWithToken(req.body?.token || req.query?.token, deps);
+    // Prefer body for POST; query for GET email links. Do not log the raw token.
+    const rawToken =
+      req.method === "GET" ? req.query?.token : req.body?.token || req.query?.token;
+    const result = await verifyEmailWithToken(rawToken, deps);
+
+    // Browser email clicks use GET → allowlisted frontend redirect (no token in Location).
+    if (req.method === "GET") {
+      const location = buildVerifyEmailResultRedirect(result, process.env);
+      if (location) {
+        res.setHeader("Cache-Control", "no-store");
+        return res.redirect(302, location);
+      }
+      // Fail closed if PUBLIC_APP_URL is missing/unsafe — never open-redirect.
+      return res.status(result.status).json({
+        message: result.message,
+        ...(result.code ? { code: result.code } : {}),
+        ...(result.user ? { user: result.user } : {}),
+      });
+    }
+
     return res.status(result.status).json({
       message: result.message,
+      ...(result.code ? { code: result.code } : {}),
       ...(result.user ? { user: result.user } : {}),
     });
   } catch (error) {

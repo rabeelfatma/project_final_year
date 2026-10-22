@@ -6,13 +6,38 @@ import InputField from "../../components/ui/InputField";
 import { validateEmail } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
+function statusFromQueryParam(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (value === "success") return "success";
+  if (value === "expired") return "expired";
+  if (value === "used" || value === "invalid" || value === "error") {
+    return "error";
+  }
+  return null;
+}
+
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
+  const redirectStatus = statusFromQueryParam(searchParams.get("status"));
   const tokenFromQuery = String(searchParams.get("token") || "").trim();
   const emailFromQuery = String(searchParams.get("email") || "").trim();
 
-  const [status, setStatus] = useState(tokenFromQuery ? "verifying" : "idle");
-  const [msg, setMsg] = useState("");
+  const [status, setStatus] = useState(() => {
+    if (redirectStatus === "success") return "success";
+    if (redirectStatus === "expired") return "expired";
+    if (redirectStatus === "error") return "error";
+    if (tokenFromQuery) return "verifying";
+    return "idle";
+  });
+  const [msg, setMsg] = useState(() => {
+    if (redirectStatus === "expired") {
+      return "This verification link has expired. Request a new verification email below.";
+    }
+    if (redirectStatus === "error") {
+      return "This verification link is invalid or has expired.";
+    }
+    return "";
+  });
   const [resendEmail, setResendEmail] = useState(emailFromQuery);
   const [resending, setResending] = useState(false);
   // Tracks in-flight token only; reset on cleanup so React Strict Mode remounts retry.
@@ -20,6 +45,8 @@ export default function VerifyEmail() {
   const resendLock = useRef(false);
 
   useEffect(() => {
+    // Server-owned email flow redirects here with ?status= — no token, no API call.
+    if (redirectStatus) return;
     if (!tokenFromQuery) return;
     if (verifyStarted.current === tokenFromQuery) return;
     verifyStarted.current = tokenFromQuery;
@@ -29,6 +56,8 @@ export default function VerifyEmail() {
 
     (async () => {
       try {
+        // Legacy FE links (?token=) still POST to the API. Prefer new email links
+        // that hit GET /api/auth/verify-email on the backend (no client secret).
         const res = await fetch(`${getApiBaseUrl()}/auth/verify-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -72,7 +101,7 @@ export default function VerifyEmail() {
         verifyStarted.current = null;
       }
     };
-  }, [tokenFromQuery]);
+  }, [tokenFromQuery, redirectStatus]);
 
   const handleResend = async (e) => {
     e.preventDefault();
@@ -158,7 +187,7 @@ export default function VerifyEmail() {
         {showResendForm && (
           <form onSubmit={handleResend} noValidate className="space-y-4">
             <p className="text-xs text-[var(--text-faint)] text-center">
-              {tokenFromQuery
+              {tokenFromQuery || redirectStatus
                 ? "Need a new link? Enter the email you used to register."
                 : "Enter the email you used to register to resend the verification link."}
             </p>

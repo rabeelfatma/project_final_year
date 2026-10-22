@@ -143,16 +143,17 @@ describe("QC-18A email templates and config", () => {
     );
   });
 
-  it("builds production verification links from the Vercel frontend origin", () => {
+  it("builds production verification links from the Vercel API origin", () => {
     const link = buildVerificationLink(
-      "https://quick-check-hub-frontend.vercel.app/",
+      "https://quickcheck-hub-backend.vercel.app/",
       "abc123"
     );
     assert.equal(
       link,
-      "https://quick-check-hub-frontend.vercel.app/verify-email?token=abc123"
+      "https://quickcheck-hub-backend.vercel.app/api/auth/verify-email?token=abc123"
     );
-    assert.doesNotMatch(link, /localhost|quickcheck-hub-backend|duke\.com\.pk/i);
+    assert.match(link, /\/api\/auth\/verify-email\?token=abc123/);
+    assert.doesNotMatch(link, /localhost|duke\.com\.pk/i);
   });
 
   it("templates omit secrets and include required content", () => {
@@ -267,7 +268,8 @@ describe("QC-18A verification token lifecycle (mocked stores)", () => {
           configured: true,
           apiKey: "re_secret",
           fromEmail: "QuickCheck Hub <noreply@example.com>",
-          publicAppUrl: "https://duke.com.pk",
+          publicAppUrl: "https://quick-check-hub-frontend.vercel.app",
+          publicApiUrl: "https://quickcheck-hub-backend.vercel.app",
         }),
         env: {},
         fetchImpl: async () => ({ ok: true }),
@@ -278,7 +280,10 @@ describe("QC-18A verification token lifecycle (mocked stores)", () => {
       }
     );
     assert.equal(result.ok, true);
-    assert.match(captured.text, /verify-email\?token=raw-token-value/);
+    assert.match(
+      captured.text,
+      /\/api\/auth\/verify-email\?token=raw-token-value/
+    );
     assert.doesNotMatch(captured.text, /re_secret/);
   });
 });
