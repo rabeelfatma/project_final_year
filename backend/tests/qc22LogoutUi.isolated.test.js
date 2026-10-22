@@ -51,13 +51,26 @@ describe("QC-22 logout UI contracts", () => {
     assert.match(shell, /\{headerActions\}/);
   });
 
-  it("places Logout inside the shared top-bar account menu for all roles", () => {
+  it("places Logout in the shared top-right header for all roles", () => {
     const topBar = read(topBarPath);
     assert.match(topBar, /DashboardLogoutButton/);
+    assert.match(topBar, /compact/);
     assert.match(topBar, /My Profile/);
     assert.match(topBar, /Settings/);
     assert.match(topBar, /Account menu/);
+    // Logout is a direct header control (not buried only in the account menu).
+    assert.match(
+      topBar,
+      /<\/div>\s*\)\}\s*<\/div>\s*<DashboardLogoutButton[\s\S]*compact/
+    );
     assert.doesNotMatch(topBar, /Sign Out/);
+
+    const sidebarControls = read(
+      path.join(root, "frontend/src/components/common/SidebarControls.jsx")
+    );
+    assert.doesNotMatch(sidebarControls, /DashboardLogoutButton/);
+    assert.doesNotMatch(sidebarControls, /from ["']lucide-react["'][\s\S]*LogOut/);
+    assert.doesNotMatch(sidebarControls, /onClick=\{[^}]*[Ll]og[Oo]ut/);
 
     for (const filePath of [adminDashPath, teacherDashPath, studentDashPath]) {
       const source = read(filePath);

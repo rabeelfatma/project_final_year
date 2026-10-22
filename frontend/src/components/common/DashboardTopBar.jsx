@@ -157,7 +157,7 @@ function NotificationsPanel({
 }
 
 /**
- * Top-right dashboard chrome: in-app notifications + profile menu (Profile, Settings, Logout).
+ * Top-right dashboard chrome: notifications, profile menu (Profile, Settings), and Logout.
  */
 export default function DashboardTopBar({
   role = "user",
@@ -465,19 +465,18 @@ export default function DashboardTopBar({
                 Settings
               </button>
             </div>
-            <div className="p-1.5 border-t" style={{ borderColor: "var(--border)" }}>
-              <div className="px-1">
-                <DashboardLogoutButton
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onLogout?.();
-                  }}
-                />
-              </div>
-            </div>
           </div>
         )}
       </div>
+
+      <DashboardLogoutButton
+        compact
+        onClick={() => {
+          setMenuOpen(false);
+          setNotificationsOpen(false);
+          onLogout?.();
+        }}
+      />
 
       {notificationsOpen && (
         <NotificationsPanel
