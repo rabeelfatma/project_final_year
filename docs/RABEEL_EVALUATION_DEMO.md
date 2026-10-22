@@ -19,20 +19,21 @@ Use this sequence for university evaluation. Steps marked **UNVERIFIED** need a 
 ## Demo sequence
 
 ### 1) Admin login — IMPLEMENTED / TESTED WITH MOCKS
-- Open the app login page.
-- Sign in as Admin (Rabeel).
-- Open Admin dashboard.
+- Open the **Administration Portal**: `/admin` (Production: `https://quick-check-hub-frontend.vercel.app/admin`).
+- Do **not** use shared `/login` for Admin (Teacher/Student only).
+- Sign in as Admin.
+- Open Admin dashboard (`/dashboard/admin`). Confirm top-right **Logout** is visible (live click: manual).
 
 ### 2) User management — IMPLEMENTED / TESTED WITH MOCKS
-- Add Teacher (or show demo Teacher 1 / Teacher 2 if seeded).
-- Add Student (or show demo students).
-- Confirm public signup is unavailable.
+- Approve pending Teacher/Student registrations (verify ≠ approve).
+- Add Teacher / Student via Admin-managed paths if needed.
+- Public `/signup` allows **Teacher/Student only** — never Admin.
 - Confirm Add Admin is only via authorized admin path (not public).
 
 ### 3) Teacher login — IMPLEMENTED / TESTED WITH MOCKS
-- Log out Admin.
-- Log in as Teacher 1.
-- Open Teacher dashboard.
+- Log out Admin (top-right Logout → `/admin`).
+- Open `/login`, sign in as Teacher.
+- Open Teacher dashboard. Confirm top-right **Logout**.
 
 ### 4) Create assignment — IMPLEMENTED / TESTED WITH MOCKS
 - Create an assignment with title, dates, total marks.
@@ -75,9 +76,11 @@ Use this sequence for university evaluation. Steps marked **UNVERIFIED** need a 
 |------|-------------------------------|
 | Local/full-mode academic UI flows | Ready after Mongo + accounts |
 | Protected file downloads | Code-complete; mock-tested |
-| Vercel frontend + API | Code defaults updated locally; live deploy **NOT TESTED** |
-| Real Gemini grading on Vercel | Not verified in overnight automation |
-| Real Resend email recovery | Not verified without live keys |
+| Vercel frontend + API hosts | Intended projects live; health/routes previously exercised — re-check before viva |
+| Header Logout UI (code + QC-22) | Shipped on `main`; live three-role clicks still **manual** |
+| Real Gemini grading on Vercel | Not verified unless operator validates with quota |
+| Real Resend email recovery | Not verified without approved mailbox + cleanup; do not change duke-associated sender without approval |
+| Preview DB isolation | **UNVERIFIED** |
 | Original historical student data | Not required for demo; keep separate |
 
 ---
