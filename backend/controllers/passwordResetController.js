@@ -7,7 +7,7 @@ const {
  * Rate-limit identity from the immediate peer / Express-resolved IP only.
  * Do not trust leftmost X-Forwarded-For (client-spoofable).
  * With `trust proxy` enabled in appFull, Express derives req.ip from the
- * configured hop count (Hostinger reverse proxy).
+ * configured hop count (Vercel / platform reverse proxy).
  */
 function clientIp(req) {
   const resolved = req.ip || req.socket?.remoteAddress || "unknown";
@@ -38,6 +38,7 @@ exports.confirmReset = async (req, res) => {
     const result = await confirmPasswordReset({
       token: req.body?.token,
       newPassword: req.body?.newPassword,
+      ip: clientIp(req),
     });
     return res.status(result.status).json({
       message: result.message,

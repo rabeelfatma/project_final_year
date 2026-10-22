@@ -1,5 +1,5 @@
 /**
- * Unified academic file access: local disk (Hostinger/local) or private R2 (Vercel).
+ * Unified academic file access: local disk (laptop/dev) or private R2 (Vercel).
  * MongoDB continues to store relative paths like uploads/submissions/<file>.
  */
 const fs = require("fs");
@@ -12,7 +12,7 @@ const {
 } = require("./uploadsPath");
 const objectStorage = require("./objectStorage");
 
-/** Durable uploads use R2 only on Vercel — Hostinger keeps local disk. */
+/** Durable uploads use R2 only when VERCEL=1; otherwise local disk under uploads root. */
 function usesObjectStorage() {
   return process.env.VERCEL === "1";
 }
@@ -171,7 +171,7 @@ async function persistMulterFile(file, folder) {
 
 /**
  * Materialize a stored file to a local path for libraries that require paths
- * (mammoth, xlsx, adm-zip). On Hostinger returns the real path; on R2 uses /tmp.
+ * (mammoth, xlsx, adm-zip). On local disk returns the real path; on R2 uses /tmp.
  */
 async function materialize(stored) {
   if (!usesObjectStorage()) {

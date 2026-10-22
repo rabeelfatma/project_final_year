@@ -91,8 +91,17 @@ Full live walkthrough: **MANUAL GROUP TESTING** / `NOT TESTED` until performed w
 2. Register Teacher or Student once (public signup never creates Admin).
 3. Open the verification link from the inbox — link must hit **`GET /api/auth/verify-email?token=…`** then redirect to FE `/verify-email?status=…` **without** the raw token in the Location URL.
 4. Confirm account is verified but still **pending approval** until Admin approves.
-5. For reset: request once; wait; do not spam Resend (rate limits). Confirm link uses the allowlisted frontend origin, not localhost/LAN/`duke.com.pk`.
+5. For reset: request once; wait; do not spam Resend (rate limits on request **and** confirm by IP). Confirm link uses the allowlisted frontend origin, not localhost/LAN/`duke.com.pk`.
 6. Clean up the test user only with explicit authorization.
+
+### Password-reset code status (local)
+
+| Item | Status |
+|------|--------|
+| Generic request responses, hashed single-use tokens, 15m expiry, bcrypt update | `CODE COMPLETE` / `MOCK TESTED` |
+| Request email + IP rate limits; confirm IP rate limit (separate bucket) | `CODE COMPLETE` / `MOCK TESTED` |
+| Production `PUBLIC_APP_URL` row exists on `quickcheck-hub-backend` | Configured present; exact value match to FE origin `BLOCKED` until Vercel reveal verification |
+| Real inbox delivery / end-to-end click | `BLOCKED` (isolation + mailbox + cleanup) |
 
 ### Resend notes
 
@@ -138,9 +147,12 @@ Invalid verify token (non-secret): expect `302` → `/verify-email?status=invali
 |------|--------|
 | Preview Mongo ≠ `quickcheck_rabeel_demo` | `UNVERIFIED` |
 | Real inbox verify/reset | `BLOCKED` until isolation + mailbox + cleanup approval |
+| Production `PUBLIC_APP_URL` exact value | `BLOCKED` pending Vercel reveal (row present; do not change env) |
 | Production From-address / duke domain | Leave env unchanged until approved |
 | Teacher/Student live Logout clicks | `NOT TESTED` (manual) |
 | Live Gemini on Production | `NOT TESTED` unless operator validates |
+| Durable Vercel uploads (R2 smoke) | `UNVERIFIED` without authorized upload/download |
 | Phone / LAN access | Optional `npm run dev:lan`; `NOT TESTED` by default |
+| Platform `trust proxy` / client IP topology | Documented; Production acceptance `NOT TESTED` |
 | Atlas network/permissions review | Operator / `UNVERIFIED` |
 | FYP report, diagrams, slides, viva | Outside this repo sprint |
