@@ -18,8 +18,8 @@ export default function DashboardLogoutButton({
       title={label}
       className={
         compact
-          ? "qc-btn qc-btn-danger !min-h-9 !h-9 !px-2.5 sm:!px-3 !text-xs !gap-1.5 shrink-0"
-          : "qc-btn qc-btn-danger qc-btn-block !min-h-9 !px-3 sm:!px-3.5 !text-xs"
+          ? "qc-btn qc-btn-secondary !min-h-9 !h-9 !px-2.5 sm:!px-3 !text-xs !gap-1.5 shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          : "qc-btn qc-btn-secondary qc-btn-block !min-h-9 !px-3 sm:!px-3.5 !text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
       }
     >
       <LogOut size={15} aria-hidden="true" />
