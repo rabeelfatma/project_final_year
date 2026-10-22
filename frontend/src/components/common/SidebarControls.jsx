@@ -3,7 +3,7 @@ import { Bot, MessageCircle } from "lucide-react";
 
 /**
  * Sidebar utility actions shared by Admin / Teacher / Student.
- * Profile, Settings, Notifications, and Logout live in the top bar.
+ * Profile, Settings, and Notifications live in the top bar (not here).
  */
 export default function SidebarControls() {
   return (
