@@ -13,6 +13,8 @@ const {
   GENERIC_REQUEST_MESSAGE,
   SERVICE_UNAVAILABLE_MESSAGE,
   EMAIL_RATE_LIMIT,
+  IP_RATE_LIMIT,
+  CONFIRM_IP_RATE_LIMIT,
   TOKEN_TTL_MS,
 } = require("../services/passwordResetService");
 const {
@@ -289,6 +291,23 @@ describe("requestPasswordReset", () => {
     assert.equal(blocked.status, 429);
   });
 
+  it("rate-limits by IP on request", async () => {
+    const d = deps();
+    for (let i = 0; i < IP_RATE_LIMIT; i++) {
+      const r = await requestPasswordReset(
+        { email: `u${i}@example.com`, ip: "203.0.113.50" },
+        d
+      );
+      assert.equal(r.ok, true);
+    }
+    const blocked = await requestPasswordReset(
+      { email: "extra@example.com", ip: "203.0.113.50" },
+      d
+    );
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.status, 429);
+  });
+
   it("fails closed when email is not configured", async () => {
     const result = await requestPasswordReset(
       { email: "known@example.com", ip: "1.2.3.4" },
@@ -483,6 +502,61 @@ describe("confirmPasswordReset", () => {
       }
     );
     assert.equal(reviveAttempt.ok, false);
+  });
+
+  it("rate-limits confirm by IP without consuming a valid token", async () => {
+    const raw = generateRawResetToken();
+    const tokenStore = createTokenStore();
+    await tokenStore.create({
+      user: "user-1",
+      email: "known@example.com",
+      tokenHash: hashResetToken(raw),
+      expiresAt: new Date(Date.now() + 600000),
+      usedAt: null,
+    });
+    const rateStore = createMemoryRateLimitStore();
+    const deps = {
+      User: {
+        findOneAndUpdate: async () => {
+          throw new Error("must not update while rate-limited");
+        },
+      },
+      PasswordResetToken: tokenStore,
+      AuthRateLimit: rateStore,
+      sendPasswordResetEmail: async () => ({ ok: true }),
+      getResetEmailConfig: () => ({ configured: true }),
+      env: {},
+      now: () => new Date("2026-10-12T15:00:00Z"),
+    };
+    for (let i = 0; i < CONFIRM_IP_RATE_LIMIT; i++) {
+      const r = await confirmPasswordReset(
+        { token: "z".repeat(64), newPassword: "NewPass12!", ip: "198.51.100.7" },
+        deps
+      );
+      assert.equal(r.status, 400);
+    }
+    const blocked = await confirmPasswordReset(
+      { token: raw, newPassword: "NewPass12!", ip: "198.51.100.7" },
+      deps
+    );
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.status, 429);
+    assert.equal(tokenStore.tokens[0].usedAt, null);
+
+    const otherIp = await confirmPasswordReset(
+      { token: raw, newPassword: "NewPass12!", ip: "198.51.100.8" },
+      {
+        ...deps,
+        User: {
+          findOneAndUpdate: async (filter, update) => ({
+            _id: filter._id,
+            password: update.$set.password,
+          }),
+        },
+      }
+    );
+    assert.equal(otherIp.ok, true);
+    assert.ok(tokenStore.tokens[0].usedAt);
   });
 
   it("rejects invalid token", async () => {
@@ -842,11 +916,10 @@ describe("proxy/IP rate-limit identity", () => {
     assert.equal(noExpressIp, "192.0.2.10");
   });
 
-  it("documents Hostinger trust-proxy dependency (topology acceptance pending)", () => {
-    // appFull sets trust proxy = 1 so Express derives req.ip from one hop.
-    // If Hostinger overwrites X-Forwarded-For with $remote_addr, spoofing fails.
-    // If it only appends client-supplied XFF, Express may trust a spoofed leftmost
-    // value — production acceptance must verify the proxy header mode.
+  it("documents trust-proxy hop count for platform reverse proxy", () => {
+    // appFull sets trust proxy = 1 so Express derives req.ip from one hop (Vercel).
+    // Production acceptance should confirm the platform overwrites client XFF;
+    // Hostinger is retired and is not the intended topology.
     const appFull = require("fs").readFileSync(
       path.resolve(__dirname, "../appFull.js"),
       "utf8"

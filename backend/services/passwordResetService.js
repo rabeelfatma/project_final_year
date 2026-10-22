@@ -14,6 +14,8 @@ const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 const EMAIL_RATE_LIMIT = 5;
 const IP_RATE_LIMIT = 20;
+/** Separate bucket from request so reset emails cannot starve confirm attempts. */
+const CONFIRM_IP_RATE_LIMIT = 20;
 
 const GENERIC_REQUEST_MESSAGE =
   "If an account exists for that email, password reset instructions will be sent shortly.";
@@ -146,11 +148,24 @@ async function requestPasswordReset({ email, ip }, deps = createDefaultDeps()) {
 
 /**
  * Confirm reset with raw token + new password. Atomically consumes the token.
+ * IP rate limit runs first so probing invalid tokens still counts against the window.
  */
 async function confirmPasswordReset(
-  { token, newPassword },
+  { token, newPassword, ip },
   deps = createDefaultDeps()
 ) {
+  const confirmIpKey = `pwdreset:confirm:ip:${ip || "unknown"}`;
+  const confirmIpLimit = await assertWithinRateLimit(
+    deps.AuthRateLimit,
+    confirmIpKey,
+    CONFIRM_IP_RATE_LIMIT,
+    DEFAULT_WINDOW_MS,
+    deps.now()
+  );
+  if (!confirmIpLimit.ok) {
+    return { ok: false, status: 429, message: confirmIpLimit.message };
+  }
+
   const rawToken = typeof token === "string" ? token.trim() : "";
   if (!rawToken || rawToken.length < 32) {
     return { ok: false, status: 400, message: "Invalid or expired reset link." };
@@ -227,6 +242,7 @@ module.exports = {
   TOKEN_TTL_MS,
   EMAIL_RATE_LIMIT,
   IP_RATE_LIMIT,
+  CONFIRM_IP_RATE_LIMIT,
   GENERIC_REQUEST_MESSAGE,
   SERVICE_UNAVAILABLE_MESSAGE,
   hashResetToken,

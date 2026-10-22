@@ -76,10 +76,13 @@ Use this sequence for university evaluation. Steps marked **UNVERIFIED** need a 
 |------|-------------------------------|
 | Local/full-mode academic UI flows | Ready after Mongo + accounts |
 | Protected file downloads | Code-complete; mock-tested |
+| Password-reset token flow + confirm IP rate limit | Code-complete; mock-tested (no real email in CI) |
 | Vercel frontend + API hosts | Intended projects live; health/routes previously exercised — re-check before viva |
 | Header Logout UI (code + QC-22) | Shipped on `main`; live three-role clicks still **manual** |
 | Real Gemini grading on Vercel | Not verified unless operator validates with quota |
 | Real Resend email recovery | Not verified without approved mailbox + cleanup; do not change duke-associated sender without approval |
+| Production `PUBLIC_APP_URL` exact value | Present on backend project; exact match to FE origin pending reveal verification |
+| Durable Vercel uploads (R2) | Adapter present; live persistence **UNVERIFIED** without smoke |
 | Preview DB isolation | **UNVERIFIED** |
 | Original historical student data | Not required for demo; keep separate |
 

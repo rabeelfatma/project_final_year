@@ -63,6 +63,7 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Production API/CORS defaults for the Vercel frontend origin; fail-closed on loopback, private LAN, backend host, and retired `duke.com.pk` in production public URLs.
 - Shared top-right Logout for Admin / Teacher / Student (QC-22 isolated contracts).
 - Resend-only transactional email path; stronger signup/reset password policy; protected artifact/download path checks (mocked suites).
+- Password-reset confirm IP rate limit (separate from request limits) + isolated regression coverage.
 
 ### ACTIVE
 - Operator three-role Logout click-through on Production.
@@ -71,6 +72,7 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 ### BLOCKED
 - Preview Mongo isolation vs Production DB `quickcheck_rabeel_demo` — **UNVERIFIED**.
 - Real inbox verify/reset until isolation + unused mailbox + cleanup approval.
+- Production `PUBLIC_APP_URL` exact value vs FE origin — row present; reveal/`LIVE VERIFIED` pending operator Vercel verification (do not change env).
 - Changing Production `PASSWORD_RESET_FROM_EMAIL` (historically duke-associated) — needs separate approval.
 - Orphan Vercel project `frontend` CI noise — do not modify that project in-repo.
 
