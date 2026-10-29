@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
+import { createPortal } from 'react-dom';
+
 import { useNavigate } from 'react-router-dom';
 
 import {
@@ -241,17 +243,24 @@ export default function StudentDashboard() {
 
 
   const showAlreadySubmittedNotice = () => {
+    // Compact floating toast only — never a dashboard banner.
     setSubmitNotice({
-      title: "You have already submitted this assignment.",
-      detail: "Your submission is recorded. You can view its current status below.",
+      id: Date.now(),
+      title: "Already submitted.",
+      detail: "Your submission is saved.",
     });
   };
 
   useEffect(() => {
     if (!submitNotice) return undefined;
-    const timer = setTimeout(() => setSubmitNotice(null), 5200);
+    const timer = setTimeout(() => setSubmitNotice(null), 3500);
     return () => clearTimeout(timer);
   }, [submitNotice]);
+
+  // Do not keep the toast after leaving the current dashboard view.
+  useEffect(() => {
+    setSubmitNotice(null);
+  }, [activeTab, shellView]);
 
   const handleFileUpload = async (e, asgnId) => {
 
@@ -599,24 +608,6 @@ export default function StudentDashboard() {
           <SettingsPage role="student" onBack={() => setShellView('main')} />
         ) : (
         <>
-        {submitNotice && (
-          <div className="qc-info-toast" role="status" aria-live="polite">
-            <div className="qc-info-toast__body">
-              <p className="qc-info-toast__title">{submitNotice.title}</p>
-              {submitNotice.detail ? (
-                <p className="qc-info-toast__detail">{submitNotice.detail}</p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="qc-info-toast__close"
-              aria-label="Dismiss notice"
-              onClick={() => setSubmitNotice(null)}
-            >
-              <X size={14} aria-hidden="true" />
-            </button>
-          </div>
-        )}
         <header className="mb-6 md:mb-10 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="qc-page-title">Dashboard</h1>
@@ -1306,6 +1297,32 @@ export default function StudentDashboard() {
         <AIChatbot role="student" showTrigger={false} />
 
         <MessagePanel role="student" showTrigger={false} />
+
+        {submitNotice &&
+          createPortal(
+            <div
+              className="qc-info-toast qc-info-toast--float"
+              role="status"
+              aria-live="polite"
+              data-testid="qc-already-submitted-toast"
+            >
+              <div className="qc-info-toast__body">
+                <p className="qc-info-toast__title">{submitNotice.title}</p>
+                {submitNotice.detail ? (
+                  <p className="qc-info-toast__detail">{submitNotice.detail}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="qc-info-toast__close"
+                aria-label="Dismiss notice"
+                onClick={() => setSubmitNotice(null)}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </div>,
+            document.body
+          )}
 
     </DashboardNavShell>
 
