@@ -511,7 +511,7 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
         assert.match(submissions[0].answerText, /Unit testing/i);
         const submissionId = submissions[0]._id;
 
-        // Duplicate blocked
+        // Duplicate blocked (resubmission not supported)
         const dup = await request(
           port,
           "POST",
@@ -519,6 +519,9 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
           { body: { answerText: "duplicate attempt should fail" } }
         );
         assert.equal(dup.status, 400);
+        assert.equal(dup.json.code, "ALREADY_SUBMITTED");
+        assert.match(String(dup.json.message || ""), /already submitted/i);
+        assert.equal(submissions.length, 1);
 
         // 8. Teacher retrieves submission
         authedUser = {

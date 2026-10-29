@@ -215,6 +215,23 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       return res.status(400).json({ message: "The submission deadline has passed." });
     }
 
+    // Resubmission is not supported: block duplicates before writing any new file.
+    const existingSubmission = await Submission.findOne({
+      assignment: assignment._id,
+      student: req.user._id,
+    });
+    if (existingSubmission) {
+      if (req.file?.filename) {
+        await storedFiles.remove(`uploads/submissions/${req.file.filename}`).catch(() => {});
+      } else if (req.file?.path && fs.existsSync(req.file.path)) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+      }
+      return res.status(400).json({
+        message: "You have already submitted this assignment.",
+        code: "ALREADY_SUBMITTED",
+      });
+    }
+
     const answerText = String(req.body?.answerText || req.body?.text || "").trim();
     if (!req.file && answerText && answerText.length < 3) {
       return res.status(400).json({
@@ -245,22 +262,6 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       });
     }
 
-    const exists = await Submission.findOne({
-      assignment: assignment._id,
-      student: req.user._id,
-    });
-    if (exists) {
-      if (createdTextStored) {
-        await storedFiles.remove(createdTextStored).catch(() => {});
-      } else if (storedFile.path && !storedFiles.usesObjectStorage()) {
-        try {
-          if (fs.existsSync(storedFile.path)) await fs.promises.unlink(storedFile.path);
-        } catch (_) {}
-      } else if (storedFile.filename && storedFiles.usesObjectStorage() && req.file) {
-        await storedFiles.remove(`uploads/submissions/${storedFile.filename}`).catch(() => {});
-      }
-      return res.status(400).json({ message: "Already submitted" });
-    }
     if (!assignment.teacher) {
       if (createdTextStored) {
         await storedFiles.remove(createdTextStored).catch(() => {});

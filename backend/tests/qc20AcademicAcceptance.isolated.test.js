@@ -92,7 +92,7 @@ describe("QC-20 publish and unpublished-grade gates", () => {
     assert.match(dash, /s\.status === ['"]PUBLISHED['"]/);
     assert.doesNotMatch(dash, /Short text answer \(demo-friendly\)/i);
     assert.doesNotMatch(dash, /answerTextDraft|Submit text answer/);
-    assert.match(dash, /Already submitted/);
+    assert.match(dash, /You have already submitted this assignment\./);
     assert.match(dash, /canSubmit === true/);
     assert.doesNotMatch(
       dash,

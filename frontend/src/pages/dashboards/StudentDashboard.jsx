@@ -68,6 +68,8 @@ export default function StudentDashboard() {
 
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
+  const [submitNotice, setSubmitNotice] = useState(null);
+
 
 
   const userName = localStorage.getItem("userName") || "Student";
@@ -238,20 +240,47 @@ export default function StudentDashboard() {
 
 
 
+  const showAlreadySubmittedNotice = () => {
+    setSubmitNotice({
+      title: "You have already submitted this assignment.",
+      detail: "Your submission is recorded. You can view its current status below.",
+    });
+  };
+
+  useEffect(() => {
+    if (!submitNotice) return undefined;
+    const timer = setTimeout(() => setSubmitNotice(null), 5200);
+    return () => clearTimeout(timer);
+  }, [submitNotice]);
+
   const handleFileUpload = async (e, asgnId) => {
 
-    const file = e.target.files[0];
+    const input = e.target;
+    const file = input.files?.[0];
 
     if (!file) return;
 
-
+    const current = assignments.find((item) => String(item._id) === String(asgnId));
+    const alreadySubmitted = Boolean(
+      current &&
+      (current.canSubmit === false ||
+        current.isSubmitted ||
+        current.submissionId ||
+        ["submitted", "published"].includes(String(current.status || "").toLowerCase()))
+    );
+    // Backend does not allow resubmission while a submission exists.
+    if (alreadySubmitted && current?.canSubmit !== true) {
+      input.value = "";
+      showAlreadySubmittedNotice();
+      return;
+    }
 
     const fileExt = file.name.split('.').pop().toLowerCase();
 
     if (!allowedExtensions.includes(fileExt)) {
 
       alert(`Error: .${fileExt} files are not allowed.`);
-
+      input.value = "";
       return;
 
     }
@@ -317,12 +346,23 @@ export default function StudentDashboard() {
 
     } catch (err) {
 
+      const errCode = err.response?.data?.code;
       const errMsg = err.response?.data?.message || "Submission Failed: Check if you are logged in.";
+      const isDuplicate =
+        errCode === "ALREADY_SUBMITTED" ||
+        /already submitted/i.test(String(errMsg));
 
-      alert(errMsg);
+      if (isDuplicate) {
+        showAlreadySubmittedNotice();
+        await fetchAllData();
+      } else {
+        alert(errMsg);
+      }
 
       setUploadStatus({ id: null, loading: false, success: false });
 
+    } finally {
+      input.value = "";
     }
 
   };
@@ -559,6 +599,24 @@ export default function StudentDashboard() {
           <SettingsPage role="student" onBack={() => setShellView('main')} />
         ) : (
         <>
+        {submitNotice && (
+          <div className="qc-info-toast" role="status" aria-live="polite">
+            <div className="qc-info-toast__body">
+              <p className="qc-info-toast__title">{submitNotice.title}</p>
+              {submitNotice.detail ? (
+                <p className="qc-info-toast__detail">{submitNotice.detail}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="qc-info-toast__close"
+              aria-label="Dismiss notice"
+              onClick={() => setSubmitNotice(null)}
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <header className="mb-6 md:mb-10 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="qc-page-title">Dashboard</h1>
@@ -602,7 +660,7 @@ export default function StudentDashboard() {
 
                     assignments.slice(0, 5).map(asgn => (
 
-                      <AssignmentRow key={asgn._id} asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} />
+                      <AssignmentRow key={asgn._id} asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} uploadStatus={uploadStatus} />
 
                     ))
 
@@ -1060,7 +1118,7 @@ export default function StudentDashboard() {
 
                  )}
 
-                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} onDeleteSubmission={asgn.submissionId ? async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } } : null} /></div>
+                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} uploadStatus={uploadStatus} onDeleteSubmission={asgn.submissionId ? async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } } : null} /></div>
 
                  </div>
 
@@ -1218,7 +1276,7 @@ export default function StudentDashboard() {
 
                 {(selectedAsgn.isSubmitted || selectedAsgn.submissionId) && !selectedAsgn.marks && (
                   <p className="mt-4 text-center text-xs theme-muted font-semibold">
-                    Already submitted — awaiting evaluation
+                    Submitted — awaiting evaluation
                   </p>
                 )}
 
@@ -1299,19 +1357,22 @@ function StatCard({ label, value, color, icon, sub }) {
 
 
 
-function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus, onDeleteSubmission }) {
+function AssignmentRow({ asgn, onSelect, onUpload, onAlreadySubmitted, uploadStatus, onDeleteSubmission }) {
 
   const status = String(asgn.status || "").toLowerCase();
   const isSubmitted = Boolean(asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status));
   const isPublished = status === "published" || (asgn.marks !== undefined && asgn.marks !== null && isSubmitted);
-  // Backend canSubmit is authoritative; no silent resubmit when false.
+  // Backend canSubmit is authoritative; resubmission is not supported while a submission exists.
   const canUpload = asgn.canSubmit === true && !isSubmitted;
   const availability = String(asgn.availabilityLabel || "").trim();
   const dueLabel = asgn.deadline?.split?.("T")?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : "N/A");
   const statusMeta = (() => {
     if (isPublished) return "Published";
     if (isSubmitted) {
-      if (availability && !/^open$/i.test(availability)) return availability;
+      if (/awaiting evaluation/i.test(availability)) return "Submitted — awaiting evaluation";
+      if (availability && !/^open$/i.test(availability) && !/^submitted$/i.test(availability)) {
+        return availability.startsWith("Submitted") ? availability : `Submitted — ${availability}`;
+      }
       return "Submitted — awaiting evaluation";
     }
     if (availability && !/^open$/i.test(availability)) return availability;
@@ -1330,7 +1391,7 @@ function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus, onDeleteSubmiss
     }
     if (canUpload) return "Upload";
     if (isPublished) return "Published";
-    if (isSubmitted) return "Already submitted";
+    if (isSubmitted) return "Submitted";
     return availability || "Closed";
   })();
 
@@ -1365,6 +1426,16 @@ function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus, onDeleteSubmiss
               {actionLabel}
               <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />
             </label>
+          ) : isSubmitted ? (
+            <button
+              type="button"
+              className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted hover:border-[var(--accent)] border border-transparent transition-all"
+              aria-label="Submission status"
+              title="Submission already recorded"
+              onClick={() => onAlreadySubmitted?.(asgn)}
+            >
+              {actionLabel}
+            </button>
           ) : (
             <span
               className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted"
