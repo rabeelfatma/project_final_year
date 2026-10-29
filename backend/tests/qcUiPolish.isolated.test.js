@@ -184,26 +184,25 @@ describe("QC UI polish contracts", () => {
     assert.match(topBar, /Clear all/);
   });
 
-  it("student assignment cards show Submitted status and compact floating duplicate toast", () => {
+  it("student assignment cards show Submitted status and per-card inline duplicate notice", () => {
     const student = read("frontend/src/pages/dashboards/StudentDashboard.jsx");
     const css = read("frontend/src/index.css");
     const routes = read("backend/routes/studentRoutes.js");
     assert.match(student, /Already submitted\./);
-    assert.match(student, /Your submission is saved\./);
+    assert.match(student, /Your submission is saved\. You don/);
     assert.match(student, /onAlreadySubmitted/);
-    assert.match(student, /createPortal/);
-    assert.match(student, /qc-info-toast--float/);
-    assert.match(student, /qc-already-submitted-toast/);
+    assert.match(student, /showDuplicateNotice/);
+    assert.match(student, /duplicateNoticeId/);
+    assert.match(student, /qc-assignment-inline-notice/);
+    assert.match(student, /qc-already-submitted-inline/);
     assert.match(student, /canSubmit === true/);
     assert.match(student, /Submitted — awaiting evaluation/);
     assert.match(student, /qc-assignments-toolbar/);
-    assert.doesNotMatch(
-      student,
-      /Your submission is recorded\. You can view its current status below/
-    );
+    assert.doesNotMatch(student, /qc-info-toast--float/);
+    assert.doesNotMatch(student, /createPortal/);
     assert.doesNotMatch(student, /Short text answer \(demo-friendly\)/i);
-    assert.match(css, /\.qc-info-toast--float/);
-    assert.match(css, /position:\s*fixed/);
+    assert.match(css, /\.qc-assignment-inline-notice/);
+    assert.doesNotMatch(css, /\.qc-info-toast--float/);
     assert.match(routes, /ALREADY_SUBMITTED/);
     assert.match(routes, /You have already submitted this assignment\./);
   });

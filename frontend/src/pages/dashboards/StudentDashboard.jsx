@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 
-import { createPortal } from 'react-dom';
-
 import { useNavigate } from 'react-router-dom';
 
 import {
@@ -18,7 +16,7 @@ import {
 
   Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp,
 
-  Sparkles, Trash2, ListChecks
+  Sparkles, Trash2, ListChecks, Info
 
 } from 'lucide-react';
 
@@ -70,7 +68,8 @@ export default function StudentDashboard() {
 
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
-  const [submitNotice, setSubmitNotice] = useState(null);
+  // Assignment id for which the inline duplicate-submit notice is visible (null = hidden).
+  const [duplicateNoticeId, setDuplicateNoticeId] = useState(null);
 
 
 
@@ -242,24 +241,16 @@ export default function StudentDashboard() {
 
 
 
-  const showAlreadySubmittedNotice = () => {
-    // Compact floating toast only — never a dashboard banner.
-    setSubmitNotice({
-      id: Date.now(),
-      title: "Already submitted.",
-      detail: "Your submission is saved.",
-    });
+  const showAlreadySubmittedNotice = (assignmentId) => {
+    const id = assignmentId?._id || assignmentId;
+    if (!id) return;
+    // One inline notice on the matching card only — never a banner or floating toast.
+    setDuplicateNoticeId(String(id));
   };
 
+  // Clear when leaving the current dashboard view / tab.
   useEffect(() => {
-    if (!submitNotice) return undefined;
-    const timer = setTimeout(() => setSubmitNotice(null), 3500);
-    return () => clearTimeout(timer);
-  }, [submitNotice]);
-
-  // Do not keep the toast after leaving the current dashboard view.
-  useEffect(() => {
-    setSubmitNotice(null);
+    setDuplicateNoticeId(null);
   }, [activeTab, shellView]);
 
   const handleFileUpload = async (e, asgnId) => {
@@ -280,7 +271,7 @@ export default function StudentDashboard() {
     // Backend does not allow resubmission while a submission exists.
     if (alreadySubmitted && current?.canSubmit !== true) {
       input.value = "";
-      showAlreadySubmittedNotice();
+      showAlreadySubmittedNotice(asgnId);
       return;
     }
 
@@ -347,6 +338,9 @@ export default function StudentDashboard() {
           : previous
       );
 
+      setDuplicateNoticeId((previous) =>
+        previous && String(previous) === String(asgnId) ? null : previous
+      );
       setUploadStatus({ id: asgnId, loading: false, success: true });
 
       await fetchAllData();
@@ -362,7 +356,7 @@ export default function StudentDashboard() {
         /already submitted/i.test(String(errMsg));
 
       if (isDuplicate) {
-        showAlreadySubmittedNotice();
+        showAlreadySubmittedNotice(asgnId);
         await fetchAllData();
       } else {
         alert(errMsg);
@@ -651,7 +645,16 @@ export default function StudentDashboard() {
 
                     assignments.slice(0, 5).map(asgn => (
 
-                      <AssignmentRow key={asgn._id} asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} uploadStatus={uploadStatus} />
+                      <AssignmentRow
+                        key={asgn._id}
+                        asgn={asgn}
+                        onSelect={setSelectedAsgn}
+                        onUpload={handleFileUpload}
+                        onAlreadySubmitted={showAlreadySubmittedNotice}
+                        showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)}
+                        onDismissDuplicate={() => setDuplicateNoticeId(null)}
+                        uploadStatus={uploadStatus}
+                      />
 
                     ))
 
@@ -1109,7 +1112,7 @@ export default function StudentDashboard() {
 
                  )}
 
-                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} uploadStatus={uploadStatus} onDeleteSubmission={asgn.submissionId ? async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } } : null} /></div>
+                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)} onDismissDuplicate={() => setDuplicateNoticeId(null)} uploadStatus={uploadStatus} onDeleteSubmission={asgn.submissionId ? async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); setDuplicateNoticeId((previous) => previous && String(previous) === String(asgn._id) ? null : previous); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } } : null} /></div>
 
                  </div>
 
@@ -1298,32 +1301,6 @@ export default function StudentDashboard() {
 
         <MessagePanel role="student" showTrigger={false} />
 
-        {submitNotice &&
-          createPortal(
-            <div
-              className="qc-info-toast qc-info-toast--float"
-              role="status"
-              aria-live="polite"
-              data-testid="qc-already-submitted-toast"
-            >
-              <div className="qc-info-toast__body">
-                <p className="qc-info-toast__title">{submitNotice.title}</p>
-                {submitNotice.detail ? (
-                  <p className="qc-info-toast__detail">{submitNotice.detail}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className="qc-info-toast__close"
-                aria-label="Dismiss notice"
-                onClick={() => setSubmitNotice(null)}
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
-            </div>,
-            document.body
-          )}
-
     </DashboardNavShell>
 
   );
@@ -1374,7 +1351,16 @@ function StatCard({ label, value, color, icon, sub }) {
 
 
 
-function AssignmentRow({ asgn, onSelect, onUpload, onAlreadySubmitted, uploadStatus, onDeleteSubmission }) {
+function AssignmentRow({
+  asgn,
+  onSelect,
+  onUpload,
+  onAlreadySubmitted,
+  showDuplicateNotice = false,
+  onDismissDuplicate,
+  uploadStatus,
+  onDeleteSubmission,
+}) {
 
   const status = String(asgn.status || "").toLowerCase();
   const isSubmitted = Boolean(asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status));
@@ -1414,7 +1400,9 @@ function AssignmentRow({ asgn, onSelect, onUpload, onAlreadySubmitted, uploadSta
 
   return (
 
-    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
+    <div className="flex flex-col gap-2 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
+
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
 
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
 
@@ -1487,6 +1475,33 @@ function AssignmentRow({ asgn, onSelect, onUpload, onAlreadySubmitted, uploadSta
           )}
 
         </div>
+
+      </div>
+
+      {showDuplicateNotice ? (
+        <div
+          className="qc-assignment-inline-notice"
+          role="status"
+          aria-live="polite"
+          data-testid="qc-already-submitted-inline"
+        >
+          <Info size={14} className="qc-assignment-inline-notice__icon" aria-hidden="true" />
+          <div className="qc-assignment-inline-notice__body">
+            <p className="qc-assignment-inline-notice__title">Already submitted.</p>
+            <p className="qc-assignment-inline-notice__detail">
+              Your submission is saved. You don&apos;t need to submit it again.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="qc-assignment-inline-notice__close"
+            aria-label="Dismiss notice"
+            onClick={() => onDismissDuplicate?.()}
+          >
+            <X size={12} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
 
     </div>
 
