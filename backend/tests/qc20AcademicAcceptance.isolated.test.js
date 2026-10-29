@@ -93,7 +93,10 @@ describe("QC-20 publish and unpublished-grade gates", () => {
     assert.doesNotMatch(dash, /Short text answer \(demo-friendly\)/i);
     assert.doesNotMatch(dash, /answerTextDraft|Submit text answer/);
     assert.match(dash, /Already submitted\./);
+    assert.match(dash, /You do not need to submit it again\./);
+    assert.match(dash, /qc-assignment-status-anchor/);
     assert.match(dash, /qc-assignment-inline-notice/);
+    assert.match(dash, /setTimeout\(\(\) => setDuplicateNoticeId\(null\), 3000\)/);
     assert.doesNotMatch(dash, /qc-info-toast--float/);
     assert.match(dash, /canSubmit === true/);
     assert.doesNotMatch(

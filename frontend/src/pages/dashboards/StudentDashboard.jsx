@@ -244,7 +244,7 @@ export default function StudentDashboard() {
   const showAlreadySubmittedNotice = (assignmentId) => {
     const id = assignmentId?._id || assignmentId;
     if (!id) return;
-    // One inline notice on the matching card only — never a banner or floating toast.
+    // One anchored notice on the matching card only — never a banner or global toast.
     setDuplicateNoticeId(String(id));
   };
 
@@ -252,6 +252,13 @@ export default function StudentDashboard() {
   useEffect(() => {
     setDuplicateNoticeId(null);
   }, [activeTab, shellView]);
+
+  // Auto-dismiss after 3s; clear timer on dismiss, assignment change, or unmount.
+  useEffect(() => {
+    if (!duplicateNoticeId) return undefined;
+    const timer = setTimeout(() => setDuplicateNoticeId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [duplicateNoticeId]);
 
   const handleFileUpload = async (e, asgnId) => {
 
@@ -1398,11 +1405,34 @@ function AssignmentRow({
     return availability || "Closed";
   })();
 
+  const duplicateNotice = showDuplicateNotice ? (
+    <div
+      className="qc-assignment-inline-notice"
+      role="status"
+      aria-live="polite"
+      data-testid="qc-already-submitted-inline"
+    >
+      <Info size={14} className="qc-assignment-inline-notice__icon" aria-hidden="true" />
+      <div className="qc-assignment-inline-notice__body">
+        <p className="qc-assignment-inline-notice__title">Already submitted.</p>
+        <p className="qc-assignment-inline-notice__detail">
+          Your submission is saved. You do not need to submit it again.
+        </p>
+      </div>
+      <button
+        type="button"
+        className="qc-assignment-inline-notice__close"
+        aria-label="Dismiss notice"
+        onClick={() => onDismissDuplicate?.()}
+      >
+        <X size={12} aria-hidden="true" />
+      </button>
+    </div>
+  ) : null;
+
   return (
 
-    <div className="flex flex-col gap-2 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
-
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+    <div className="qc-assignment-card flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
 
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
 
@@ -1432,15 +1462,18 @@ function AssignmentRow({
               <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />
             </label>
           ) : isSubmitted ? (
-            <button
-              type="button"
-              className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted hover:border-[var(--accent)] border border-transparent transition-all"
-              aria-label="Submission status"
-              title="Submission already recorded"
-              onClick={() => onAlreadySubmitted?.(asgn)}
-            >
-              {actionLabel}
-            </button>
+            <div className="qc-assignment-status-anchor">
+              {duplicateNotice}
+              <button
+                type="button"
+                className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted hover:border-[var(--accent)] border border-transparent transition-all"
+                aria-label="Submission status"
+                title="Submission already recorded"
+                onClick={() => onAlreadySubmitted?.(asgn)}
+              >
+                {actionLabel}
+              </button>
+            </div>
           ) : (
             <span
               className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted"
@@ -1475,33 +1508,6 @@ function AssignmentRow({
           )}
 
         </div>
-
-      </div>
-
-      {showDuplicateNotice ? (
-        <div
-          className="qc-assignment-inline-notice"
-          role="status"
-          aria-live="polite"
-          data-testid="qc-already-submitted-inline"
-        >
-          <Info size={14} className="qc-assignment-inline-notice__icon" aria-hidden="true" />
-          <div className="qc-assignment-inline-notice__body">
-            <p className="qc-assignment-inline-notice__title">Already submitted.</p>
-            <p className="qc-assignment-inline-notice__detail">
-              Your submission is saved. You don&apos;t need to submit it again.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="qc-assignment-inline-notice__close"
-            aria-label="Dismiss notice"
-            onClick={() => onDismissDuplicate?.()}
-          >
-            <X size={12} aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
 
     </div>
 
