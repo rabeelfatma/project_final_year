@@ -126,13 +126,17 @@ describe("QC UI polish contracts", () => {
     const ai = read("frontend/src/components/common/AIChatbot.jsx");
     const student = read("frontend/src/pages/dashboards/StudentDashboard.jsx");
     assert.match(css, /\.qc-search-field\s*\{/);
-    assert.match(css, /\.qc-search-field input[\s\S]*border:\s*0\s*!important/);
+    assert.match(css, /\.qc-search-field__input/);
+    assert.match(css, /appearance:\s*none\s*!important/);
     assert.match(css, /\.qc-search-clear/);
+    assert.match(css, /\.qc-assignments-toolbar/);
     assert.match(searchField, /qc-search-field/);
+    assert.match(searchField, /qc-search-field__input/);
     assert.match(searchField, /Clear search/);
     assert.match(messages, /SearchField/);
     assert.match(ai, /SearchField/);
     assert.match(student, /SearchField/);
+    assert.match(student, /qc-assignments-toolbar/);
     assert.doesNotMatch(student, /bg-slate-900 p-3 rounded-xl border border-slate-800/);
   });
 
@@ -178,5 +182,16 @@ describe("QC UI polish contracts", () => {
     assert.match(topBar, /qc-filter-chip--compact/);
     assert.match(topBar, /Mark all read/);
     assert.match(topBar, /Clear all/);
+  });
+
+  it("student assignment cards hide Open label and show Already submitted from API state", () => {
+    const student = read("frontend/src/pages/dashboards/StudentDashboard.jsx");
+    assert.match(student, /Already submitted/);
+    assert.match(student, /canSubmit === true/);
+    assert.match(student, /Submitted — awaiting evaluation/);
+    assert.match(student, /qc-assignments-toolbar/);
+    assert.doesNotMatch(student, /Short text answer \(demo-friendly\)/i);
+    assert.doesNotMatch(student, /\(isDone \? asgn\.status : 'Open'\)/);
+    assert.match(student, /\/\^open\$\/i/);
   });
 });

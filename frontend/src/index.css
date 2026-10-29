@@ -3818,6 +3818,7 @@ button,
   align-items: center;
   gap: 0.45rem;
   width: 100%;
+  max-width: 100%;
   min-height: 2.25rem;
   padding: 0.35rem 0.7rem;
   border: 1px solid var(--border);
@@ -3825,6 +3826,7 @@ button,
   background: var(--surface-2);
   color: var(--muted);
   box-sizing: border-box;
+  box-shadow: none;
 }
 
 .qc-search-field:focus-within {
@@ -3832,10 +3834,15 @@ button,
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.qc-search-field__icon {
+  flex-shrink: 0;
+}
+
 /* Defeat global input { border !important } so search is one outlined control. */
 .qc-search-field input,
 .qc-search-field input.qc-input,
-.qc-search-field .qc-input {
+.qc-search-field .qc-input,
+.qc-search-field__input {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
@@ -3850,11 +3857,14 @@ button,
   font-size: 0.75rem;
   line-height: 1.3;
   outline: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
 }
 
 .qc-search-field input:focus,
 .qc-search-field input.qc-input:focus,
-.qc-search-field .qc-input:focus {
+.qc-search-field .qc-input:focus,
+.qc-search-field__input:focus {
   border: 0 !important;
   box-shadow: none !important;
   outline: none !important;
@@ -3864,7 +3874,34 @@ button,
 .qc-search-field input::-webkit-search-cancel-button,
 .qc-search-field input::-webkit-search-results-button,
 .qc-search-field input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
   display: none;
+}
+
+/* Student Assignments toolbar: one search control, no nested field chrome. */
+.qc-assignments-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.qc-assignments-toolbar .qc-search-field {
+  flex: 1 1 12rem;
+  max-width: 24rem;
+  min-width: min(100%, 12rem);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .qc-search-clear {

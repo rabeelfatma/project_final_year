@@ -68,8 +68,6 @@ export default function StudentDashboard() {
 
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
-  const [answerTextDraft, setAnswerTextDraft] = useState("");
-
 
 
   const userName = localStorage.getItem("userName") || "Student";
@@ -162,7 +160,14 @@ export default function StudentDashboard() {
 
       if (stats) setStudentData(prev => ({ ...prev, ...stats }));
 
-      if (Array.isArray(asgns)) setAssignments(asgns);
+      if (Array.isArray(asgns)) {
+        setAssignments(asgns);
+        setSelectedAsgn((previous) => {
+          if (!previous) return previous;
+          const fresh = asgns.find((item) => String(item._id) === String(previous._id));
+          return fresh || previous;
+        });
+      }
 
       if (Array.isArray(submissions)) {
 
@@ -275,63 +280,38 @@ export default function StudentDashboard() {
 
     try {
 
-      await studentService.submitAssignment(asgnId, formData);
+      const result = await studentService.submitAssignment(asgnId, formData);
+
+      const submission = result?.submission;
+
+      const submittedPatch = {
+        isSubmitted: true,
+        canSubmit: false,
+        status: 'submitted',
+        availabilityLabel: 'Awaiting evaluation',
+        submissionId: submission?._id || null,
+        originalFileName: submission?.originalFileName || '',
+        marks: null,
+        aiScore: null,
+        feedback: '',
+        aiFeedback: '',
+      };
+
+      // Immediate card update from authenticated response; fetchAllData remains source of truth.
+      setAssignments((previous) =>
+        previous.map((item) =>
+          String(item._id) === String(asgnId) ? { ...item, ...submittedPatch } : item
+        )
+      );
+      setSelectedAsgn((previous) =>
+        previous && String(previous._id) === String(asgnId)
+          ? { ...previous, ...submittedPatch }
+          : previous
+      );
 
       setUploadStatus({ id: asgnId, loading: false, success: true });
 
       await fetchAllData();
-
-      setTimeout(() => setUploadStatus({ id: null, loading: false, success: false }), 3000);
-
-    } catch (err) {
-
-      const errMsg = err.response?.data?.message || "Submission Failed: Check if you are logged in.";
-
-      alert(errMsg);
-
-      setUploadStatus({ id: null, loading: false, success: false });
-
-    }
-
-  };
-
-
-
-  const handleTextSubmit = async (asgnId) => {
-
-    const answerText = String(answerTextDraft || "").trim();
-
-    if (!answerText) {
-
-      alert("Enter a short text answer, or upload a file.");
-
-      return;
-
-    }
-
-    if (!localStorage.getItem('token')) {
-
-      alert("Session expired. Please login again.");
-
-      handleLogout();
-
-      return;
-
-    }
-
-    setUploadStatus({ id: asgnId, loading: true, success: false });
-
-    try {
-
-      await studentService.submitAssignment(asgnId, { answerText });
-
-      setAnswerTextDraft("");
-
-      setUploadStatus({ id: asgnId, loading: false, success: true });
-
-      await fetchAllData();
-
-      setSelectedAsgn(null);
 
       setTimeout(() => setUploadStatus({ id: null, loading: false, success: false }), 3000);
 
@@ -958,11 +938,9 @@ export default function StudentDashboard() {
 
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
 
-             <div className="qc-list-toolbar mb-6">
+             <div className="qc-assignments-toolbar mb-6">
 
                <SearchField
-
-                 className="flex-1 min-w-[12rem] max-w-sm"
 
                  value={searchTerm}
 
@@ -1104,7 +1082,7 @@ export default function StudentDashboard() {
 
              <div className="theme-card border w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 relative max-h-[94dvh] sm:max-h-[90vh] overflow-y-auto my-0 sm:my-auto">
 
-                <button type="button" onClick={() => { setSelectedAsgn(null); setAnswerTextDraft(""); }} className="absolute top-4 right-4 sm:top-8 sm:right-8 text-slate-500 hover:text-white transition-all p-2" aria-label="Close assignment details"><X size={24}/></button>
+                <button type="button" onClick={() => setSelectedAsgn(null)} className="absolute top-4 right-4 sm:top-8 sm:right-8 text-slate-500 hover:text-white transition-all p-2" aria-label="Close assignment details"><X size={24}/></button>
 
                 <h2 className="text-xl sm:text-2xl font-black text-white italic uppercase mb-2 pr-10 break-words">{selectedAsgn.title}</h2>
 
@@ -1136,9 +1114,9 @@ export default function StudentDashboard() {
 
                            ? `${selectedAsgn.marks} / ${selectedAsgn.totalMarks || selectedAsgn.points || '--'}`
 
-                           : selectedAsgn.isSubmitted
+                           : (selectedAsgn.isSubmitted || selectedAsgn.submissionId)
                              ? "Awaiting evaluation"
-                             : (selectedAsgn.availabilityLabel || "Pending")}
+                             : "—"}
 
                        </span>
 
@@ -1238,54 +1216,16 @@ export default function StudentDashboard() {
 
                 </div>
 
-                {!selectedAsgn.isSubmitted && !selectedAsgn.submissionId && selectedAsgn.canSubmit !== false && (
+                {(selectedAsgn.isSubmitted || selectedAsgn.submissionId) && !selectedAsgn.marks && (
+                  <p className="mt-4 text-center text-xs theme-muted font-semibold">
+                    Already submitted — awaiting evaluation
+                  </p>
+                )}
 
-                  <div className="mt-4 space-y-3">
-
-                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500">
-
-                      Short text answer (demo-friendly)
-
-                      <textarea
-
-                        value={answerTextDraft}
-
-                        onChange={(e) => setAnswerTextDraft(e.target.value)}
-
-                        rows={4}
-
-                        maxLength={120000}
-
-                        placeholder="Type a short harmless answer for AI grading…"
-
-                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-200 normal-case font-medium tracking-normal"
-
-                      />
-
-                    </label>
-
-                    <button
-
-                      type="button"
-
-                      disabled={uploadStatus.loading && uploadStatus.id === selectedAsgn._id}
-
-                      onClick={() => handleTextSubmit(selectedAsgn._id)}
-
-                      className="w-full py-4 bg-sky-500 text-black font-black uppercase text-[10px] rounded-xl hover:bg-sky-400 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-
-                    >
-
-                      <FileUp size={16}/>
-
-                      {uploadStatus.loading && uploadStatus.id === selectedAsgn._id ? 'Submitting…' : 'Submit text answer'}
-
-                    </button>
-
-                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest text-center">Or use Upload on the assignment row for a file</p>
-
-                  </div>
-
+                {selectedAsgn.canSubmit === true && !selectedAsgn.isSubmitted && !selectedAsgn.submissionId && (
+                  <p className="mt-4 text-center text-xs theme-muted">
+                    Use <span className="font-semibold text-[var(--text)]">Upload</span> on the assignment card to submit your file.
+                  </p>
                 )}
 
                 {selectedAsgn.submissionId && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
@@ -1361,12 +1301,38 @@ function StatCard({ label, value, color, icon, sub }) {
 
 function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus, onDeleteSubmission }) {
 
-const status = asgn.status?.toLowerCase();
+  const status = String(asgn.status || "").toLowerCase();
+  const isSubmitted = Boolean(asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status));
+  const isPublished = status === "published" || (asgn.marks !== undefined && asgn.marks !== null && isSubmitted);
+  // Backend canSubmit is authoritative; no silent resubmit when false.
+  const canUpload = asgn.canSubmit === true && !isSubmitted;
+  const availability = String(asgn.availabilityLabel || "").trim();
+  const dueLabel = asgn.deadline?.split?.("T")?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : "N/A");
+  const statusMeta = (() => {
+    if (isPublished) return "Published";
+    if (isSubmitted) {
+      if (availability && !/^open$/i.test(availability)) return availability;
+      return "Submitted — awaiting evaluation";
+    }
+    if (availability && !/^open$/i.test(availability)) return availability;
+    return null;
+  })();
+  const metaLine = [
+    `Due: ${dueLabel}`,
+    statusMeta,
+    `Max ${asgn.points ?? asgn.totalMarks ?? "--"}`,
+  ].filter(Boolean).join(" · ");
 
-  const isDone = ['submitted','graded','published','ai_graded'].includes(status);
-  const canUpload = !isDone && asgn.canSubmit !== false;
-
-
+  const actionLabel = (() => {
+    if (uploadStatus.id === asgn._id) {
+      if (uploadStatus.loading) return "...";
+      if (uploadStatus.success) return "Submitted";
+    }
+    if (canUpload) return "Upload";
+    if (isPublished) return "Published";
+    if (isSubmitted) return "Already submitted";
+    return availability || "Closed";
+  })();
 
   return (
 
@@ -1374,7 +1340,7 @@ const status = asgn.status?.toLowerCase();
 
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
 
-          <div className={`p-3 rounded-xl shrink-0 ${isDone ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>
+          <div className={`p-3 rounded-xl shrink-0 ${isSubmitted ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>
 
             <FileText size={18}/>
 
@@ -1384,7 +1350,7 @@ const status = asgn.status?.toLowerCase();
 
              <h4 className="font-semibold text-sm break-words">{asgn.title}</h4>
 
-             <p className="text-xs theme-muted mt-0.5">Due: {asgn.deadline?.split?.('T')?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : 'N/A')} · {asgn.availabilityLabel || (isDone ? asgn.status : 'Open')} · Max {asgn.points ?? asgn.totalMarks ?? '--'}</p>
+             <p className="text-xs theme-muted mt-0.5">{metaLine}</p>
 
           </div>
 
@@ -1394,13 +1360,19 @@ const status = asgn.status?.toLowerCase();
 
           <button type="button" onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all" aria-label="View assignment"><Eye size={16}/></button>
 
-          <label className={`px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all ${canUpload ? 'qc-btn-primary' : 'bg-[var(--surface-2)] theme-muted cursor-not-allowed'}`}>
-
-              {uploadStatus.id === asgn._id ? (uploadStatus.loading ? '...' : 'Done') : (canUpload ? 'Upload' : (isDone ? asgn.status : (asgn.availabilityLabel || 'Closed')))}
-
-              {canUpload && <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />}
-
-          </label>
+          {canUpload ? (
+            <label className="px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all qc-btn-primary">
+              {actionLabel}
+              <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />
+            </label>
+          ) : (
+            <span
+              className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted"
+              aria-label={actionLabel}
+            >
+              {actionLabel}
+            </span>
+          )}
 
           {typeof onDeleteSubmission === 'function' && (
 

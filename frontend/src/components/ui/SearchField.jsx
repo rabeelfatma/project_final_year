@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId } from "react";
 import { Search, X } from "lucide-react";
 
 /**
@@ -13,16 +13,22 @@ export default function SearchField({
   className = "",
   inputClassName = "",
 }) {
+  const inputId = useId();
+
   return (
-    <label className={`qc-search-field ${className}`.trim()}>
-      <Search size={14} aria-hidden="true" />
+    <div className={`qc-search-field ${className}`.trim()} role="search">
+      <label htmlFor={inputId} className="sr-only">
+        {label}
+      </label>
+      <Search size={14} aria-hidden="true" className="qc-search-field__icon" />
       <input
+        id={inputId}
         type="search"
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        className={inputClassName || undefined}
+        className={`qc-search-field__input ${inputClassName}`.trim()}
         autoComplete="off"
       />
       {String(value).length > 0 ? (
@@ -39,6 +45,6 @@ export default function SearchField({
           <X size={12} aria-hidden="true" />
         </button>
       ) : null}
-    </label>
+    </div>
   );
 }
