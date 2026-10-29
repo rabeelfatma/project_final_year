@@ -4,7 +4,7 @@ import {
   Layout, PlusCircle, BookOpen, ClipboardCheck, Users, RotateCcw,
   Loader2, FileUp, X, CheckCircle, TrendingUp, Download,
   ShieldCheck, Clock, Trash2, Edit3, Sparkles, MessageSquare,
-  Send, Eye, AlertCircle, ShieldAlert, FileText
+  Send, Eye, AlertCircle, ShieldAlert, FileText, ListChecks
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -17,6 +17,7 @@ import DashboardNavItem from '../../components/common/DashboardNavItem';
 import DashboardTopBar from '../../components/common/DashboardTopBar';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
+import OverflowMenu from '../../components/ui/OverflowMenu';
 import ProfilePage from '../account/ProfilePage';
 import SettingsPage from '../account/SettingsPage';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
@@ -90,6 +91,7 @@ export default function TeacherDashboard() {
   const [submissions, setSubmissions]           = useState([]);
   const [selectedSubmissions, setSelectedSubmissions] = useState([]);
   const [selectedAssignments, setSelectedAssignments] = useState([]);
+  const [manageAssignments, setManageAssignments] = useState(false);
   const [selectedQuestionAssignments, setSelectedQuestionAssignments] = useState([]);
   const [aiLoading, setAiLoading]               = useState(false);
   const [isPublishing, setIsPublishing]         = useState(false);
@@ -691,25 +693,55 @@ export default function TeacherDashboard() {
           <div className="animate-in fade-in duration-500">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
               <h1 className="qc-page-title">My Assignments</h1>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={
-                      assignments.length > 0 &&
-                      assignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
+              <div className="qc-list-toolbar">
+                <button
+                  type="button"
+                  className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
+                  onClick={() => {
+                    if (manageAssignments) {
+                      setManageAssignments(false);
+                      setSelectedAssignments([]);
+                    } else {
+                      setManageAssignments(true);
                     }
-                    onChange={(e) =>
-                      setSelectedAssignments(
-                        e.target.checked
-                          ? assignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
-                          : []
-                      )
-                    }
-                  />
-                  Select all
-                </label>
-                {selectedAssignments.length > 0 && <button type="button" onClick={handleDeleteSelectedAssignments} className="bg-red-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase"><Trash2 size={13} className="inline mr-1"/> Delete selected</button>}
+                  }}
+                  aria-pressed={manageAssignments}
+                >
+                  <ListChecks size={14} aria-hidden="true" />
+                  {manageAssignments ? 'Done' : 'Manage'}
+                </button>
+                {manageAssignments && (
+                  <>
+                    <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={
+                          assignments.length > 0 &&
+                          assignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
+                        }
+                        onChange={(e) =>
+                          setSelectedAssignments(
+                            e.target.checked
+                              ? assignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
+                              : []
+                          )
+                        }
+                      />
+                      Select all
+                    </label>
+                    <span className="qc-chat-selection-count" aria-live="polite">
+                      {selectedAssignments.length} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelectedAssignments}
+                      disabled={!selectedAssignments.length}
+                      className="qc-chat-toolbar-btn danger"
+                    >
+                      <Trash2 size={13} aria-hidden="true" /> Delete selected
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4">
@@ -721,17 +753,19 @@ export default function TeacherDashboard() {
                   // ✅ FIX: key uses _id instead of index
                   <div key={assignmentId || asgn._id} className="qc-card flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
                     <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select assignment ${asgn.title || assignmentId}`}
-                        checked={isAssignmentSelected(selectedAssignments, assignmentId)}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={() =>
-                          setSelectedAssignments((prev) =>
-                            toggleAssignmentSelection(prev, assignmentId)
-                          )
-                        }
-                      />
+                      {manageAssignments && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select assignment ${asgn.title || assignmentId}`}
+                          checked={isAssignmentSelected(selectedAssignments, assignmentId)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() =>
+                            setSelectedAssignments((prev) =>
+                              toggleAssignmentSelection(prev, assignmentId)
+                            )
+                          }
+                        />
+                      )}
                       <div className="flex-1 min-w-0">
                       <h3 className="text-white font-bold text-base sm:text-lg break-words">{asgn.title}</h3>
                       <div className="flex flex-col gap-1 mt-2">
@@ -745,13 +779,22 @@ export default function TeacherDashboard() {
                     </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
-                      {asgn.file && <button type="button" onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(asgn._id), asgn.originalFileName || 'assignment');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Open inside browser"><Eye size={18}/></button>}
-                      {asgn.file && <button type="button" onClick={async()=>{try{await downloadProtectedFile(teacherService.downloadAssignment(asgn._id),asgn.originalFileName||"assignment");}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Download original reference file"><Download size={18}/></button>}
-                      <button type="button" onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400"><Edit3 size={18}/></button>
-                      <button type="button" onClick={() => handleDeleteAssignment(asgn._id)} className="p-2 text-slate-400 hover:text-red-400"><Trash2 size={18}/></button>
+                      {asgn.file && <button type="button" onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(asgn._id), asgn.originalFileName || 'assignment');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Open inside browser" aria-label="Open assignment file"><Eye size={18}/></button>}
+                      {asgn.file && <button type="button" onClick={async()=>{try{await downloadProtectedFile(teacherService.downloadAssignment(asgn._id),asgn.originalFileName||"assignment");}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Download original reference file" aria-label="Download assignment file"><Download size={18}/></button>}
+                      <button type="button" onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400" aria-label="Edit assignment"><Edit3 size={18}/></button>
                       <button type="button" onClick={() => handleStatusToggle(asgn._id, displayStatus)} className={`px-4 sm:px-6 py-2 rounded-lg text-[10px] font-black uppercase border tracking-widest transition-all ${displayStatus==='deactive' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-sky-500/10 text-sky-500 border-sky-500/20 hover:bg-sky-500 hover:text-white'} ${isOverdue ? 'cursor-not-allowed opacity-70' : ''}`}>
                         {displayStatus === 'deactive' ? 'Deactive' : 'Active'}
                       </button>
+                      <OverflowMenu
+                        label={`More actions for ${asgn.title || 'assignment'}`}
+                        items={[{
+                          id: `delete-assignment-${assignmentId}`,
+                          label: 'Delete assignment',
+                          danger: true,
+                          icon: <Trash2 size={14} />,
+                          onSelect: () => handleDeleteAssignment(asgn._id),
+                        }]}
+                      />
                     </div>
                   </div>
                 );
@@ -788,7 +831,7 @@ export default function TeacherDashboard() {
                         Publish Marks
                       </button>
                       <button type="button" onClick={handleResetSelectedGrades} className="bg-slate-600 hover:bg-slate-500 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><RotateCcw size={14}/> Reset grades</button>
-                      <button type="button" onClick={handleDeleteSelectedSubmissions} className="bg-red-500 hover:bg-red-400 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><Trash2 size={14}/> Delete selected</button>
+                      <button type="button" onClick={handleDeleteSelectedSubmissions} className="qc-chat-toolbar-btn danger !min-h-10 !px-4"><Trash2 size={14}/> Delete selected</button>
                     </>
                   )}
                 </div>
@@ -864,7 +907,7 @@ export default function TeacherDashboard() {
                       <th className="p-5">Score (AI / Final)</th>
                       <th className="p-5">Status</th>
                       <th className="p-5 text-center">Review</th>
-                      <th className="p-5 text-center">Delete</th>
+                      <th className="p-5 text-center">More</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -939,7 +982,18 @@ export default function TeacherDashboard() {
                           <button onClick={() => openReviewModal(sub)} className="p-2 text-slate-400 hover:text-sky-400 transition-colors" title="Review Evaluation"><Eye size={18}/></button>
                           <button onClick={async()=>{try{await openProtectedPreview(teacherService.previewSubmission(sub._id),sub.originalFileName||'submission');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-emerald-400" title="Open submitted file"><FileText size={17}/></button>
                         </td>
-                        <td className="p-5 text-center"><button onClick={() => handleDeleteSubmission(sub._id)} className="p-2 text-red-400 hover:text-red-300" title="Delete submission"><Trash2 size={17}/></button></td>
+                        <td className="p-5 text-center">
+                          <OverflowMenu
+                            label={`Actions for submission ${sub.student?.name || sub._id}`}
+                            items={[{
+                              id: `delete-submission-${sub._id}`,
+                              label: 'Delete submission',
+                              danger: true,
+                              icon: <Trash2 size={14} />,
+                              onSelect: () => handleDeleteSubmission(sub._id),
+                            }]}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

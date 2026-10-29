@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Bell,
@@ -16,9 +16,19 @@ import {
   getInAppNotificationsEnabled,
   IN_APP_NOTIFICATIONS_EVENT,
 } from "../../utils/notificationPrefs";
+import OverflowMenu from "../ui/OverflowMenu";
 import DashboardLogoutButton from "./DashboardLogoutButton";
 
 const API_ORIGIN = getApiOrigin();
+
+const NOTIFICATION_TYPE_LABELS = {
+  system: "System",
+  message: "Message",
+  submission: "Submission",
+  assignment: "Assignment",
+  grade: "Grade",
+  registration_pending: "Registration",
+};
 
 function NotificationsPanel({
   role,
@@ -32,6 +42,28 @@ function NotificationsPanel({
   onItemClick,
   panelRef,
 }) {
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+
+  const availableTypes = useMemo(() => {
+    const found = new Set();
+    for (const item of notifications) {
+      const type = String(item.type || "system").toLowerCase();
+      if (type) found.add(type);
+    }
+    return Array.from(found).sort();
+  }, [notifications]);
+
+  const visibleNotifications = useMemo(() => {
+    return notifications.filter((item) => {
+      if (unreadOnly && item.read) return false;
+      if (typeFilter !== "all") {
+        return String(item.type || "system").toLowerCase() === typeFilter;
+      }
+      return true;
+    });
+  }, [notifications, unreadOnly, typeFilter]);
+
   return createPortal(
     <div
       className="qc-utility-overlay"
@@ -71,82 +103,124 @@ function NotificationsPanel({
         </div>
 
         {enabled && (
-          <div className="flex items-center justify-end gap-3 mb-3">
-            <button
-              type="button"
-              className="accent-text text-[10px] flex items-center gap-1"
-              onClick={onMarkAllRead}
-              disabled={status !== "ready"}
-            >
-              <CheckCheck size={13} />
-              Read all
-            </button>
-            <button
-              type="button"
-              className="text-red-400 text-[10px] font-bold disabled:opacity-40"
-              onClick={onClearAll}
-              disabled={!notifications.length}
-            >
-              Clear all
-            </button>
+          <div className="space-y-2 mb-3">
+            <div className="qc-list-toolbar">
+              <button
+                type="button"
+                className={`qc-filter-chip ${unreadOnly ? "is-active" : ""}`}
+                onClick={() => setUnreadOnly((value) => !value)}
+                aria-pressed={unreadOnly}
+              >
+                Unread
+              </button>
+              <select
+                className="qc-input !min-h-9 !py-1 !text-[11px] !w-auto"
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                aria-label="Filter by notification type"
+              >
+                <option value="all">All types</option>
+                {availableTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {NOTIFICATION_TYPE_LABELS[type] || type}
+                  </option>
+                ))}
+              </select>
+              <div className="ml-auto qc-list-toolbar">
+                <button
+                  type="button"
+                  className="qc-chat-toolbar-btn accent"
+                  onClick={onMarkAllRead}
+                  disabled={status !== "ready"}
+                >
+                  <CheckCheck size={13} aria-hidden="true" />
+                  Mark all read
+                </button>
+                <OverflowMenu
+                  label="Notification actions"
+                  disabled={!notifications.length}
+                  items={[
+                    {
+                      id: "clear-all",
+                      label: "Clear all",
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      disabled: !notifications.length,
+                      onSelect: onClearAll,
+                    },
+                  ]}
+                />
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="max-h-[min(24rem,55vh)] overflow-y-auto space-y-1">
+        <div className="max-h-[min(24rem,55vh)] overflow-y-auto space-y-2">
           {!enabled && (
-            <p className="theme-muted text-sm py-8 text-center px-2">
+            <p className="qc-empty-panel px-2">
               The notification centre is turned off in Settings. Turn it on to
               review account updates. Existing history is preserved.
             </p>
           )}
           {enabled && status === "loading" && (
-            <p className="theme-muted text-sm py-8 text-center">
-              Loading notifications…
-            </p>
+            <p className="qc-empty-panel">Loading notifications…</p>
           )}
           {enabled && status === "unavailable" && (
-            <p className="theme-muted text-sm py-8 text-center px-2">
+            <p className="qc-empty-panel px-2">
               Notifications are unavailable until the server and database are
               connected. No messages were fabricated.
             </p>
           )}
           {enabled && status === "ready" && !notifications.length && (
-            <p className="theme-muted text-sm py-8 text-center">
-              No notifications yet.
-            </p>
+            <p className="qc-empty-panel">No notifications yet.</p>
           )}
           {enabled &&
             status === "ready" &&
-            notifications.map((item) => (
+            notifications.length > 0 &&
+            !visibleNotifications.length && (
+              <p className="qc-empty-panel">No notifications match your filters.</p>
+            )}
+          {enabled &&
+            status === "ready" &&
+            visibleNotifications.map((item) => (
               <div
                 key={item._id}
-                className={`p-3 rounded-xl border flex gap-2 items-start ${
-                  item.read ? "" : "accent-soft"
-                }`}
-                style={{ borderColor: "var(--border)" }}
+                className={`qc-notification-card ${item.read ? "" : "is-unread"}`}
               >
                 <button
                   type="button"
-                  className="flex-1 min-w-0 text-left"
+                  className="qc-notification-card__body"
                   onClick={() => onItemClick(item)}
                 >
-                  <p className="font-bold text-xs">{item.title}</p>
-                  <p className="theme-muted text-[11px] mt-1">{item.message}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-xs">{item.title}</p>
+                    <span className="qc-type-badge">
+                      {NOTIFICATION_TYPE_LABELS[String(item.type || "system").toLowerCase()] ||
+                        item.type ||
+                        "System"}
+                    </span>
+                  </div>
+                  <p className="theme-muted text-[11px] mt-1 leading-relaxed">
+                    {item.message}
+                  </p>
                   <p className="theme-muted text-[9px] mt-2">
                     {item.createdAt
                       ? new Date(item.createdAt).toLocaleString()
                       : ""}
                   </p>
                 </button>
-                <button
-                  type="button"
-                  className="text-red-400 hover:text-red-300 shrink-0"
-                  onClick={() => onDelete(item._id)}
-                  title="Delete notification"
-                  aria-label="Delete notification"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <OverflowMenu
+                  label={`Actions for ${item.title || "notification"}`}
+                  items={[
+                    {
+                      id: `delete-${item._id}`,
+                      label: "Delete",
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => onDelete(item._id),
+                    },
+                  ]}
+                />
               </div>
             ))}
         </div>
@@ -308,6 +382,7 @@ export default function DashboardTopBar({
   };
 
   const deleteNotification = async (id) => {
+    if (!window.confirm("Delete this notification?")) return;
     try {
       await api.delete(`/notifications/${id}`);
       setNotifications((items) => items.filter((item) => item._id !== id));

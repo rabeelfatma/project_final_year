@@ -14,11 +14,13 @@ const aiChatSchema = new mongoose.Schema({
   role: { type: String, enum: ["admin", "teacher", "student"], required: true },
   clientId: { type: String, required: true },
   title: { type: String, default: "New chat", maxlength: 120 },
+  pinned: { type: Boolean, default: false },
   messages: { type: [chatMessageSchema], default: [] },
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
 aiChatSchema.index({ owner: 1, role: 1, clientId: 1 }, { unique: true });
 aiChatSchema.index({ owner: 1, role: 1, updatedAt: -1 });
+aiChatSchema.index({ owner: 1, role: 1, pinned: -1, updatedAt: -1 });
 
 module.exports = mongoose.model("AIChat", aiChatSchema);

@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, Send, X, Sparkles, Paperclip, Image as ImageIcon,
-  Download, FileText, Trash2, Edit3, Plus, MessageSquare, CheckSquare
+  Download, FileText, Trash2, Edit3, Plus, MessageSquare, CheckSquare,
+  Pin, PinOff, Search
 } from "lucide-react";
 import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
 import { buildArtifactDownloadRequest } from "../../utils/artifactDownloadUrl";
+import OverflowMenu from "../ui/OverflowMenu";
 
 
 const MAX_CHAT_FILES = 40;
@@ -32,16 +34,42 @@ export default function AIChatbot({ role, showTrigger = true }) {
   const [files, setFiles] = useState([]);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [selectedChats, setSelectedChats] = useState([]);
+  const [manageMode, setManageMode] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
   const fileRef = useRef(null);
   const imageRef = useRef(null);
   const messageListRef = useRef(null);
+
+  const sortedConversations = useMemo(() => {
+    return [...conversations].sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+      return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
+    });
+  }, [conversations]);
+
+  const visibleConversations = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+    if (!query) return sortedConversations;
+    return sortedConversations.filter((chat) => {
+      const title = String(chat.title || "").toLowerCase();
+      const preview = (chat.messages || [])
+        .slice(-3)
+        .map((message) => String(message.text || ""))
+        .join(" ")
+        .toLowerCase();
+      return title.includes(query) || preview.includes(query);
+    });
+  }, [sortedConversations, historySearch]);
 
   const activeChat = useMemo(
     () => conversations.find((chat) => chat.id === activeChatId) || null,
     [conversations, activeChatId]
   );
   const messages = activeChat?.messages || [];
-  const allChatsSelected = conversations.length > 0 && selectedChats.length === conversations.length;
+  const visibleIds = visibleConversations.map((chat) => chat.id);
+  const selectedVisibleIds = selectedChats.filter((id) => visibleIds.includes(id));
+  const allChatsSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedVisibleIds.includes(id));
 
   // Load this user's chat history from MongoDB. Existing browser-only chats are
   // migrated once when the database does not yet contain chat history.
@@ -119,12 +147,46 @@ export default function AIChatbot({ role, showTrigger = true }) {
   }, [messages, loading, open]);
 
   const createChat = () => {
-    const chat = { id: makeId(), title: "New chat", messages: [], updatedAt: Date.now() };
+    const chat = { id: makeId(), title: "New chat", pinned: false, messages: [], updatedAt: Date.now() };
     setConversations((previous) => [chat, ...previous]);
     setActiveChatId(chat.id);
     setQuestion("");
     setEditingMessageId(null);
     setFiles([]);
+  };
+
+  const renameChat = async (chat) => {
+    const nextTitle = window.prompt("Rename chat", chat.title || "New chat");
+    if (nextTitle == null) return;
+    const title = String(nextTitle).trim().slice(0, 120) || "New chat";
+    try {
+      if (localStorage.getItem("token")) {
+        await api.patch(`/ai-chats/${encodeURIComponent(chat.id)}/meta`, { title });
+      }
+      setConversations((previous) =>
+        previous.map((item) =>
+          item.id === chat.id ? { ...item, title, updatedAt: Date.now() } : item
+        )
+      );
+    } catch (error) {
+      alert(error.response?.data?.message || "Could not rename chat.");
+    }
+  };
+
+  const togglePinChat = async (chat) => {
+    const pinned = !chat.pinned;
+    try {
+      if (localStorage.getItem("token")) {
+        await api.patch(`/ai-chats/${encodeURIComponent(chat.id)}/meta`, { pinned });
+      }
+      setConversations((previous) =>
+        previous.map((item) =>
+          item.id === chat.id ? { ...item, pinned, updatedAt: Date.now() } : item
+        )
+      );
+    } catch (error) {
+      alert(error.response?.data?.message || "Could not update pin.");
+    }
   };
 
   const addFiles = (list) => {
@@ -140,6 +202,7 @@ export default function AIChatbot({ role, showTrigger = true }) {
   };
 
   const deleteChat = async (id) => {
+    if (!window.confirm("Delete this chat?")) return;
     try {
       if (localStorage.getItem("token")) await api.delete(`/ai-chats/${encodeURIComponent(id)}`);
     } catch (error) {
@@ -154,22 +217,32 @@ export default function AIChatbot({ role, showTrigger = true }) {
     }
   };
 
+  const exitManageMode = () => {
+    setManageMode(false);
+    setSelectedChats([]);
+  };
+
   const toggleSelectAllChats = () => {
-    setSelectedChats(allChatsSelected ? [] : conversations.map((chat) => chat.id));
+    if (!visibleIds.length) return;
+    setSelectedChats((previous) =>
+      allChatsSelected
+        ? previous.filter((id) => !visibleIds.includes(id))
+        : Array.from(new Set([...previous.filter((id) => visibleIds.includes(id)), ...visibleIds]))
+    );
   };
 
   const deleteSelectedChats = async () => {
-    if (!selectedChats.length) return;
-    if (!window.confirm(`Delete ${selectedChats.length} selected chat${selectedChats.length === 1 ? "" : "s"}?`)) return;
+    if (!selectedVisibleIds.length) return;
+    if (!window.confirm(`Delete ${selectedVisibleIds.length} selected chat${selectedVisibleIds.length === 1 ? "" : "s"}?`)) return;
     try {
-      if (localStorage.getItem("token")) await api.post("/ai-chats/bulk-delete", { ids: selectedChats });
+      if (localStorage.getItem("token")) await api.post("/ai-chats/bulk-delete", { ids: selectedVisibleIds });
     } catch (error) {
       console.error("Could not delete selected database chats:", error.response?.data || error.message);
       alert("Some chats could not be deleted from the database. Please refresh and try again.");
       return;
     }
-    const deletingActive = selectedChats.includes(activeChatId);
-    const remaining = conversations.filter((chat) => !selectedChats.includes(chat.id));
+    const deletingActive = selectedVisibleIds.includes(activeChatId);
+    const remaining = conversations.filter((chat) => !selectedVisibleIds.includes(chat.id));
     setConversations(remaining);
     setSelectedChats([]);
     if (deletingActive) setActiveChatId(remaining[0]?.id || null);
@@ -301,22 +374,44 @@ export default function AIChatbot({ role, showTrigger = true }) {
 
       <div className="flex min-h-0 flex-1">
         <aside className="ai-chat-sidebar shrink-0 border-r p-2 flex flex-col gap-2 min-h-0" style={{ borderColor: "var(--border)" }}>
-          <button type="button" onClick={createChat} className="ai-suggestion flex items-center justify-center gap-1">
-            <Plus size={13} aria-hidden="true" /> New chat
-          </button>
-          {conversations.length > 0 && (
+          <div className="qc-list-toolbar !gap-1.5">
+            <button type="button" onClick={createChat} className="ai-suggestion flex-1 flex items-center justify-center gap-1 !py-2">
+              <Plus size={13} aria-hidden="true" /> New chat
+            </button>
+            <button
+              type="button"
+              className={`qc-manage-toggle ${manageMode ? "is-active" : ""}`}
+              onClick={() => (manageMode ? exitManageMode() : setManageMode(true))}
+              aria-pressed={manageMode}
+              title={manageMode ? "Exit manage mode" : "Manage chats"}
+              disabled={!visibleConversations.length}
+            >
+              {manageMode ? "Done" : "Manage"}
+            </button>
+          </div>
+          <label className="qc-search-field !py-1.5">
+            <Search size={13} aria-hidden="true" />
+            <input
+              className="qc-input !border-0 !bg-transparent !px-0 !min-h-0 !text-[11px]"
+              value={historySearch}
+              onChange={(event) => setHistorySearch(event.target.value)}
+              placeholder="Search chats…"
+              aria-label="Search conversation history"
+            />
+          </label>
+          {manageMode && visibleConversations.length > 0 && (
             <div className="qc-chat-selection-bar !mt-0 !px-0">
               <button type="button" onClick={toggleSelectAllChats} className="qc-chat-toolbar-btn accent">
                 <CheckSquare size={13} aria-hidden="true" />
-                {allChatsSelected ? "Unselect all" : "Select all"}
+                {allChatsSelected ? "Deselect all" : "Select all"}
               </button>
               <span className="qc-chat-selection-count" aria-live="polite">
-                {selectedChats.length} selected
+                {selectedVisibleIds.length} selected
               </span>
               <button
                 type="button"
                 onClick={deleteSelectedChats}
-                disabled={!selectedChats.length}
+                disabled={!selectedVisibleIds.length}
                 className="qc-chat-toolbar-btn danger"
               >
                 <Trash2 size={12} aria-hidden="true" /> Delete
@@ -324,37 +419,63 @@ export default function AIChatbot({ role, showTrigger = true }) {
             </div>
           )}
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            {conversations.map((chat) => (
+            {visibleConversations.map((chat) => (
               <div
                 key={chat.id}
-                className={`qc-ai-chat-item ${activeChatId === chat.id ? "is-active" : ""} ${selectedChats.includes(chat.id) ? "is-selected" : ""}`}
+                className={`qc-ai-chat-item ${activeChatId === chat.id ? "is-active" : ""} ${selectedVisibleIds.includes(chat.id) ? "is-selected" : ""}`}
               >
-                <label className="qc-chat-select !mb-0">
-                  <input
-                    className="qc-chat-checkbox"
-                    aria-label={`Select chat ${chat.title || "New chat"}`}
-                    type="checkbox"
-                    checked={selectedChats.includes(chat.id)}
-                    onChange={(event) => setSelectedChats((previous) => event.target.checked ? [...previous, chat.id] : previous.filter((id) => id !== chat.id))}
-                  />
-                </label>
+                {manageMode && (
+                  <label className="qc-chat-select !mb-0">
+                    <input
+                      className="qc-chat-checkbox"
+                      aria-label={`Select chat ${chat.title || "New chat"}`}
+                      type="checkbox"
+                      checked={selectedVisibleIds.includes(chat.id)}
+                      onChange={(event) => setSelectedChats((previous) => event.target.checked ? [...previous, chat.id] : previous.filter((id) => id !== chat.id))}
+                    />
+                  </label>
+                )}
                 <button
                   type="button"
                   onClick={() => { setActiveChatId(chat.id); setEditingMessageId(null); setQuestion(""); }}
                   className="flex-1 min-w-0 text-left py-1"
                 >
                   <span className="flex items-center gap-1">
-                    <MessageSquare size={11} aria-hidden="true" />
+                    {chat.pinned ? <Pin size={11} className="accent-text" aria-hidden="true" /> : <MessageSquare size={11} aria-hidden="true" />}
                     <span className="truncate text-[10px] font-semibold">{chat.title || "New chat"}</span>
                   </span>
                 </button>
-                <button type="button" onClick={() => deleteChat(chat.id)} className="message-action danger !p-1" title="Delete chat" aria-label={`Delete chat ${chat.title || "New chat"}`}>
-                  <Trash2 size={11} />
-                </button>
+                <OverflowMenu
+                  label={`Actions for ${chat.title || "chat"}`}
+                  items={[
+                    {
+                      id: `rename-${chat.id}`,
+                      label: "Rename",
+                      icon: <Edit3 size={14} />,
+                      onSelect: () => renameChat(chat),
+                    },
+                    {
+                      id: `pin-${chat.id}`,
+                      label: chat.pinned ? "Unpin" : "Pin",
+                      icon: chat.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+                      onSelect: () => togglePinChat(chat),
+                    },
+                    {
+                      id: `delete-${chat.id}`,
+                      label: "Delete chat",
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => deleteChat(chat.id),
+                    },
+                  ]}
+                />
               </div>
             ))}
             {!conversations.length && (
-              <p className="theme-muted text-[10px] text-center px-1 py-6">No chats yet. Start a new conversation.</p>
+              <p className="qc-empty-panel !py-6 !text-[10px]">No chats yet. Start a new conversation.</p>
+            )}
+            {conversations.length > 0 && !visibleConversations.length && (
+              <p className="qc-empty-panel !py-6 !text-[10px]">No chats match your search.</p>
             )}
           </div>
         </aside>

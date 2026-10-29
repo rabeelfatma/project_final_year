@@ -16,6 +16,7 @@ import DashboardNavItem from '../../components/common/DashboardNavItem';
 import DashboardTopBar from '../../components/common/DashboardTopBar';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
+import OverflowMenu from '../../components/ui/OverflowMenu';
 import ProfilePage from '../account/ProfilePage';
 import SettingsPage from '../account/SettingsPage';
 
@@ -639,9 +640,16 @@ function DataTable({ data, onDelete, onEdit, type }) {
                       <Edit2 size={15}/>
                     </button>
                   )}
-                  <button type="button" onClick={() => onDelete(item._id)} className="qc-btn qc-btn-danger !min-h-8 !px-2 !py-1.5" aria-label="Delete record">
-                    <Trash2 size={15}/>
-                  </button>
+                  <OverflowMenu
+                    label={`More actions for ${isAssignment ? (item.title || 'assignment') : (item.name || 'record')}`}
+                    items={[{
+                      id: `delete-${item._id}`,
+                      label: isAssignment ? 'Delete assignment' : 'Delete record',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => onDelete(item._id),
+                    }]}
+                  />
                 </div>
               </td>
             </tr>

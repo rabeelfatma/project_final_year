@@ -16,7 +16,7 @@ import {
 
   Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp, Search,
 
-  Sparkles
+  Sparkles, Trash2, ListChecks
 
 } from 'lucide-react';
 
@@ -38,6 +38,8 @@ import AIChatbot from '../../components/common/AIChatbot';
 
 import MessagePanel from '../../components/common/MessagePanel';
 
+import OverflowMenu from '../../components/ui/OverflowMenu';
+
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
 
 
@@ -55,6 +57,10 @@ export default function StudentDashboard() {
   const [selectedAsgn, setSelectedAsgn] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState("");
+
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState("all");
+
+  const [assignmentSort, setAssignmentSort] = useState("due-asc");
 
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
@@ -95,6 +101,10 @@ export default function StudentDashboard() {
   const [deletingAssignments, setDeletingAssignments] = useState(false);
 
   const [deletingResults, setDeletingResults] = useState(false);
+
+  const [manageAssignments, setManageAssignments] = useState(false);
+
+  const [manageResults, setManageResults] = useState(false);
 
 
 
@@ -427,7 +437,23 @@ export default function StudentDashboard() {
     ? checkedResults
     : assignments.filter((a) => a.status === 'PUBLISHED');
 
-
+  const filteredSortedAssignments = assignments.filter((asgn) => {
+    const titleOk = String(asgn.title || "").toLowerCase().includes(searchTerm.toLowerCase());
+    if (!titleOk) return false;
+    if (assignmentStatusFilter === "all") return true;
+    const status = String(asgn.status || "pending");
+    if (assignmentStatusFilter === "pending") return status === "pending" || !asgn.status;
+    if (assignmentStatusFilter === "submitted") return status === "submitted" || status === "Submitted";
+    if (assignmentStatusFilter === "PUBLISHED") return status === "PUBLISHED";
+    return true;
+  }).slice().sort((a, b) => {
+    const aDue = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY;
+    const bDue = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY;
+    if (Number.isNaN(aDue) && Number.isNaN(bDue)) return 0;
+    if (Number.isNaN(aDue)) return 1;
+    if (Number.isNaN(bDue)) return -1;
+    return assignmentSort === "due-desc" ? bDue - aDue : aDue - bDue;
+  });
 
   const totalVsPendingData = [
 
@@ -630,15 +656,55 @@ export default function StudentDashboard() {
 
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="qc-list-toolbar">
 
-                <label className="flex items-center gap-2 text-xs theme-muted">
+                <button
 
-                  <input type="checkbox" checked={checkedAssignments.length > 0 && checkedAssignments.every((item) => selectedResultIds.includes(item.submissionId || item._id))} onChange={(e) => setSelectedResultIds(e.target.checked ? checkedAssignments.map((item) => item.submissionId || item._id).filter(Boolean) : [])} /> Select all
+                  type="button"
 
-                </label>
+                  className={`qc-manage-toggle ${manageResults ? 'is-active' : ''}`}
 
-                <button type="button" onClick={handleDeleteSelectedResults} disabled={!selectedResultIds.length || deletingResults} className="flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-40"><X size={14}/>{deletingResults ? 'Deleting…' : `Delete selected (${selectedResultIds.length})`}</button>
+                  onClick={() => {
+
+                    if (manageResults) {
+
+                      setManageResults(false);
+
+                      setSelectedResultIds([]);
+
+                    } else {
+
+                      setManageResults(true);
+
+                    }
+
+                  }}
+
+                  aria-pressed={manageResults}
+
+                >
+
+                  <ListChecks size={14} aria-hidden="true" />{manageResults ? 'Done' : 'Manage'}
+
+                </button>
+
+                {manageResults && (
+
+                  <>
+
+                    <label className="flex items-center gap-2 text-xs theme-muted">
+
+                      <input type="checkbox" checked={checkedAssignments.length > 0 && checkedAssignments.every((item) => selectedResultIds.includes(item.submissionId || item._id))} onChange={(e) => setSelectedResultIds(e.target.checked ? checkedAssignments.map((item) => item.submissionId || item._id).filter(Boolean) : [])} /> Select all
+
+                    </label>
+
+                    <span className="qc-chat-selection-count" aria-live="polite">{selectedResultIds.length} selected</span>
+
+                    <button type="button" onClick={handleDeleteSelectedResults} disabled={!selectedResultIds.length || deletingResults} className="qc-chat-toolbar-btn danger"><Trash2 size={14} aria-hidden="true"/>{deletingResults ? 'Deleting…' : 'Delete selected'}</button>
+
+                  </>
+
+                )}
 
               </div>
 
@@ -654,7 +720,11 @@ export default function StudentDashboard() {
 
                   <div className="flex items-start gap-3 min-w-0">
 
-                    <input aria-label={`Select ${asgn.title || 'result'}`} type="checkbox" checked={selectedResultIds.includes(asgn.submissionId || asgn._id)} onChange={() => toggleResultSelection(asgn.submissionId || asgn._id)} className="mt-2" />
+                    {manageResults && (
+
+                      <input aria-label={`Select ${asgn.title || 'result'}`} type="checkbox" checked={selectedResultIds.includes(asgn.submissionId || asgn._id)} onChange={() => toggleResultSelection(asgn.submissionId || asgn._id)} className="mt-2" />
+
+                    )}
 
                     <div className="min-w-0">
 
@@ -690,7 +760,51 @@ export default function StudentDashboard() {
 
                     </div>
 
-                    <button onClick={() => setSelectedAsgn(asgn)} className="icon-btn" title="View checked result"><Eye size={17}/></button>
+                    <button onClick={() => setSelectedAsgn(asgn)} className="icon-btn" title="View checked result" aria-label="View checked result"><Eye size={17}/></button>
+
+                    {(asgn.submissionId || asgn._id) && (
+
+                      <OverflowMenu
+
+                        label={`Actions for ${asgn.title || 'result'}`}
+
+                        items={[{
+
+                          id: `delete-result-${asgn.submissionId || asgn._id}`,
+
+                          label: 'Delete submission',
+
+                          danger: true,
+
+                          icon: <Trash2 size={14} />,
+
+                          onSelect: async () => {
+
+                            const id = asgn.submissionId || asgn._id;
+
+                            if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return;
+
+                            try {
+
+                              await studentService.deleteMySubmission(id);
+
+                              setSelectedResultIds((previous) => previous.filter((item) => item !== id));
+
+                              await fetchAllData();
+
+                            } catch (error) {
+
+                              alert(error.response?.data?.message || error.message || 'Could not delete submission.');
+
+                            }
+
+                          },
+
+                        }]}
+
+                      />
+
+                    )}
 
                   </div>
 
@@ -828,39 +942,105 @@ export default function StudentDashboard() {
 
                  <Search size={18} className="text-slate-500 mr-2"/>
 
-                 <input placeholder="Filter by title..." className="bg-transparent outline-none text-xs w-full text-white" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                 <input placeholder="Filter by title..." className="bg-transparent outline-none text-xs w-full text-white" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} aria-label="Filter assignments by title" />
 
                </div>
 
-               <label className="flex items-center gap-2 text-xs theme-muted">
+               <select className="qc-input !w-auto !min-h-10 !text-xs" value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value)} aria-label="Filter by submission status">
 
-                 <input type="checkbox" checked={assignments.filter(a => a.submissionId).length > 0 && assignments.filter(a => a.submissionId).every(a => selectedAssignmentSubmissionIds.includes(a.submissionId))} onChange={(e) => setSelectedAssignmentSubmissionIds(e.target.checked ? assignments.filter(a => a.submissionId).map(a => a.submissionId) : [])} />
+                 <option value="all">All statuses</option>
 
-                 Select all submitted
+                 <option value="pending">Pending</option>
 
-               </label>
+                 <option value="submitted">Submitted</option>
 
-               <button type="button" onClick={handleDeleteSelectedAssignmentSubmissions} disabled={!selectedAssignmentSubmissionIds.length || deletingAssignments} className="rounded-xl bg-red-500 px-4 py-3 text-xs font-bold text-white disabled:opacity-40">
+                 <option value="PUBLISHED">Published</option>
 
-                 {deletingAssignments ? 'Deleting…' : `Delete selected (${selectedAssignmentSubmissionIds.length})`}
+               </select>
 
-               </button>
+               <select className="qc-input !w-auto !min-h-10 !text-xs" value={assignmentSort} onChange={(e) => setAssignmentSort(e.target.value)} aria-label="Sort by due date">
+
+                 <option value="due-asc">Due soonest</option>
+
+                 <option value="due-desc">Due latest</option>
+
+               </select>
+
+               <div className="qc-list-toolbar">
+
+                 <button
+
+                   type="button"
+
+                   className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
+
+                   onClick={() => {
+
+                     if (manageAssignments) {
+
+                       setManageAssignments(false);
+
+                       setSelectedAssignmentSubmissionIds([]);
+
+                     } else {
+
+                       setManageAssignments(true);
+
+                     }
+
+                   }}
+
+                   aria-pressed={manageAssignments}
+
+                 >
+
+                   <ListChecks size={14} aria-hidden="true" />{manageAssignments ? 'Done' : 'Manage'}
+
+                 </button>
+
+                 {manageAssignments && (
+
+                   <>
+
+                     <label className="flex items-center gap-2 text-xs theme-muted">
+
+                       <input type="checkbox" checked={assignments.filter(a => a.submissionId).length > 0 && assignments.filter(a => a.submissionId).every(a => selectedAssignmentSubmissionIds.includes(a.submissionId))} onChange={(e) => setSelectedAssignmentSubmissionIds(e.target.checked ? assignments.filter(a => a.submissionId).map(a => a.submissionId) : [])} />
+
+                       Select all submitted
+
+                     </label>
+
+                     <span className="qc-chat-selection-count" aria-live="polite">{selectedAssignmentSubmissionIds.length} selected</span>
+
+                     <button type="button" onClick={handleDeleteSelectedAssignmentSubmissions} disabled={!selectedAssignmentSubmissionIds.length || deletingAssignments} className="qc-chat-toolbar-btn danger">
+
+                       <Trash2 size={14} aria-hidden="true" />{deletingAssignments ? 'Deleting…' : 'Delete selected'}
+
+                     </button>
+
+                   </>
+
+                 )}
+
+               </div>
 
              </div>
 
-             {assignments.filter(a => a.title?.toLowerCase().includes(searchTerm.toLowerCase())).map(asgn => (
+             {filteredSortedAssignments.map(asgn => (
 
                <div key={asgn._id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
 
                  <div className="flex items-start gap-3 min-w-0 flex-1">
 
-                 <input type="checkbox" aria-label={`Select submission for ${asgn.title}`} className="mt-6 shrink-0" disabled={!asgn.submissionId} checked={Boolean(asgn.submissionId && selectedAssignmentSubmissionIds.includes(asgn.submissionId))} onChange={() => asgn.submissionId && toggleAssignmentSubmission(asgn.submissionId)} />
+                 {manageAssignments && (
 
-                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} /></div>
+                   <input type="checkbox" aria-label={`Select submission for ${asgn.title}`} className="mt-6 shrink-0" disabled={!asgn.submissionId} checked={Boolean(asgn.submissionId && selectedAssignmentSubmissionIds.includes(asgn.submissionId))} onChange={() => asgn.submissionId && toggleAssignmentSubmission(asgn.submissionId)} />
+
+                 )}
+
+                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} onDeleteSubmission={asgn.submissionId ? async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } } : null} /></div>
 
                  </div>
-
-                 {asgn.submissionId && <button type="button" onClick={async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } }} className="sm:mt-5 self-stretch sm:self-auto rounded-lg border border-red-500/40 px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10">Delete</button>}
 
                </div>
 
@@ -1135,7 +1315,7 @@ function StatCard({ label, value, color, icon, sub }) {
 
 
 
-function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus }) {
+function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus, onDeleteSubmission }) {
 
 const status = asgn.status?.toLowerCase();
 
@@ -1177,6 +1357,30 @@ const status = asgn.status?.toLowerCase();
               {canUpload && <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />}
 
           </label>
+
+          {typeof onDeleteSubmission === 'function' && (
+
+            <OverflowMenu
+
+              label={`Actions for ${asgn.title || 'assignment'}`}
+
+              items={[{
+
+                id: `delete-submission-${asgn.submissionId || asgn._id}`,
+
+                label: 'Delete my submission',
+
+                danger: true,
+
+                icon: <Trash2 size={14} />,
+
+                onSelect: onDeleteSubmission,
+
+              }]}
+
+            />
+
+          )}
 
         </div>
 
