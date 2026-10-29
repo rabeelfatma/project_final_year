@@ -103,55 +103,51 @@ function NotificationsPanel({
         </div>
 
         {enabled && (
-          <div className="space-y-2 mb-3">
-            <div className="qc-list-toolbar">
-              <button
-                type="button"
-                className={`qc-filter-chip ${unreadOnly ? "is-active" : ""}`}
-                onClick={() => setUnreadOnly((value) => !value)}
-                aria-pressed={unreadOnly}
-              >
-                Unread
-              </button>
-              <select
-                className="qc-input !min-h-9 !py-1 !text-[11px] !w-auto"
-                value={typeFilter}
-                onChange={(event) => setTypeFilter(event.target.value)}
-                aria-label="Filter by notification type"
-              >
-                <option value="all">All types</option>
-                {availableTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {NOTIFICATION_TYPE_LABELS[type] || type}
-                  </option>
-                ))}
-              </select>
-              <div className="ml-auto qc-list-toolbar">
-                <button
-                  type="button"
-                  className="qc-chat-toolbar-btn accent"
-                  onClick={onMarkAllRead}
-                  disabled={status !== "ready"}
-                >
-                  <CheckCheck size={13} aria-hidden="true" />
-                  Mark all read
-                </button>
-                <OverflowMenu
-                  label="Notification actions"
-                  disabled={!notifications.length}
-                  items={[
-                    {
-                      id: "clear-all",
-                      label: "Clear all",
-                      danger: true,
-                      icon: <Trash2 size={14} />,
-                      disabled: !notifications.length,
-                      onSelect: onClearAll,
-                    },
-                  ]}
-                />
-              </div>
-            </div>
+          <div className="qc-notifications-toolbar mb-3">
+            <button
+              type="button"
+              className={`qc-filter-chip qc-filter-chip--compact ${unreadOnly ? "is-active" : ""}`}
+              onClick={() => setUnreadOnly((value) => !value)}
+              aria-pressed={unreadOnly}
+            >
+              Unread
+            </button>
+            <select
+              className="qc-toolbar-select"
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              aria-label="Filter by notification type"
+            >
+              <option value="all">All types</option>
+              {availableTypes.map((type) => (
+                <option key={type} value={type}>
+                  {NOTIFICATION_TYPE_LABELS[type] || type}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="qc-chat-toolbar-btn accent"
+              onClick={onMarkAllRead}
+              disabled={status !== "ready"}
+            >
+              <CheckCheck size={13} aria-hidden="true" />
+              Mark all read
+            </button>
+            <OverflowMenu
+              label="Notification actions"
+              disabled={!notifications.length}
+              items={[
+                {
+                  id: "clear-all",
+                  label: "Clear all",
+                  danger: true,
+                  icon: <Trash2 size={14} />,
+                  disabled: !notifications.length,
+                  onSelect: onClearAll,
+                },
+              ]}
+            />
           </div>
         )}
 

@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, Send, X, Sparkles, Paperclip, Image as ImageIcon,
   Download, FileText, Trash2, Edit3, Plus, MessageSquare, CheckSquare,
-  Pin, PinOff, Search
+  Pin, PinOff
 } from "lucide-react";
 import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
 import { buildArtifactDownloadRequest } from "../../utils/artifactDownloadUrl";
 import OverflowMenu from "../ui/OverflowMenu";
+import SearchField from "../ui/SearchField";
 
 
 const MAX_CHAT_FILES = 40;
@@ -70,6 +71,13 @@ export default function AIChatbot({ role, showTrigger = true }) {
   const selectedVisibleIds = selectedChats.filter((id) => visibleIds.includes(id));
   const allChatsSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedVisibleIds.includes(id));
+
+  const visibleIdsKey = visibleIds.join("|");
+  useEffect(() => {
+    setSelectedChats((previous) => previous.filter((id) => visibleIds.includes(id)));
+    // visibleIdsKey tracks membership changes without depending on array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional membership key
+  }, [visibleIdsKey]);
 
   // Load this user's chat history from MongoDB. Existing browser-only chats are
   // migrated once when the database does not yet contain chat history.
@@ -389,16 +397,14 @@ export default function AIChatbot({ role, showTrigger = true }) {
               {manageMode ? "Done" : "Manage"}
             </button>
           </div>
-          <label className="qc-search-field !py-1.5">
-            <Search size={13} aria-hidden="true" />
-            <input
-              className="qc-input !border-0 !bg-transparent !px-0 !min-h-0 !text-[11px]"
-              value={historySearch}
-              onChange={(event) => setHistorySearch(event.target.value)}
-              placeholder="Search chats…"
-              aria-label="Search conversation history"
-            />
-          </label>
+          <SearchField
+            className="!py-1.5"
+            inputClassName="!text-[11px]"
+            value={historySearch}
+            onChange={setHistorySearch}
+            placeholder="Search chats…"
+            label="Search conversation history"
+          />
           {manageMode && visibleConversations.length > 0 && (
             <div className="qc-chat-selection-bar !mt-0 !px-0">
               <button type="button" onClick={toggleSelectAllChats} className="qc-chat-toolbar-btn accent">

@@ -1,9 +1,11 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MoreVertical } from "lucide-react";
 
 /**
  * Compact three-dot menu for secondary / destructive actions.
- * Touch-friendly: opens on click/tap; closes on outside click, Escape, or item select.
+ * Panel is portaled + fixed so overflow:hidden parents cannot clip it.
+ * Closes on outside click, Escape, or item select.
  */
 export default function OverflowMenu({
   label = "More actions",
@@ -13,16 +15,53 @@ export default function OverflowMenu({
   className = "",
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
   const rootRef = useRef(null);
+  const panelRef = useRef(null);
   const menuId = useId();
   const visibleItems = items.filter(Boolean);
+
+  const updatePosition = () => {
+    const trigger = rootRef.current;
+    const panel = panelRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const panelWidth = panel?.offsetWidth || 184;
+    const panelHeight = panel?.offsetHeight || 8 + visibleItems.length * 36;
+    const gap = 6;
+    const margin = 8;
+    let left =
+      align === "left" ? rect.left : rect.right - panelWidth;
+    left = Math.min(
+      Math.max(margin, left),
+      window.innerWidth - panelWidth - margin
+    );
+    let top = rect.bottom + gap;
+    if (top + panelHeight > window.innerHeight - margin) {
+      top = Math.max(margin, rect.top - gap - panelHeight);
+    }
+    setCoords({ top, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    updatePosition();
+    const onReposition = () => updatePosition();
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- position when open/items change
+  }, [open, align, visibleItems.length]);
 
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) {
-        setOpen(false);
-      }
+      const inTrigger = rootRef.current?.contains(event.target);
+      const inPanel = panelRef.current?.contains(event.target);
+      if (!inTrigger && !inPanel) setOpen(false);
     };
     const onKeyDown = (event) => {
       if (event.key === "Escape") setOpen(false);
@@ -55,36 +94,40 @@ export default function OverflowMenu({
       >
         <MoreVertical size={16} aria-hidden="true" />
       </button>
-      {open && (
-        <div
-          id={menuId}
-          role="menu"
-          className={`qc-overflow-panel ${align === "left" ? "is-left" : "is-right"}`}
-        >
-          {visibleItems.map((item) => (
-            <button
-              key={item.id || item.label}
-              type="button"
-              role="menuitem"
-              className={`qc-overflow-item ${item.danger ? "is-danger" : ""} ${item.disabled ? "is-disabled" : ""}`}
-              disabled={Boolean(item.disabled)}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (item.disabled) return;
-                setOpen(false);
-                item.onSelect?.();
-              }}
-            >
-              {item.icon ? (
-                <span className="qc-overflow-item__icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-              ) : null}
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            id={menuId}
+            ref={panelRef}
+            role="menu"
+            className="qc-overflow-panel qc-overflow-panel--fixed"
+            style={{ top: coords.top, left: coords.left }}
+          >
+            {visibleItems.map((item) => (
+              <button
+                key={item.id || item.label}
+                type="button"
+                role="menuitem"
+                className={`qc-overflow-item ${item.danger ? "is-danger" : ""} ${item.disabled ? "is-disabled" : ""}`}
+                disabled={Boolean(item.disabled)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (item.disabled) return;
+                  setOpen(false);
+                  item.onSelect?.();
+                }}
+              >
+                {item.icon ? (
+                  <span className="qc-overflow-item__icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                ) : null}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

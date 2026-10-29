@@ -3663,6 +3663,14 @@ button,
   box-shadow: var(--shadow-lg);
 }
 
+.qc-overflow-panel--fixed {
+  position: fixed;
+  z-index: 320;
+  right: auto;
+  left: auto;
+  top: auto;
+}
+
 .qc-overflow-panel.is-right {
   right: 0;
 }
@@ -3752,13 +3760,16 @@ button,
   display: flex;
   gap: 0.65rem;
   align-items: flex-start;
-  padding: 0.85rem 0.9rem;
-  border-radius: 0.9rem;
+  padding: 0.75rem 0.8rem;
+  border-radius: 0.75rem;
   border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .qc-notification-card.is-unread {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .qc-notification-card__body {
@@ -3806,12 +3817,14 @@ button,
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  width: 100%;
   min-height: 2.25rem;
   padding: 0.35rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--muted);
+  box-sizing: border-box;
 }
 
 .qc-search-field:focus-within {
@@ -3819,8 +3832,98 @@ button,
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.qc-search-field input {
+/* Defeat global input { border !important } so search is one outlined control. */
+.qc-search-field input,
+.qc-search-field input.qc-input,
+.qc-search-field .qc-input {
+  flex: 1 1 auto;
   width: 100%;
+  min-width: 0;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  outline: none !important;
+}
+
+.qc-search-field input:focus,
+.qc-search-field input.qc-input:focus,
+.qc-search-field .qc-input:focus {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.qc-search-field input::-webkit-search-decoration,
+.qc-search-field input::-webkit-search-cancel-button,
+.qc-search-field input::-webkit-search-results-button,
+.qc-search-field input::-webkit-search-results-decoration {
+  display: none;
+}
+
+.qc-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.qc-search-clear:hover,
+.qc-search-clear:focus-visible {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  outline: none;
+}
+
+.qc-toolbar-select {
+  display: inline-flex;
+  align-items: center;
+  width: auto !important;
+  min-width: 0;
+  min-height: 2.25rem !important;
+  margin: 0 !important;
+  padding: 0.35rem 0.65rem !important;
+  border-radius: var(--radius) !important;
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  font-size: 0.6875rem !important;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: none !important;
+}
+
+.qc-toolbar-select:focus,
+.qc-toolbar-select:focus-visible {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft) !important;
+  outline: none !important;
+}
+
+.qc-filter-chip--compact {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.6875rem;
+}
+
+.qc-notifications-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .message-panel-body {

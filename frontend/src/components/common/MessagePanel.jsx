@@ -8,7 +8,6 @@ import {
   Pin,
   PinOff,
   Play,
-  Search,
   Send,
   Square,
   Trash2,
@@ -17,6 +16,7 @@ import {
 import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
 import OverflowMenu from "../ui/OverflowMenu";
+import SearchField from "../ui/SearchField";
 
 const API_ORIGIN = getApiOrigin();
 
@@ -260,7 +260,7 @@ export default function MessagePanel({ role, showTrigger = true }) {
         return false;
       }
       if (!query) return true;
-      const haystack = `${user.name || ""} ${user.role || ""} ${user.registrationNumber || ""}`.toLowerCase();
+      const haystack = `${user.name || ""} ${user.email || ""} ${user.role || ""} ${user.registrationNumber || ""}`.toLowerCase();
       return haystack.includes(query);
     });
   }, [users, searchTerm, unreadOnly, roleFilter]);
@@ -524,16 +524,12 @@ export default function MessagePanel({ role, showTrigger = true }) {
               style={{ borderColor: "var(--border)" }}
             >
               <div className="p-2 space-y-2 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
-                <label className="qc-search-field">
-                  <Search size={14} aria-hidden="true" />
-                  <input
-                    className="qc-input !border-0 !bg-transparent !px-0 !min-h-0"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Search people…"
-                    aria-label="Search conversations"
-                  />
-                </label>
+                <SearchField
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  placeholder="Search people…"
+                  label="Search conversations"
+                />
                 <div className="qc-list-toolbar !gap-1.5">
                   <button
                     type="button"
@@ -544,7 +540,7 @@ export default function MessagePanel({ role, showTrigger = true }) {
                     Unread
                   </button>
                   <select
-                    className="qc-input !min-h-9 !py-1 !text-[11px] !w-auto"
+                    className="qc-toolbar-select"
                     value={roleFilter}
                     onChange={(event) => setRoleFilter(event.target.value)}
                     aria-label="Filter by role"
@@ -587,17 +583,20 @@ export default function MessagePanel({ role, showTrigger = true }) {
                           {initials(user.name)}
                         </span>
                         <span className="min-w-0 flex-1 text-left">
-                          <span className="flex items-center gap-1.5">
+                          <span className="flex items-center gap-1.5 flex-wrap">
                             <span className="truncate text-[11px] font-semibold">
                               {user.name || "User"}
                             </span>
+                            <span className="qc-type-badge">{roleLabel(user.role)}</span>
                             {user.pinned && (
                               <Pin size={10} className="accent-text shrink-0" aria-label="Pinned" />
                             )}
                           </span>
-                          <span className="theme-muted text-[9px] uppercase tracking-wide">
-                            {roleLabel(user.role)}
-                          </span>
+                          {user.email ? (
+                            <span className="block theme-muted text-[9px] truncate mt-0.5">
+                              {user.email}
+                            </span>
+                          ) : null}
                           <span className="block theme-muted text-[10px] truncate mt-0.5">
                             {user.lastMessagePreview || "No messages yet"}
                           </span>

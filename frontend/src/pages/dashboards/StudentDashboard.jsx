@@ -14,7 +14,7 @@ import {
 
   BookOpen, CheckCircle, Clock, FileUp, Layout,
 
-  Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp, Search,
+  Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp,
 
   Sparkles, Trash2, ListChecks
 
@@ -39,6 +39,10 @@ import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 
 import OverflowMenu from '../../components/ui/OverflowMenu';
+
+import SearchField from '../../components/ui/SearchField';
+
+import { sortAssignmentsByDueDate } from '../../utils/assignmentSort';
 
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
 
@@ -437,23 +441,19 @@ export default function StudentDashboard() {
     ? checkedResults
     : assignments.filter((a) => a.status === 'PUBLISHED');
 
-  const filteredSortedAssignments = assignments.filter((asgn) => {
-    const titleOk = String(asgn.title || "").toLowerCase().includes(searchTerm.toLowerCase());
-    if (!titleOk) return false;
-    if (assignmentStatusFilter === "all") return true;
-    const status = String(asgn.status || "pending");
-    if (assignmentStatusFilter === "pending") return status === "pending" || !asgn.status;
-    if (assignmentStatusFilter === "submitted") return status === "submitted" || status === "Submitted";
-    if (assignmentStatusFilter === "PUBLISHED") return status === "PUBLISHED";
-    return true;
-  }).slice().sort((a, b) => {
-    const aDue = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY;
-    const bDue = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY;
-    if (Number.isNaN(aDue) && Number.isNaN(bDue)) return 0;
-    if (Number.isNaN(aDue)) return 1;
-    if (Number.isNaN(bDue)) return -1;
-    return assignmentSort === "due-desc" ? bDue - aDue : aDue - bDue;
-  });
+  const filteredSortedAssignments = sortAssignmentsByDueDate(
+    assignments.filter((asgn) => {
+      const titleOk = String(asgn.title || "").toLowerCase().includes(searchTerm.toLowerCase());
+      if (!titleOk) return false;
+      if (assignmentStatusFilter === "all") return true;
+      const status = String(asgn.status || "pending");
+      if (assignmentStatusFilter === "pending") return status === "pending" || !asgn.status;
+      if (assignmentStatusFilter === "submitted") return status === "submitted" || status === "Submitted";
+      if (assignmentStatusFilter === "PUBLISHED") return status === "PUBLISHED";
+      return true;
+    }),
+    assignmentSort
+  );
 
   const totalVsPendingData = [
 
@@ -682,21 +682,43 @@ export default function StudentDashboard() {
 
                   aria-pressed={manageResults}
 
+                  disabled={!checkedAssignments.length}
+
                 >
 
                   <ListChecks size={14} aria-hidden="true" />{manageResults ? 'Done' : 'Manage'}
 
                 </button>
 
-                {manageResults && (
+                {manageResults && checkedAssignments.length > 0 && (
 
                   <>
 
-                    <label className="flex items-center gap-2 text-xs theme-muted">
+                    <button
 
-                      <input type="checkbox" checked={checkedAssignments.length > 0 && checkedAssignments.every((item) => selectedResultIds.includes(item.submissionId || item._id))} onChange={(e) => setSelectedResultIds(e.target.checked ? checkedAssignments.map((item) => item.submissionId || item._id).filter(Boolean) : [])} /> Select all
+                      type="button"
 
-                    </label>
+                      className="qc-chat-toolbar-btn accent"
+
+                      onClick={() => {
+
+                        const eligible = checkedAssignments.map((item) => item.submissionId || item._id).filter(Boolean);
+
+                        const allSelected = eligible.length > 0 && eligible.every((id) => selectedResultIds.includes(id));
+
+                        setSelectedResultIds(allSelected ? [] : eligible);
+
+                      }}
+
+                    >
+
+                      {checkedAssignments.every((item) => selectedResultIds.includes(item.submissionId || item._id))
+
+                        ? 'Deselect all'
+
+                        : 'Select all'}
+
+                    </button>
 
                     <span className="qc-chat-selection-count" aria-live="polite">{selectedResultIds.length} selected</span>
 
@@ -936,17 +958,23 @@ export default function StudentDashboard() {
 
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
 
-             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+             <div className="qc-list-toolbar mb-6">
 
-               <div className="flex bg-slate-900 p-3 rounded-xl border border-slate-800 max-w-sm flex-1">
+               <SearchField
 
-                 <Search size={18} className="text-slate-500 mr-2"/>
+                 className="flex-1 min-w-[12rem] max-w-sm"
 
-                 <input placeholder="Filter by title..." className="bg-transparent outline-none text-xs w-full text-white" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} aria-label="Filter assignments by title" />
+                 value={searchTerm}
 
-               </div>
+                 onChange={setSearchTerm}
 
-               <select className="qc-input !w-auto !min-h-10 !text-xs" value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value)} aria-label="Filter by submission status">
+                 placeholder="Search by title…"
+
+                 label="Filter assignments by title"
+
+               />
+
+               <select className="qc-toolbar-select" value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value)} aria-label="Filter by submission status">
 
                  <option value="all">All statuses</option>
 
@@ -958,71 +986,87 @@ export default function StudentDashboard() {
 
                </select>
 
-               <select className="qc-input !w-auto !min-h-10 !text-xs" value={assignmentSort} onChange={(e) => setAssignmentSort(e.target.value)} aria-label="Sort by due date">
+               <select className="qc-toolbar-select" value={assignmentSort} onChange={(e) => setAssignmentSort(e.target.value)} aria-label="Sort by due date">
 
-                 <option value="due-asc">Due soonest</option>
+                 <option value="due-asc">Due date: Earliest first</option>
 
-                 <option value="due-desc">Due latest</option>
+                 <option value="due-desc">Due date: Latest first</option>
 
                </select>
 
-               <div className="qc-list-toolbar">
+               <button
 
-                 <button
+                 type="button"
 
-                   type="button"
+                 className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
 
-                   className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
+                 onClick={() => {
 
-                   onClick={() => {
+                   if (manageAssignments) {
 
-                     if (manageAssignments) {
+                     setManageAssignments(false);
 
-                       setManageAssignments(false);
+                     setSelectedAssignmentSubmissionIds([]);
 
-                       setSelectedAssignmentSubmissionIds([]);
+                   } else {
 
-                     } else {
+                     setManageAssignments(true);
 
-                       setManageAssignments(true);
+                   }
 
-                     }
+                 }}
 
-                   }}
+                 aria-pressed={manageAssignments}
 
-                   aria-pressed={manageAssignments}
+                 disabled={!assignments.some((a) => a.submissionId)}
 
-                 >
+               >
 
-                   <ListChecks size={14} aria-hidden="true" />{manageAssignments ? 'Done' : 'Manage'}
+                 <ListChecks size={14} aria-hidden="true" />{manageAssignments ? 'Done' : 'Manage'}
 
-                 </button>
+               </button>
 
-                 {manageAssignments && (
+               {manageAssignments && assignments.some((a) => a.submissionId) && (
 
-                   <>
+                 <>
 
-                     <label className="flex items-center gap-2 text-xs theme-muted">
+                   <button
 
-                       <input type="checkbox" checked={assignments.filter(a => a.submissionId).length > 0 && assignments.filter(a => a.submissionId).every(a => selectedAssignmentSubmissionIds.includes(a.submissionId))} onChange={(e) => setSelectedAssignmentSubmissionIds(e.target.checked ? assignments.filter(a => a.submissionId).map(a => a.submissionId) : [])} />
+                     type="button"
 
-                       Select all submitted
+                     className="qc-chat-toolbar-btn accent"
 
-                     </label>
+                     onClick={() => {
 
-                     <span className="qc-chat-selection-count" aria-live="polite">{selectedAssignmentSubmissionIds.length} selected</span>
+                       const eligible = assignments.map((a) => a.submissionId).filter(Boolean);
 
-                     <button type="button" onClick={handleDeleteSelectedAssignmentSubmissions} disabled={!selectedAssignmentSubmissionIds.length || deletingAssignments} className="qc-chat-toolbar-btn danger">
+                       const allSelected = eligible.length > 0 && eligible.every((id) => selectedAssignmentSubmissionIds.includes(id));
 
-                       <Trash2 size={14} aria-hidden="true" />{deletingAssignments ? 'Deleting…' : 'Delete selected'}
+                       setSelectedAssignmentSubmissionIds(allSelected ? [] : eligible);
 
-                     </button>
+                     }}
 
-                   </>
+                   >
 
-                 )}
+                     {assignments.filter((a) => a.submissionId).every((a) => selectedAssignmentSubmissionIds.includes(a.submissionId))
 
-               </div>
+                       ? 'Deselect all'
+
+                       : 'Select all'}
+
+                   </button>
+
+                   <span className="qc-chat-selection-count" aria-live="polite">{selectedAssignmentSubmissionIds.length} selected</span>
+
+                   <button type="button" onClick={handleDeleteSelectedAssignmentSubmissions} disabled={!selectedAssignmentSubmissionIds.length || deletingAssignments} className="qc-chat-toolbar-btn danger">
+
+                     <Trash2 size={14} aria-hidden="true" />{deletingAssignments ? 'Deleting…' : 'Delete selected'}
+
+                   </button>
+
+                 </>
+
+               )}
 
              </div>
 

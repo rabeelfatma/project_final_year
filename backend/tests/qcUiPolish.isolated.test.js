@@ -118,4 +118,65 @@ describe("QC UI polish contracts", () => {
     assert.equal(store.get(IN_APP_NOTIFICATIONS_KEY), "on");
     assert.equal(getInAppNotificationsEnabled(), true);
   });
+
+  it("search fields use one outlined wrapper and neutralize nested input borders", () => {
+    const css = read("frontend/src/index.css");
+    const searchField = read("frontend/src/components/ui/SearchField.jsx");
+    const messages = read("frontend/src/components/common/MessagePanel.jsx");
+    const ai = read("frontend/src/components/common/AIChatbot.jsx");
+    const student = read("frontend/src/pages/dashboards/StudentDashboard.jsx");
+    assert.match(css, /\.qc-search-field\s*\{/);
+    assert.match(css, /\.qc-search-field input[\s\S]*border:\s*0\s*!important/);
+    assert.match(css, /\.qc-search-clear/);
+    assert.match(searchField, /qc-search-field/);
+    assert.match(searchField, /Clear search/);
+    assert.match(messages, /SearchField/);
+    assert.match(ai, /SearchField/);
+    assert.match(student, /SearchField/);
+    assert.doesNotMatch(student, /bg-slate-900 p-3 rounded-xl border border-slate-800/);
+  });
+
+  it("assignment due-date sort labels are professional and undated items stay last", () => {
+    const student = read("frontend/src/pages/dashboards/StudentDashboard.jsx");
+    assert.match(student, /Due date: Earliest first/);
+    assert.match(student, /Due date: Latest first/);
+    assert.match(student, /sortAssignmentsByDueDate/);
+
+    const sortSource = read("frontend/src/utils/assignmentSort.js");
+    const transformed = sortSource
+      .replace(/export function/g, "function")
+      .concat("\nmodule.exports = { sortAssignmentsByDueDate, dueTimestamp };\n");
+    const sandbox = { module: { exports: {} }, exports: {} };
+    vm.runInNewContext(transformed, sandbox);
+    const { sortAssignmentsByDueDate } = sandbox.module.exports;
+    const sample = [
+      { id: "later", deadline: "2026-12-01T00:00:00.000Z" },
+      { id: "missing", deadline: null },
+      { id: "earlier", deadline: "2026-01-15T00:00:00.000Z" },
+      { id: "invalid", deadline: "not-a-date" },
+    ];
+    // Copy out of the vm realm before asserting (cross-realm arrays break deepEqual).
+    const ascIds = Array.from(sortAssignmentsByDueDate(sample, "due-asc"), (row) => row.id);
+    const descIds = Array.from(sortAssignmentsByDueDate(sample, "due-desc"), (row) => row.id);
+    assert.equal(ascIds.join(","), "earlier,later,missing,invalid");
+    assert.equal(descIds.join(","), "later,earlier,missing,invalid");
+  });
+
+  it("overflow menus portal with fixed positioning to avoid panel clipping", () => {
+    const menu = read("frontend/src/components/ui/OverflowMenu.jsx");
+    const css = read("frontend/src/index.css");
+    assert.match(menu, /createPortal/);
+    assert.match(menu, /qc-overflow-panel--fixed/);
+    assert.match(menu, /Escape/);
+    assert.match(css, /\.qc-overflow-panel--fixed/);
+  });
+
+  it("notifications toolbar stays compact with unread/type filters", () => {
+    const topBar = read("frontend/src/components/common/DashboardTopBar.jsx");
+    assert.match(topBar, /qc-notifications-toolbar/);
+    assert.match(topBar, /qc-toolbar-select/);
+    assert.match(topBar, /qc-filter-chip--compact/);
+    assert.match(topBar, /Mark all read/);
+    assert.match(topBar, /Clear all/);
+  });
 });
