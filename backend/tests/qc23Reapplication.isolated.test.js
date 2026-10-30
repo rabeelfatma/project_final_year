@@ -270,6 +270,23 @@ describe("QC-23 schema and route contracts", () => {
     assert.match(admin, /previousEmail/);
     assert.match(admin, /previousRole/);
   });
+
+  it("frontend hides Submit for pending/approved/permanent status panels", () => {
+    const signup = fs.readFileSync(publicSignupPath, "utf8");
+    assert.match(signup, /BLOCKING_STATUS_CODES/);
+    assert.match(signup, /PENDING_VERIFICATION/);
+    assert.match(signup, /PENDING_APPROVAL/);
+    assert.match(signup, /ALREADY_REGISTERED/);
+    assert.match(signup, /REGISTRATION_PERMANENTLY_REJECTED/);
+    assert.match(signup, /Email Verification Required/);
+    assert.match(signup, /Awaiting Administrator Approval/);
+    assert.match(signup, /showBlockingStatusPanel/);
+    assert.match(signup, /data-signup-status=\{conflictCode\}/);
+    // Blocking panel must offer Resend, not keep Submit Registration Request visible.
+    assert.match(signup, /Resend Verification Email/);
+    // Guard: submit handler must refuse blocking codes.
+    assert.match(signup, /if \(BLOCKING_STATUS_CODES\.has\(conflictCode\)\) return/);
+  });
 });
 
 describe("QC-23 registrationApplication helpers", () => {

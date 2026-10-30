@@ -14,6 +14,14 @@ import { getApiBaseUrl } from "../../utils/apiBase";
 const PASSWORD_HELPER =
   "Password must be 8+ characters with uppercase, lowercase, number & special character.";
 
+/** Conflict codes that replace the registration form with a status panel. */
+const BLOCKING_STATUS_CODES = new Set([
+  "PENDING_VERIFICATION",
+  "PENDING_APPROVAL",
+  "ALREADY_REGISTERED",
+  "REGISTRATION_PERMANENTLY_REJECTED",
+]);
+
 function messageForSignupConflict(data) {
   const code = data?.code;
   if (code === "EMAIL_NOT_CONFIGURED") {
@@ -68,6 +76,34 @@ function fieldErrorClass(hasError) {
   return hasError ? "ring-1 ring-rose-400/80 rounded-qc" : "";
 }
 
+function StatusPanel({ title, children, tone = "info" }) {
+  const toneClass =
+    tone === "danger"
+      ? "border-rose-500/30 bg-rose-500/10"
+      : tone === "warning"
+        ? "border-amber-500/30 bg-amber-500/10"
+        : "border-sky-500/30 bg-sky-500/10";
+  const titleClass =
+    tone === "danger"
+      ? "text-rose-300"
+      : tone === "warning"
+        ? "text-amber-300"
+        : "text-sky-300";
+
+  return (
+    <div
+      className={`rounded-xl border px-4 py-3 space-y-2 ${toneClass}`}
+      role="status"
+      aria-label={title}
+    >
+      <p className={`text-sm font-bold tracking-wide uppercase ${titleClass}`}>
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
 export default function PublicSignup() {
   const navigate = useNavigate();
   const submitLock = useRef(false);
@@ -91,11 +127,22 @@ export default function PublicSignup() {
   const [resubmitted, setResubmitted] = useState(false);
   const [showReapplyForm, setShowReapplyForm] = useState(false);
 
+  const clearBlockingStatus = () => {
+    if (BLOCKING_STATUS_CODES.has(conflictCode)) {
+      setConflictCode("");
+      setMsg("");
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm({ ...form, [name]: value });
     if (fieldErrors[name]) {
       setFieldErrors({ ...fieldErrors, [name]: "" });
+    }
+    // Changing identity fields after a blocking status returns the user to a fresh attempt.
+    if (name === "email" || name === "name" || name === "role") {
+      clearBlockingStatus();
     }
   };
 
@@ -143,9 +190,20 @@ export default function PublicSignup() {
     setFieldErrors({});
   };
 
+  const resetToFreshSignup = () => {
+    setConflictCode("");
+    setMsg("");
+    setReapplyMode(false);
+    setReapplication(null);
+    setShowReapplyForm(false);
+    setFieldErrors({});
+    submitLock.current = false;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitLock.current || submitting || success || resubmitted) return;
+    if (BLOCKING_STATUS_CODES.has(conflictCode)) return;
     setMsg("");
     setConflictCode("");
 
@@ -210,6 +268,12 @@ export default function PublicSignup() {
 
   const showDeclinePanel =
     reapplyMode && reapplication && !showReapplyForm && !success && !resubmitted;
+  const showBlockingStatusPanel =
+    !success &&
+    !resubmitted &&
+    !reapplyMode &&
+    BLOCKING_STATUS_CODES.has(conflictCode);
+  const statusEmail = form.email.trim() || submittedEmail;
 
   return (
     <div className="qc-auth-shell">
@@ -222,11 +286,13 @@ export default function PublicSignup() {
           <p className="qc-auth-subtitle">
             {reapplyMode
               ? "Correct your information and request approval again"
-              : "Verify your email, then wait for Admin approval"}
+              : showBlockingStatusPanel
+                ? "Review your registration status"
+                : "Verify your email, then wait for Admin approval"}
           </p>
         </div>
 
-        {msg && <Alert message={msg} />}
+        {msg && !showBlockingStatusPanel && <Alert message={msg} />}
 
         {resubmitted ? (
           <div className="space-y-3">
@@ -304,14 +370,7 @@ export default function PublicSignup() {
           </div>
         ) : showDeclinePanel ? (
           <div className="space-y-4">
-            <div
-              className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 space-y-2"
-              role="status"
-              aria-label="Registration request declined"
-            >
-              <p className="text-sm font-bold text-rose-300 tracking-wide uppercase">
-                Registration Request Declined
-              </p>
+            <StatusPanel title="Registration Request Declined" tone="danger">
               <p className="text-sm text-[var(--text-faint)]">
                 Your previous application was declined. You can review your
                 information, make the necessary corrections, and submit a new
@@ -343,7 +402,7 @@ export default function PublicSignup() {
                   </dd>
                 </div>
               </dl>
-            </div>
+            </StatusPanel>
 
             <Button
               text="Resubmit Registration Request"
@@ -356,6 +415,95 @@ export default function PublicSignup() {
               type="button"
               onClick={() => navigate("/login")}
             />
+          </div>
+        ) : showBlockingStatusPanel ? (
+          <div className="space-y-4" data-signup-status={conflictCode}>
+            {conflictCode === "PENDING_VERIFICATION" && (
+              <StatusPanel title="Email Verification Required" tone="warning">
+                <p className="text-sm text-[var(--text-faint)]">
+                  A registration with this email is awaiting email verification.
+                  Use Resend Verification Email if you did not receive the link.
+                  You cannot submit another registration request for this email.
+                </p>
+                {statusEmail ? (
+                  <p className="text-sm">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500 block mb-1">
+                      Registered email
+                    </span>
+                    <span className="text-sky-400 break-all">{statusEmail}</span>
+                  </p>
+                ) : null}
+              </StatusPanel>
+            )}
+
+            {conflictCode === "PENDING_APPROVAL" && (
+              <StatusPanel title="Awaiting Administrator Approval" tone="info">
+                <p className="text-sm text-[var(--text-faint)]">
+                  A registration with this email is awaiting administrator
+                  approval. You will be notified when a decision is made. Do not
+                  submit another registration request.
+                </p>
+                {statusEmail ? (
+                  <p className="text-sm">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500 block mb-1">
+                      Registered email
+                    </span>
+                    <span className="text-sky-400 break-all">{statusEmail}</span>
+                  </p>
+                ) : null}
+              </StatusPanel>
+            )}
+
+            {conflictCode === "ALREADY_REGISTERED" && (
+              <StatusPanel title="Account Already Exists" tone="info">
+                <p className="text-sm text-[var(--text-faint)]">
+                  An account with this email already exists. Sign in or use
+                  Forgot Password if you need access. Registration and
+                  reapplication are not available for approved accounts.
+                </p>
+              </StatusPanel>
+            )}
+
+            {conflictCode === "REGISTRATION_PERMANENTLY_REJECTED" && (
+              <StatusPanel title="Reapplication Unavailable" tone="danger">
+                <p className="text-sm text-[var(--text-faint)]">
+                  Reapplication is unavailable for this registration. Contact an
+                  administrator if you need help.
+                </p>
+              </StatusPanel>
+            )}
+
+            {conflictCode === "PENDING_VERIFICATION" && (
+              <Button
+                text="Resend Verification Email"
+                type="button"
+                onClick={() =>
+                  navigate(
+                    `/verify-email?email=${encodeURIComponent(statusEmail)}`
+                  )
+                }
+                aria-label="Resend verification email"
+              />
+            )}
+
+            {(conflictCode === "ALREADY_REGISTERED" ||
+              conflictCode === "PENDING_APPROVAL" ||
+              conflictCode === "REGISTRATION_PERMANENTLY_REJECTED" ||
+              conflictCode === "PENDING_VERIFICATION") && (
+              <Button
+                text="Back to Login"
+                type="button"
+                onClick={() => navigate("/login")}
+              />
+            )}
+
+            <button
+              type="button"
+              className="w-full text-center text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400 hover:underline"
+              onClick={resetToFreshSignup}
+            >
+              Try a different email
+            </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} noValidate className="space-y-0">
@@ -526,33 +674,11 @@ export default function PublicSignup() {
               }
             />
 
-            {(conflictCode === "PENDING_VERIFICATION" ||
-              conflictCode === "PENDING_APPROVAL" ||
-              conflictCode === "ALREADY_REGISTERED" ||
-              conflictCode === "EMAIL_NOT_CONFIGURED" ||
-              conflictCode === "REGISTRATION_PERMANENTLY_REJECTED" ||
-              conflictCode === "EMAIL_IN_USE") && (
-              <div className="mt-3 flex flex-col gap-2">
-                {conflictCode === "PENDING_VERIFICATION" && (
-                  <Button
-                    text="Open Resend Verification"
-                    type="button"
-                    onClick={() =>
-                      navigate(
-                        `/verify-email?email=${encodeURIComponent(form.email.trim())}`
-                      )
-                    }
-                  />
-                )}
-                {(conflictCode === "ALREADY_REGISTERED" ||
-                  conflictCode === "PENDING_APPROVAL" ||
-                  conflictCode === "REGISTRATION_PERMANENTLY_REJECTED") && (
-                  <Button
-                    text="Go to Login"
-                    type="button"
-                    onClick={() => navigate("/login")}
-                  />
-                )}
+            {conflictCode === "EMAIL_NOT_CONFIGURED" && (
+              <div className="mt-3">
+                <p className="text-xs text-[var(--text-faint)] text-center">
+                  Email verification is temporarily unavailable. Try again later.
+                </p>
               </div>
             )}
 
