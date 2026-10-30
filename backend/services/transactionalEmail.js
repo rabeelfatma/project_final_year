@@ -149,7 +149,57 @@ function escapeHtml(value) {
 }
 
 /**
- * @returns {{ ok: true } | { ok: false, code: string, message: string }}
+ * Sanitize recipient to domain-only for operator logs (never log full address).
+ * @param {string} address
+ */
+function recipientDomain(address) {
+  const raw = String(address || "").trim().toLowerCase();
+  const at = raw.lastIndexOf("@");
+  if (at < 0 || at === raw.length - 1) return null;
+  return raw.slice(at + 1).replace(/[>\s].*$/, "") || null;
+}
+
+/**
+ * Map provider/network outcomes to a non-sensitive error category for logs.
+ * @param {{ networkError?: boolean, status?: number|null }} info
+ */
+function categorizeEmailProviderFailure({ networkError = false, status = null } = {}) {
+  if (networkError) return "network_failure";
+  const code = Number(status);
+  if (!Number.isFinite(code) || code <= 0) return "unknown";
+  if (code === 401 || code === 403) return "auth_rejected";
+  if (code === 422) return "validation_rejected";
+  if (code === 429) return "rate_limited";
+  if (code >= 500) return "provider_unavailable";
+  if (code >= 400) return "http_rejected";
+  return "unknown";
+}
+
+/**
+ * Safe diagnostic log — never includes API keys, tokens, full addresses, or provider bodies.
+ */
+function logTransactionalEmailFailure({
+  code,
+  category,
+  providerStatus = null,
+  toDomain = null,
+}) {
+  console.error(
+    "TRANSACTIONAL_EMAIL_FAILED",
+    JSON.stringify({
+      code: code || "EMAIL_PROVIDER_ERROR",
+      category: category || "unknown",
+      providerStatus:
+        Number.isFinite(Number(providerStatus)) && Number(providerStatus) > 0
+          ? Number(providerStatus)
+          : null,
+      toDomain: toDomain || null,
+    })
+  );
+}
+
+/**
+ * @returns {{ ok: true } | { ok: false, code: string, message: string, category?: string, providerStatus?: number|null }}
  */
 async function sendTransactionalEmail(
   { to, subject, text, html },
@@ -161,15 +211,26 @@ async function sendTransactionalEmail(
       ok: false,
       code: "EMAIL_NOT_CONFIGURED",
       message: "Transactional email is not configured.",
+      category: "not_configured",
+      providerStatus: null,
     };
   }
   if (typeof fetchImpl !== "function") {
+    logTransactionalEmailFailure({
+      code: "EMAIL_TRANSPORT_UNAVAILABLE",
+      category: "transport_unavailable",
+      toDomain: recipientDomain(to),
+    });
     return {
       ok: false,
       code: "EMAIL_TRANSPORT_UNAVAILABLE",
       message: "Email transport is unavailable.",
+      category: "transport_unavailable",
+      providerStatus: null,
     };
   }
+
+  const toDomain = recipientDomain(to);
 
   try {
     const response = await fetchImpl("https://api.resend.com/emails", {
@@ -188,18 +249,37 @@ async function sendTransactionalEmail(
     });
 
     if (!response.ok) {
+      const providerStatus = Number(response.status) || null;
+      const category = categorizeEmailProviderFailure({ status: providerStatus });
+      logTransactionalEmailFailure({
+        code: "EMAIL_PROVIDER_ERROR",
+        category,
+        providerStatus,
+        toDomain,
+      });
       return {
         ok: false,
         code: "EMAIL_PROVIDER_ERROR",
         message: "Email provider rejected the message.",
+        category,
+        providerStatus,
       };
     }
     return { ok: true };
   } catch (_) {
+    const category = categorizeEmailProviderFailure({ networkError: true });
+    logTransactionalEmailFailure({
+      code: "EMAIL_PROVIDER_ERROR",
+      category,
+      providerStatus: null,
+      toDomain,
+    });
     return {
       ok: false,
       code: "EMAIL_PROVIDER_ERROR",
       message: "Email provider request failed.",
+      category,
+      providerStatus: null,
     };
   }
 }
@@ -216,4 +296,7 @@ module.exports = {
   templateApplicantApproved,
   templateApplicantRejected,
   sendTransactionalEmail,
+  recipientDomain,
+  categorizeEmailProviderFailure,
+  logTransactionalEmailFailure,
 };

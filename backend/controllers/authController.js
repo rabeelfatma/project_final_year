@@ -396,7 +396,15 @@ exports.requestPublicSignup = async (req, res) => {
       // Account stays pending/unverified; applicant can use resend later when email recovers.
       console.error(
         "PUBLIC SIGNUP EMAIL DELIVERY FAILED:",
-        sent.code || "EMAIL_PROVIDER_ERROR"
+        JSON.stringify({
+          code: sent.code || "EMAIL_PROVIDER_ERROR",
+          category: sent.category || "unknown",
+          providerStatus:
+            Number.isFinite(Number(sent.providerStatus)) &&
+            Number(sent.providerStatus) > 0
+              ? Number(sent.providerStatus)
+              : null,
+        })
       );
       return res.status(201).json({
         message:
@@ -723,7 +731,15 @@ exports.reapplyPublicSignup = async (req, res) => {
     if (!sent.ok) {
       console.error(
         "PUBLIC REAPPLY EMAIL DELIVERY FAILED:",
-        sent.code || "EMAIL_PROVIDER_ERROR"
+        JSON.stringify({
+          code: sent.code || "EMAIL_PROVIDER_ERROR",
+          category: sent.category || "unknown",
+          providerStatus:
+            Number.isFinite(Number(sent.providerStatus)) &&
+            Number(sent.providerStatus) > 0
+              ? Number(sent.providerStatus)
+              : null,
+        })
       );
       return res.status(200).json({
         message:

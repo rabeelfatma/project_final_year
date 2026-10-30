@@ -24,10 +24,16 @@ const BLOCKING_STATUS_CODES = new Set([
 
 function messageForSignupConflict(data) {
   const code = data?.code;
-  if (code === "EMAIL_NOT_CONFIGURED") {
+  if (code === "EMAIL_NOT_CONFIGURED" || code === "EMAIL_UNAVAILABLE") {
     return (
       data.message ||
       "Registration email verification is temporarily unavailable. Please try again later."
+    );
+  }
+  if (code === "VERIFICATION_EMAIL_FAILED" || code === "EMAIL_PROVIDER_ERROR") {
+    return (
+      data.message ||
+      "Your registration was saved, but the verification email could not be sent. Use Resend verification later or contact an administrator."
     );
   }
   if (code === "PENDING_VERIFICATION") {
@@ -79,7 +85,7 @@ function messageForSignupConflict(data) {
 }
 
 function fieldErrorClass(hasError) {
-  return hasError ? "ring-1 ring-rose-400/80 rounded-qc" : "";
+  return hasError ? "qc-field-error" : "";
 }
 
 function StatusPanel({ title, children, tone = "info" }) {
@@ -301,8 +307,8 @@ export default function PublicSignup() {
 
   return (
     <div className="qc-auth-shell">
-      <div className="qc-auth-card max-w-lg !py-6">
-        <div className="text-center mb-4">
+      <div className="qc-auth-card max-w-lg">
+        <div className="text-center mb-3">
           <p className="qc-auth-brand">QuickCheck Hub</p>
           <h1 className="qc-auth-title">
             {reapplyMode ? "Resubmit Registration" : "Create Account"}
@@ -327,14 +333,14 @@ export default function PublicSignup() {
             {emailSent ? (
               <p className="text-sm text-[var(--text-faint)] text-center">
                 A verification link was sent to{" "}
-                <span className="text-sky-400 break-all">{submittedEmail}</span>.
+                <span className="text-sky-400 break-words">{submittedEmail}</span>.
                 Verify your email, then wait for Admin approval before signing
                 in.
               </p>
             ) : (
               <p className="text-sm text-[var(--text-faint)] text-center">
                 Your resubmission for{" "}
-                <span className="text-sky-400 break-all">{submittedEmail}</span>{" "}
+                <span className="text-sky-400 break-words">{submittedEmail}</span>{" "}
                 was saved, but the verification email could not be sent. Use
                 Resend Verification Email when email delivery is available.
               </p>
@@ -363,14 +369,14 @@ export default function PublicSignup() {
             {emailSent ? (
               <p className="text-sm text-[var(--text-faint)] text-center">
                 A verification link was sent to{" "}
-                <span className="text-sky-400 break-all">{submittedEmail}</span>.
+                <span className="text-sky-400 break-words">{submittedEmail}</span>.
                 Open that email and click the link. After verifying, an
                 administrator must approve your account before you can sign in.
               </p>
             ) : (
               <p className="text-sm text-[var(--text-faint)] text-center">
                 Your registration for{" "}
-                <span className="text-sky-400 break-all">{submittedEmail}</span>{" "}
+                <span className="text-sky-400 break-words">{submittedEmail}</span>{" "}
                 was saved, but the verification email could not be sent. Use
                 Resend Verification Email when email delivery is available, or
                 contact an administrator.
@@ -415,7 +421,7 @@ export default function PublicSignup() {
                   <dt className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
                     Registered email
                   </dt>
-                  <dd className="text-sky-400 break-all">
+                  <dd className="text-sky-400 break-words">
                     {lockedAccountEmail || reapplication.email}
                   </dd>
                 </div>
@@ -456,7 +462,7 @@ export default function PublicSignup() {
                     <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500 block mb-1">
                       Registered email
                     </span>
-                    <span className="text-sky-400 break-all">{statusEmail}</span>
+                    <span className="text-sky-400 break-words">{statusEmail}</span>
                   </p>
                 ) : null}
               </StatusPanel>
@@ -474,7 +480,7 @@ export default function PublicSignup() {
                     <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500 block mb-1">
                       Registered email
                     </span>
-                    <span className="text-sky-400 break-all">{statusEmail}</span>
+                    <span className="text-sky-400 break-words">{statusEmail}</span>
                   </p>
                 ) : null}
               </StatusPanel>
@@ -558,7 +564,7 @@ export default function PublicSignup() {
               />
             </div>
             {fieldErrors.name && (
-              <p className="mb-2 text-xs text-rose-400" role="alert">
+              <p className="qc-field-error-text" role="alert">
                 {fieldErrors.name}
               </p>
             )}
@@ -577,14 +583,14 @@ export default function PublicSignup() {
               />
             </div>
             {fieldErrors.email && (
-              <p className="mb-2 text-xs text-rose-400" role="alert">
+              <p className="qc-field-error-text" role="alert">
                 {fieldErrors.email}
               </p>
             )}
             {reapplyMode && (
               <p className="mb-2 text-[11px] text-[var(--text-faint)] leading-snug">
                 Your original account (
-                <span className="text-sky-400 break-all">
+                <span className="text-sky-400 break-words">
                   {lockedAccountEmail || reapplication?.email}
                 </span>
                 ) will be updated. A changed email stays pending until verified.
@@ -616,7 +622,7 @@ export default function PublicSignup() {
               </button>
             </div>
             {fieldErrors.password && (
-              <p className="mb-1 text-xs text-rose-400" role="alert">
+              <p className="qc-field-error-text" role="alert">
                 {fieldErrors.password}
               </p>
             )}
@@ -641,20 +647,20 @@ export default function PublicSignup() {
               />
             </div>
             {fieldErrors.confirmPassword && (
-              <p className="mb-2 text-xs text-rose-400" role="alert">
+              <p className="qc-field-error-text" role="alert">
                 {fieldErrors.confirmPassword}
               </p>
             )}
 
-            <fieldset className="mb-4 mt-1">
-              <legend className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+            <fieldset className="mb-3 mt-1">
+              <legend className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1">
                 Requested Role *
               </legend>
               <div className="grid grid-cols-2 gap-2">
                 {["teacher", "student"].map((role) => (
                   <label
                     key={role}
-                    className={`cursor-pointer rounded-xl border px-3 py-2.5 text-center text-xs font-black uppercase tracking-widest transition-all ${
+                    className={`cursor-pointer rounded-xl border px-3 py-2 text-center text-xs font-black uppercase tracking-widest transition-all ${
                       form.role === role
                         ? "border-sky-400 bg-sky-500/15 text-sky-300"
                         : "border-slate-700 text-slate-400 hover:border-sky-500/50"
@@ -678,7 +684,7 @@ export default function PublicSignup() {
                 </p>
               )}
               {fieldErrors.role && (
-                <p className="mt-1.5 text-xs text-rose-400" role="alert">
+                <p className="qc-field-error-text mt-1.5" role="alert">
                   {fieldErrors.role}
                 </p>
               )}
@@ -703,7 +709,9 @@ export default function PublicSignup() {
               }
             />
 
-            {conflictCode === "EMAIL_NOT_CONFIGURED" && (
+            {(conflictCode === "EMAIL_NOT_CONFIGURED" ||
+              conflictCode === "EMAIL_UNAVAILABLE" ||
+              conflictCode === "EMAIL_PROVIDER_ERROR") && (
               <div className="mt-3">
                 <p className="text-xs text-[var(--text-faint)] text-center">
                   Email verification is temporarily unavailable. Try again later.
@@ -711,7 +719,7 @@ export default function PublicSignup() {
               </div>
             )}
 
-            <p className="text-center text-[var(--text-faint)] mt-4 text-[11px] font-bold uppercase tracking-[0.2em]">
+            <p className="text-center text-[var(--text-faint)] mt-3 text-[11px] font-bold uppercase tracking-[0.2em]">
               Already have an account?{" "}
               <Link to="/login" className="text-sky-400 hover:underline">
                 Log In

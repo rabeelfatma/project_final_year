@@ -413,15 +413,21 @@ export default function AdminDashboard() {
                 <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{readyForApprovalCount}</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Registration request status">
               {['pending', 'approved', 'rejected'].map((status) => (
                 <button
                   key={status}
                   type="button"
+                  role="tab"
+                  aria-selected={registrationFilter === status}
                   onClick={() => setRegistrationFilter(status)}
                   className={`qc-filter-chip ${registrationFilter === status ? 'is-active' : ''}`}
                 >
-                  {status === 'pending' ? 'Pending Requests' : status}
+                  {status === 'pending'
+                    ? 'Pending Requests'
+                    : status === 'approved'
+                      ? 'Approved'
+                      : 'Rejected'}
                 </button>
               ))}
             </div>
@@ -714,20 +720,57 @@ export default function AdminDashboard() {
 }
 
 function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject, onViewHistory }) {
-  const colSpan = filter === 'pending' ? 8 : 7;
+  const isPending = filter === 'pending';
+  const colSpan = isPending ? 8 : 7;
   return (
-    <div className="qc-table-wrap">
-      <table className="qc-table min-w-[900px]">
+    <div
+      className={`qc-table-wrap qc-table-wrap--registration ${isPending ? 'is-pending' : 'is-review'}`}
+      role="region"
+      aria-label="Registration requests table"
+    >
+      <table
+        className={`qc-table qc-table--registration ${
+          isPending ? 'qc-table--registration-pending' : 'qc-table--registration-review'
+        }`}
+      >
+        <colgroup>
+          {isPending ? (
+            <>
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '19%' }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '8%' }} />
+            </>
+          )}
+        </colgroup>
         <thead>
           <tr>
-            <th>Full Name</th>
-            <th>Email</th>
-            <th>Requested Role</th>
-            <th>Registration Date</th>
-            <th>Email Verified</th>
-            <th>Status</th>
-            <th>Attempt</th>
-            {filter === 'pending' && <th className="text-right">Actions</th>}
+            <th scope="col">Name</th>
+            <th scope="col">Email</th>
+            <th scope="col">Role</th>
+            <th scope="col">Registered</th>
+            <th scope="col">Verified</th>
+            <th scope="col">Status</th>
+            <th scope="col">Attempt</th>
+            {isPending && (
+              <th scope="col" className="text-right">
+                Actions
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -735,10 +778,10 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
             <tr key={item.id}>
               <td className="font-semibold">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>{item.name}</span>
+                  <span className="break-words">{item.name}</span>
                   {item.reapplied ? (
                     <span
-                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0"
                       style={{
                         color: 'var(--warning)',
                         background: 'color-mix(in srgb, var(--warning) 16%, transparent)',
@@ -750,8 +793,8 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                   ) : null}
                 </div>
               </td>
-              <td className="theme-muted break-all">{item.email}</td>
-              <td className="accent-text text-xs font-semibold uppercase tracking-wide">{item.role}</td>
+              <td className="theme-muted qc-email-cell">{item.email}</td>
+              <td className="accent-text text-xs font-semibold uppercase tracking-wide whitespace-nowrap">{item.role}</td>
               <td className="theme-muted whitespace-nowrap">
                 {item.lastSubmittedAt
                   ? new Date(item.lastSubmittedAt).toLocaleDateString()
@@ -768,7 +811,7 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                   <span className="theme-muted">Not recorded</span>
                 )}
               </td>
-              <td className="theme-muted text-xs font-semibold uppercase tracking-wide">
+              <td className="theme-muted text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
                 {item.approvalStatus}
                 {item.reapplicationDisabled ? (
                   <span className="block text-[10px] normal-case tracking-normal mt-0.5" style={{ color: 'var(--danger)' }}>
@@ -786,28 +829,28 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                   #{item.applicationAttempt || 1}
                 </button>
               </td>
-              {filter === 'pending' && (
-                <td className="text-right whitespace-nowrap">
-                  <div className="inline-flex items-center gap-2 justify-end">
+              {isPending && (
+                <td className="text-right">
+                  <div className="inline-flex items-center gap-1.5 justify-end flex-wrap">
                     <button
                       type="button"
                       disabled={Boolean(actionId) || item.emailVerified !== true}
                       onClick={() => onApprove(item.id)}
-                      className="qc-btn qc-btn-secondary !min-h-8 !px-2.5 !text-xs"
+                      className="qc-btn qc-btn-secondary !min-h-7 !px-2 !text-[11px] !gap-1"
                       style={{ color: 'var(--success)' }}
                       aria-label={`Approve ${item.name}`}
                       title={item.emailVerified !== true ? 'Email must be verified first' : 'Approve'}
                     >
-                      <Check size={14} /> Approve
+                      <Check size={13} /> Approve
                     </button>
                     <button
                       type="button"
                       disabled={Boolean(actionId)}
                       onClick={() => onReject(item)}
-                      className="qc-btn qc-btn-danger !min-h-8 !px-2.5 !text-xs"
+                      className="qc-btn qc-btn-danger !min-h-7 !px-2 !text-[11px] !gap-1"
                       aria-label={`Reject ${item.name}`}
                     >
-                      <Ban size={14} /> Reject
+                      <Ban size={13} /> Reject
                     </button>
                   </div>
                 </td>

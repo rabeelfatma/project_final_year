@@ -390,9 +390,18 @@ async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()
     targetEmail
   );
   if (!sent.ok) {
+    // Sanitized category/status only — never log provider bodies or secrets.
     console.error(
       "RESEND VERIFICATION DELIVERY FAILED:",
-      sent.code || "EMAIL_PROVIDER_ERROR"
+      JSON.stringify({
+        code: sent.code || "EMAIL_PROVIDER_ERROR",
+        category: sent.category || "unknown",
+        providerStatus:
+          Number.isFinite(Number(sent.providerStatus)) &&
+          Number(sent.providerStatus) > 0
+            ? Number(sent.providerStatus)
+            : null,
+      })
     );
     return {
       ok: false,

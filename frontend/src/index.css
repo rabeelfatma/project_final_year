@@ -3276,15 +3276,27 @@ button,
 
 .qc-btn-block {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  text-wrap: balance;
+  overflow-wrap: break-word;
 }
 
 .qc-table-wrap {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+/* Registration tables: fit dashboard width on desktop; scroll only on narrow screens. */
+.qc-table-wrap--registration {
+  overflow-x: visible;
 }
 
 .qc-table {
@@ -3293,12 +3305,19 @@ button,
   text-align: left;
 }
 
+.qc-table--registration {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
 .qc-table thead {
   background: var(--surface-2);
 }
 
 .qc-table th {
-  padding: 0.85rem 1rem;
+  padding: 0.55rem 0.75rem;
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -3309,11 +3328,41 @@ button,
 }
 
 .qc-table td {
-  padding: 0.9rem 1rem;
+  padding: 0.55rem 0.75rem;
   font-size: 0.875rem;
   color: var(--text);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+}
+
+.qc-table--registration th {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.25;
+  vertical-align: bottom;
+  hyphens: manual;
+}
+
+.qc-table--registration td {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.qc-table--registration .qc-email-cell {
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+}
+
+.qc-email-cell {
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
 }
 
 .qc-table tbody tr:last-child td {
@@ -3332,12 +3381,36 @@ button,
   color: var(--muted);
 }
 
+@media (max-width: 1023px) {
+  .qc-table-wrap--registration {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .qc-table--registration-pending {
+    min-width: 52rem;
+  }
+
+  .qc-table--registration-review {
+    min-width: 40rem;
+  }
+}
+
 .qc-auth-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 1.25rem;
+  /* Fallback: top-aligned with safe padding so content is never clipped above the viewport. */
+  align-items: flex-start;
+  /* Prefer optical centering; "safe" falls back to start when the card is taller than the viewport. */
+  align-items: safe center;
+  box-sizing: border-box;
+  padding:
+    max(1.25rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, var(--accent-soft), transparent),
     var(--bg);
@@ -3346,23 +3419,34 @@ button,
 .qc-auth-card {
   width: 100%;
   max-width: 28rem;
+  margin-inline: auto;
+  flex-shrink: 0;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
-  padding: 1.75rem 1.5rem;
+  padding: 1rem 1.05rem 1.15rem;
+  box-sizing: border-box;
 }
 
 @media (min-width: 640px) {
   .qc-auth-card {
-    padding: 2rem;
+    padding: 1.2rem 1.3rem 1.3rem;
+  }
+}
+
+/* Short viewports: keep the card fully reachable via natural page scroll. */
+@media (max-height: 720px) {
+  .qc-auth-shell {
+    align-items: flex-start;
+    padding-top: max(1rem, env(safe-area-inset-top, 0px));
   }
 }
 
 .qc-auth-brand {
-  margin: 0 0 0.35rem;
-  font-size: 0.75rem;
+  margin: 0 0 0.15rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -3371,30 +3455,57 @@ button,
 
 .qc-auth-title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text);
+  line-height: 1.2;
 }
 
 .qc-auth-subtitle {
-  margin: 0.4rem 0 0;
-  font-size: 0.875rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
   color: var(--muted);
+  line-height: 1.3;
 }
 
 .qc-field {
   width: 100%;
-  min-height: 2.75rem;
-  margin-bottom: 0.75rem;
-  padding: 0.65rem 0.85rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 2.4rem;
+  margin-bottom: 0.35rem;
+  padding: 0.5rem 0.7rem;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--input-bg);
   color: var(--text);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.qc-field-error .qc-field,
+.qc-field.qc-field--invalid {
+  border-color: color-mix(in srgb, var(--danger) 65%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+.qc-field-error-text {
+  margin: 0.1rem 0 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--danger);
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.qc-alert {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
 }
 
 .qc-field:focus {

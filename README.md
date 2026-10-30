@@ -64,10 +64,15 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Shared top-right Logout for Admin / Teacher / Student (QC-22 isolated contracts).
 - Resend-only transactional email path; stronger signup/reset password policy; protected artifact/download path checks (mocked suites).
 - Password-reset confirm IP rate limit (separate from request limits) + isolated regression coverage.
+- QC-23 rejected-user reapplication (same User ID, history, pending email, Admin re-review) + isolated regressions.
+- QC-24 compact auth/Admin Registration UI + Alert sizing + sanitized Resend diagnostic categories (mocked provider only).
+- Auth card safe-center positioning; Admin Approved/Rejected registration tables sized to fit desktop content width without forced horizontal scroll.
 
 ### ACTIVE
 - Operator three-role Logout click-through on Production.
 - Full Admin → Teacher → Student academic demo walkthrough.
+- Confirm live Resend delivery using operator-approved unused mailbox after reviewing sanitized `TRANSACTIONAL_EMAIL_FAILED` logs (no credential changes in-repo).
+- Visual confirm Admin Registration Approved/Rejected tabs at 1366×768 after UI layout correction.
 
 ### BLOCKED
 - Preview Mongo isolation vs Production DB `quickcheck_rabeel_demo` — **UNVERIFIED**.
@@ -77,7 +82,7 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Orphan Vercel project `frontend` CI noise — do not modify that project in-repo.
 
 ### NEXT
-1. Sign into Production as Admin (`/admin`), Teacher, and Student (`/login`); confirm top-right Logout and protected-route lockout.
+1. With local backend running, trigger one mocked-config or staging resend and read sanitized `TRANSACTIONAL_EMAIL_FAILED` / success logs to confirm whether Resend rejects the From domain or API auth — without changing credentials.
 
 ### FUTURE
 - Replace non-desired Resend From domain after a verified sender is ready.

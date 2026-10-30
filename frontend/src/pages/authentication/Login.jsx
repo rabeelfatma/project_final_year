@@ -142,7 +142,7 @@ export default function Login() {
   return (
     <div className="qc-auth-shell">
       <div className="qc-auth-card max-w-lg">
-        <div className="text-center mb-7">
+        <div className="text-center mb-4">
           <p className="qc-auth-brand">QuickCheck Hub</p>
           <h1 className="qc-auth-title">Welcome Back</h1>
           <p className="qc-auth-subtitle">
@@ -194,7 +194,7 @@ export default function Login() {
 
         {showForm && (
           <form onSubmit={handleSubmit} noValidate>
-            <div className="mb-4">
+            <div className="mb-1">
               <label className="sr-only" htmlFor="login-email">
                 Email Address
               </label>
@@ -207,7 +207,7 @@ export default function Login() {
               />
             </div>
 
-            <div className="relative mb-2">
+            <div className="relative mb-1">
               <label className="sr-only" htmlFor="login-password">
                 Password
               </label>
@@ -229,7 +229,7 @@ export default function Login() {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-6 text-[11px] font-bold">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[11px] font-bold">
               <p className="text-[var(--text-faint)] uppercase tracking-widest">
                 Don&apos;t have an account?{" "}
                 <Link to="/signup" className="accent-text hover:underline">
@@ -257,7 +257,7 @@ export default function Login() {
             <button
               type="button"
               onClick={backToRoles}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em] hover:text-[var(--accent)] transition-colors"
+              className="mt-4 w-full inline-flex items-center justify-center gap-2 text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em] hover:text-[var(--accent)] transition-colors"
             >
               <ArrowLeft size={14} aria-hidden="true" />
               Change Role
