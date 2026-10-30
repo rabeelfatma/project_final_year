@@ -69,6 +69,12 @@ function messageForSignupConflict(data) {
       "Only Teacher or Student registration requests are accepted."
     );
   }
+  if (code === "ACCOUNT_EMAIL_REQUIRED" || code === "NOT_FOUND") {
+    return (
+      data.message ||
+      "Could not locate your declined registration. Start again using your original registered email, then resubmit."
+    );
+  }
   return data?.message || "Unable to submit registration request.";
 }
 
@@ -126,6 +132,9 @@ export default function PublicSignup() {
   const [reapplyMode, setReapplyMode] = useState(false);
   const [resubmitted, setResubmitted] = useState(false);
   const [showReapplyForm, setShowReapplyForm] = useState(false);
+  // Locked identity from the rejected account — never overwritten by editable form fields.
+  const [lockedAccountEmail, setLockedAccountEmail] = useState("");
+  const [lockedAccountId, setLockedAccountId] = useState("");
 
   const clearBlockingStatus = () => {
     if (BLOCKING_STATUS_CODES.has(conflictCode)) {
@@ -174,13 +183,20 @@ export default function PublicSignup() {
   };
 
   const enterReapplyMode = (info) => {
+    const originalEmail = typeof info?.email === "string" ? info.email.trim() : "";
+    const originalId =
+      info?.accountId != null && String(info.accountId).trim() !== ""
+        ? String(info.accountId).trim()
+        : "";
     setReapplication(info);
+    setLockedAccountEmail(originalEmail);
+    setLockedAccountId(originalId);
     setReapplyMode(true);
     setShowReapplyForm(false);
     setForm((prev) => ({
       ...prev,
       name: info?.name || prev.name,
-      email: info?.email || prev.email,
+      email: originalEmail || prev.email,
       role: info?.role === "teacher" || info?.role === "student" ? info.role : prev.role,
       password: "",
       confirmPassword: "",
@@ -195,6 +211,8 @@ export default function PublicSignup() {
     setMsg("");
     setReapplyMode(false);
     setReapplication(null);
+    setLockedAccountEmail("");
+    setLockedAccountId("");
     setShowReapplyForm(false);
     setFieldErrors({});
     submitLock.current = false;
@@ -222,7 +240,13 @@ export default function PublicSignup() {
         role: form.role,
       };
       if (reapplyMode) {
-        payload.accountEmail = reapplication?.email || form.email.trim();
+        // Always identify the rejected account by locked original identity —
+        // never by the editable form email (which may have changed).
+        payload.accountEmail =
+          lockedAccountEmail || reapplication?.email || "";
+        if (lockedAccountId || reapplication?.accountId) {
+          payload.accountId = lockedAccountId || reapplication.accountId;
+        }
       }
 
       const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
@@ -391,7 +415,9 @@ export default function PublicSignup() {
                   <dt className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
                     Registered email
                   </dt>
-                  <dd className="text-sky-400 break-all">{reapplication.email}</dd>
+                  <dd className="text-sky-400 break-all">
+                    {lockedAccountEmail || reapplication.email}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
@@ -557,8 +583,11 @@ export default function PublicSignup() {
             )}
             {reapplyMode && (
               <p className="mb-2 text-[11px] text-[var(--text-faint)] leading-snug">
-                Changing email requires verifying the new address before Admin
-                approval.
+                Your original account (
+                <span className="text-sky-400 break-all">
+                  {lockedAccountEmail || reapplication?.email}
+                </span>
+                ) will be updated. A changed email stays pending until verified.
               </p>
             )}
 

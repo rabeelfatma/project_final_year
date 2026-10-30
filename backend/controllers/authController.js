@@ -431,8 +431,15 @@ exports.requestPublicSignup = async (req, res) => {
 // ==========================================
 exports.reapplyPublicSignup = async (req, res) => {
   try {
-    const { name, email, password, confirmPassword, role, accountEmail } =
-      req.body || {};
+    const {
+      name,
+      email,
+      password,
+      confirmPassword,
+      role,
+      accountEmail,
+      accountId,
+    } = req.body || {};
     const {
       getEmailConfig,
     } = require("../services/transactionalEmail");
@@ -461,11 +468,16 @@ exports.reapplyPublicSignup = async (req, res) => {
       return res.status(400).json({ message: desiredEmailCheck.message });
     }
 
-    const accountEmailCheck = validateEmailInput(
-      accountEmail != null && String(accountEmail).trim() !== ""
-        ? accountEmail
-        : email
-    );
+    // Account identity MUST come from the original rejected registration email.
+    // Never fall back to the editable "email" field — that breaks email-change reapply.
+    if (accountEmail == null || String(accountEmail).trim() === "") {
+      return res.status(400).json({
+        message:
+          "Original registered email is required to resubmit. Start again from your declined registration email.",
+        code: "ACCOUNT_EMAIL_REQUIRED",
+      });
+    }
+    const accountEmailCheck = validateEmailInput(accountEmail);
     if (!accountEmailCheck.ok) {
       return res.status(400).json({ message: accountEmailCheck.message });
     }
@@ -533,8 +545,32 @@ exports.reapplyPublicSignup = async (req, res) => {
       });
     }
 
-    // Locate the existing rejected account by its current registered email.
-    const user = await User.findOne({ email: accountEmailNormalized });
+    // Locate the existing rejected account by stable identity (id and/or original email).
+    // Do not look up by the editable desired email — that account does not exist yet.
+    let user = null;
+    const requestedAccountId =
+      accountId != null && String(accountId).trim() !== ""
+        ? String(accountId).trim()
+        : null;
+
+    if (requestedAccountId) {
+      user = await User.findById(requestedAccountId);
+      if (
+        user &&
+        String(user.email || "")
+          .trim()
+          .toLowerCase() !== accountEmailNormalized
+      ) {
+        // Identity mismatch — refuse before any mutation.
+        return res.status(404).json({
+          message: "No declined registration was found for this email.",
+          code: "NOT_FOUND",
+        });
+      }
+    }
+    if (!user) {
+      user = await User.findOne({ email: accountEmailNormalized });
+    }
     if (!user) {
       return res.status(404).json({
         message: "No declined registration was found for this email.",

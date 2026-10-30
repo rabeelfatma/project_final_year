@@ -258,6 +258,9 @@ describe("QC-23 schema and route contracts", () => {
     assert.match(signup, /Registration Request Declined/);
     assert.match(signup, /\/auth\/reapply/);
     assert.match(signup, /accountEmail/);
+    assert.match(signup, /lockedAccountEmail/);
+    assert.match(signup, /lockedAccountId/);
+    assert.match(signup, /accountId/);
     assert.match(
       signup,
       /Password must be 8\+ characters with uppercase, lowercase, number & special character/
@@ -325,6 +328,7 @@ describe("QC-23 registrationApplication helpers", () => {
 
     const pub = toPublicReapplicationInfo(user);
     assert.equal(pub.email, "ada@example.com");
+    assert.equal(pub.accountId, "u1");
     assert.equal(pub.rejectionReason, "Bad docs");
     assert.equal(pub.password, undefined);
 
@@ -380,6 +384,7 @@ describe("QC-23 public signup + reapplication (mocked)", () => {
     let created = 0;
 
     const auth = loadAuthController({
+      findById: async () => null,
       findOne: async () => doc,
       countDocuments: async () => 0,
       create: async () => {
@@ -583,6 +588,7 @@ describe("QC-23 public signup + reapplication (mocked)", () => {
   it("14. Teacher-to-Student and Student-to-Teacher role changes allowed on reapply", async () => {
     const doc = rejectedStudentDoc({ role: "student" });
     const auth = loadAuthController({
+      findById: async () => null,
       findOne: async (query) => {
         if (query && query.$or) return null;
         if (query && query._id && query._id.$ne) return null;
@@ -641,6 +647,7 @@ describe("QC-23 public signup + reapplication (mocked)", () => {
   it("14c. email change stores pendingEmail without changing User id", async () => {
     const doc = rejectedStudentDoc();
     const auth = loadAuthController({
+      findById: async () => null,
       findOne: async (query) => {
         if (query && (query.$or || (query._id && query._id.$ne))) return null;
         return doc;
@@ -671,9 +678,117 @@ describe("QC-23 public signup + reapplication (mocked)", () => {
     assert.equal(doc.approvalStatus, "pending");
   });
 
+  it("14c2. editable email+role change keeps original rejected teacher account (rabeel scenario)", async () => {
+    // Exact observed Admin row: rabeel jutt / rabeelf43@gmail.com / teacher / rejected / attempt 1
+    const history = [
+      {
+        attempt: 1,
+        submittedAt: new Date("2026-01-01T00:00:00Z"),
+        decidedAt: new Date("2026-01-02T00:00:00Z"),
+        decision: "rejected",
+        rejectionReason: "Incomplete profile",
+        name: "rabeel jutt",
+        email: "rabeelf43@gmail.com",
+        role: "teacher",
+      },
+    ];
+    const doc = rejectedStudentDoc({
+      _id: "rejected-rabeel-1",
+      name: "rabeel jutt",
+      email: "rabeelf43@gmail.com",
+      role: "teacher",
+      registrationNumber: null,
+      rejectionReason: "Incomplete profile",
+      applicationAttempt: 1,
+      applicationHistory: history,
+    });
+    let created = 0;
+    let saved = false;
+    doc.save = async function save() {
+      saved = true;
+      return this;
+    };
+
+    const auth = loadAuthController({
+      findById: async (id) =>
+        String(id) === "rejected-rabeel-1" ? doc : null,
+      findOne: async (query) => {
+        if (query && query.$or) return null;
+        if (query && query.email === "rabeelf43@gmail.com") return doc;
+        // Looking up by the NEW editable email must not be required for success.
+        if (query && query.email === "rabeelf4@gmail.com") return null;
+        return null;
+      },
+      countDocuments: async () => 0,
+      create: async () => {
+        created += 1;
+        throw new Error("must not create");
+      },
+    });
+
+    // Reproduce the broken client that only sent the new email (no accountEmail).
+    const broken = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.0.80",
+        body: {
+          name: "Rabeel Updated",
+          email: "rabeelf4@gmail.com",
+          password: "StudentPass12!",
+          confirmPassword: "StudentPass12!",
+          role: "student",
+        },
+      },
+      broken
+    );
+    assert.equal(broken.statusCode, 400);
+    assert.equal(broken.body.code, "ACCOUNT_EMAIL_REQUIRED");
+    assert.equal(saved, false);
+    assert.equal(doc.approvalStatus, "rejected");
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.role, "teacher");
+    assert.equal(created, 0);
+
+    // Correct client: locked original accountEmail/accountId + edited fields.
+    const res = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.0.80",
+        body: {
+          name: "Rabeel Updated",
+          email: "rabeelf4@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rejected-rabeel-1",
+          password: "StudentPass12!",
+          confirmPassword: "StudentPass12!",
+          role: "student",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assert.equal(created, 0);
+    assert.equal(doc._id, "rejected-rabeel-1");
+    assert.equal(doc.name, "Rabeel Updated");
+    assert.equal(doc.previousName, "rabeel jutt");
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.pendingEmail, "rabeelf4@gmail.com");
+    assert.equal(doc.previousEmail, "rabeelf43@gmail.com");
+    assert.equal(doc.role, "student");
+    assert.equal(doc.previousRole, "teacher");
+    assert.equal(doc.approvalStatus, "pending");
+    assert.equal(doc.emailVerified, false);
+    assert.equal(doc.applicationAttempt, 2);
+    assert.equal(doc.applicationHistory.length, 1);
+    assert.equal(doc.applicationHistory[0].rejectionReason, "Incomplete profile");
+    assert.equal(doc.applicationHistory[0].email, "rabeelf43@gmail.com");
+    assert.match(doc.password, /^\$2[aby]?\$/);
+  });
+
   it("14d. duplicate target email is rejected", async () => {
     const doc = rejectedStudentDoc();
     const auth = loadAuthController({
+      findById: async () => null,
       findOne: async (query) => {
         if (query && query.$or) {
           return { _id: "other", email: "taken@example.com" };
@@ -788,6 +903,320 @@ describe("QC-23 public signup + reapplication (mocked)", () => {
     assert.equal(doc.emailVerified, false);
     assert.equal(doc.approvalStatus, "pending");
     assert.doesNotMatch(res.body.message || "", /verified successfully/i);
+  });
+});
+
+describe("QC-23 optional field changes on reapply (mocked)", () => {
+  const ORIGINAL_HASH = "$2a$10$existinghashxxxxxxxxxxxxxx";
+  const PASS = "TeacherPass12!";
+
+  function loadReapplyAuth(doc) {
+    let created = 0;
+    const auth = loadAuthController({
+      findById: async (id) => (String(id) === String(doc._id) ? doc : null),
+      findOne: async (query) => {
+        if (query && query.$or) return null;
+        if (query && query._id && query._id.$ne) return null;
+        if (query && query.email && query.email !== doc.email) return null;
+        if (query && query.email === doc.email) return doc;
+        return doc;
+      },
+      countDocuments: async () => 0,
+      create: async () => {
+        created += 1;
+        throw new Error("must not create duplicate user");
+      },
+    });
+    return { auth, getCreated: () => created };
+  }
+
+  function baseRejectedTeacher(overrides = {}) {
+    return rejectedStudentDoc({
+      _id: "rej-optional-1",
+      name: "rabeel jutt",
+      email: "rabeelf43@gmail.com",
+      role: "teacher",
+      password: ORIGINAL_HASH,
+      registrationNumber: null,
+      rejectionReason: "Incomplete profile",
+      applicationAttempt: 1,
+      applicationHistory: [
+        {
+          attempt: 1,
+          submittedAt: new Date("2026-01-01T00:00:00Z"),
+          decidedAt: new Date("2026-01-02T00:00:00Z"),
+          decision: "rejected",
+          rejectionReason: "Incomplete profile",
+          name: "rabeel jutt",
+          email: "rabeelf43@gmail.com",
+          role: "teacher",
+        },
+      ],
+      ...overrides,
+    });
+  }
+
+  function assertCommonReapplySuccess(doc, { created, previousHistoryLen }) {
+    assert.equal(created, 0);
+    assert.equal(doc._id, "rej-optional-1");
+    assert.equal(doc.approvalStatus, "pending");
+    assert.equal(doc.isAllowedLogin, false);
+    assert.equal(doc.emailVerified, false);
+    assert.equal(doc.rejectionReason, null);
+    assert.equal(doc.applicationAttempt, 2);
+    assert.equal(doc.applicationHistory.length, previousHistoryLen);
+    assert.equal(doc.applicationHistory[0].rejectionReason, "Incomplete profile");
+    assert.ok(doc.lastSubmittedAt);
+    assert.match(doc.password, /^\$2[aby]?\$/);
+    assert.doesNotMatch(JSON.stringify(doc.applicationHistory), /TeacherPass|StudentPass|password/i);
+  }
+
+  it("TEST 1 — reapply succeeds with exactly the same details", async () => {
+    const doc = baseRejectedTeacher();
+    const historyLen = doc.applicationHistory.length;
+    const { auth, getCreated } = loadReapplyAuth(doc);
+    const res = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.1",
+        body: {
+          name: "rabeel jutt",
+          email: "rabeelf43@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-1",
+          password: PASS,
+          confirmPassword: PASS,
+          role: "teacher",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body.message, /resubmitted successfully/i);
+    assertCommonReapplySuccess(doc, {
+      created: getCreated(),
+      previousHistoryLen: historyLen,
+    });
+    assert.equal(doc.name, "rabeel jutt");
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.pendingEmail, null);
+    assert.equal(doc.role, "teacher");
+    assert.equal(doc.previousName, "rabeel jutt");
+    assert.equal(doc.previousEmail, "rabeelf43@gmail.com");
+    assert.equal(doc.previousRole, "teacher");
+    assert.notEqual(doc.password, ORIGINAL_HASH);
+  });
+
+  it("TEST 2 — name only changed", async () => {
+    const doc = baseRejectedTeacher();
+    const historyLen = doc.applicationHistory.length;
+    const { auth, getCreated } = loadReapplyAuth(doc);
+    const res = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.2",
+        body: {
+          name: "Rabeel Updated",
+          email: "rabeelf43@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-1",
+          password: PASS,
+          confirmPassword: PASS,
+          role: "teacher",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assertCommonReapplySuccess(doc, {
+      created: getCreated(),
+      previousHistoryLen: historyLen,
+    });
+    assert.equal(doc.name, "Rabeel Updated");
+    assert.equal(doc.previousName, "rabeel jutt");
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.pendingEmail, null);
+    assert.equal(doc.role, "teacher");
+  });
+
+  it("TEST 3 — email only changed; stays pending until verified", async () => {
+    const doc = baseRejectedTeacher();
+    const historyLen = doc.applicationHistory.length;
+    const { auth, getCreated } = loadReapplyAuth(doc);
+    const res = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.3",
+        body: {
+          name: "rabeel jutt",
+          email: "rabeelf4@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-1",
+          password: PASS,
+          confirmPassword: PASS,
+          role: "teacher",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.emailChanged, true);
+    assertCommonReapplySuccess(doc, {
+      created: getCreated(),
+      previousHistoryLen: historyLen,
+    });
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.pendingEmail, "rabeelf4@gmail.com");
+    assert.equal(doc.previousEmail, "rabeelf43@gmail.com");
+    assert.equal(doc.name, "rabeel jutt");
+    assert.equal(doc.role, "teacher");
+    assert.equal(doc.emailVerified, false);
+  });
+
+  it("TEST 4 — password only changed; hashed; no password history", async () => {
+    const doc = baseRejectedTeacher();
+    const historyLen = doc.applicationHistory.length;
+    const { auth, getCreated } = loadReapplyAuth(doc);
+    const res = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.4",
+        body: {
+          name: "rabeel jutt",
+          email: "rabeelf43@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-1",
+          password: "NewSecure1!",
+          confirmPassword: "NewSecure1!",
+          role: "teacher",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assertCommonReapplySuccess(doc, {
+      created: getCreated(),
+      previousHistoryLen: historyLen,
+    });
+    assert.notEqual(doc.password, ORIGINAL_HASH);
+    assert.match(doc.password, /^\$2[aby]?\$/);
+    assert.doesNotMatch(doc.password, /NewSecure1!/);
+    assert.equal(doc.name, "rabeel jutt");
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.pendingEmail, null);
+    assert.equal(doc.role, "teacher");
+    assert.equal(Object.prototype.hasOwnProperty.call(doc, "passwordHistory"), false);
+    assert.doesNotMatch(JSON.stringify(doc), /NewSecure1!/);
+  });
+
+  it("TEST 5 — role only changed Teacher↔Student", async () => {
+    const teacherDoc = baseRejectedTeacher();
+    const teacherHistoryLen = teacherDoc.applicationHistory.length;
+    const teacherAuth = loadReapplyAuth(teacherDoc);
+    const teacherRes = mockRes();
+    await teacherAuth.auth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.5",
+        body: {
+          name: "rabeel jutt",
+          email: "rabeelf43@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-1",
+          password: PASS,
+          confirmPassword: PASS,
+          role: "student",
+        },
+      },
+      teacherRes
+    );
+    assert.equal(teacherRes.statusCode, 200);
+    assertCommonReapplySuccess(teacherDoc, {
+      created: teacherAuth.getCreated(),
+      previousHistoryLen: teacherHistoryLen,
+    });
+    assert.equal(teacherDoc.role, "student");
+    assert.equal(teacherDoc.previousRole, "teacher");
+    assert.equal(teacherDoc.name, "rabeel jutt");
+    assert.equal(teacherDoc.email, "rabeelf43@gmail.com");
+    assert.equal(teacherDoc.pendingEmail, null);
+
+    const studentDoc = baseRejectedTeacher({
+      _id: "rej-optional-2",
+      role: "student",
+      registrationNumber: "SP26-BCS-099",
+    });
+    // Remap auth for the second document id/email lookup.
+    const studentAuth = loadAuthController({
+      findById: async (id) =>
+        String(id) === "rej-optional-2" ? studentDoc : null,
+      findOne: async (query) => {
+        if (query && query.$or) return null;
+        if (query && query.email === studentDoc.email) return studentDoc;
+        return null;
+      },
+      countDocuments: async () => 0,
+      create: async () => {
+        throw new Error("must not create");
+      },
+    });
+    const studentRes = mockRes();
+    await studentAuth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.6",
+        body: {
+          name: "rabeel jutt",
+          email: "rabeelf43@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-2",
+          password: PASS,
+          confirmPassword: PASS,
+          role: "teacher",
+        },
+      },
+      studentRes
+    );
+    assert.equal(studentRes.statusCode, 200);
+    assert.equal(studentDoc._id, "rej-optional-2");
+    assert.equal(studentDoc.role, "teacher");
+    assert.equal(studentDoc.previousRole, "student");
+    assert.equal(studentDoc.approvalStatus, "pending");
+    assert.equal(studentDoc.applicationAttempt, 2);
+  });
+
+  it("TEST 6 — all fields changed together", async () => {
+    const doc = baseRejectedTeacher();
+    const historyLen = doc.applicationHistory.length;
+    const { auth, getCreated } = loadReapplyAuth(doc);
+    const res = mockRes();
+    await auth.reapplyPublicSignup(
+      {
+        ip: "10.0.1.7",
+        body: {
+          name: "Rabeel All Changed",
+          email: "rabeelf4@gmail.com",
+          accountEmail: "rabeelf43@gmail.com",
+          accountId: "rej-optional-1",
+          password: "AllChanged1!",
+          confirmPassword: "AllChanged1!",
+          role: "student",
+        },
+      },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assertCommonReapplySuccess(doc, {
+      created: getCreated(),
+      previousHistoryLen: historyLen,
+    });
+    assert.equal(doc.name, "Rabeel All Changed");
+    assert.equal(doc.previousName, "rabeel jutt");
+    assert.equal(doc.email, "rabeelf43@gmail.com");
+    assert.equal(doc.pendingEmail, "rabeelf4@gmail.com");
+    assert.equal(doc.previousEmail, "rabeelf43@gmail.com");
+    assert.equal(doc.role, "student");
+    assert.equal(doc.previousRole, "teacher");
+    assert.notEqual(doc.password, ORIGINAL_HASH);
+    assert.doesNotMatch(JSON.stringify(doc), /AllChanged1!/);
   });
 });
 

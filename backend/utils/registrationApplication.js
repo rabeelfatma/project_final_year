@@ -56,6 +56,8 @@ function buildHistoryEntry({
 function toPublicReapplicationInfo(user) {
   if (!user) return null;
   return {
+    // Stable account identity for reapply — never use editable form email for lookup.
+    accountId: user._id != null ? String(user._id) : null,
     email: user.email,
     role: user.role,
     name: user.name || "",
