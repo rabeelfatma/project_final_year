@@ -12,7 +12,7 @@ import {
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 const PASSWORD_HELPER =
-  "Minimum 8 characters, including 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.";
+  "Minimum 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character.";
 
 /** Conflict codes that replace the registration form with a status panel. */
 const BLOCKING_STATUS_CODES = new Set([

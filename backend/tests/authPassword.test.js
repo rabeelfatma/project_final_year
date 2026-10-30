@@ -38,6 +38,13 @@ describe("authPassword helpers", () => {
     assert.ok(MIN_PASSWORD_LENGTH >= 8);
   });
 
+  it("allows multiple uppercase, lowercase, digits, and special characters", () => {
+    const plain = "AAAbbb123!!!";
+    const result = validatePasswordInput(plain);
+    assert.equal(result.ok, true);
+    assert.equal(result.password, plain);
+  });
+
   it("does not enforce complexity on login presence check", () => {
     assert.equal(validateLoginPasswordInput("legacy6").ok, true);
     assert.equal(validateLoginPasswordInput("").ok, false);

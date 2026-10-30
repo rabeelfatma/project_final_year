@@ -229,6 +229,13 @@ describe("password validation (new passwords)", () => {
     assert.ok(MIN_PASSWORD_LENGTH >= 8);
   });
 
+  it("allows more than one character in each complexity category", () => {
+    const plain = "PASSWORDabc99@@";
+    const result = validatePasswordInput(plain);
+    assert.equal(result.ok, true);
+    assert.equal(result.password, plain);
+  });
+
   it("login password check does not enforce complexity (legacy accounts)", () => {
     const legacy = "legacy6";
     assert.equal(validatePasswordInput(legacy).ok, false);

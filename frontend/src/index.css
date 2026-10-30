@@ -3363,6 +3363,20 @@ button,
   padding-left: 0.4rem;
 }
 
+/* Heading-only: center label over the existing right-aligned Approve/Reject group.
+   Do not alter .qc-table-actions__btns — button positions must stay unchanged. */
+.qc-table--registration th.qc-table-actions {
+  vertical-align: bottom;
+}
+
+.qc-table--registration th.qc-table-actions .qc-table-actions__label {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 10rem; /* matches Approve+Reject cluster (~160px); does not move buttons */
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
 .qc-table--registration .qc-table-actions__btns {
   display: inline-flex;
   align-items: center;
@@ -3449,23 +3463,34 @@ button,
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
-  /* Vertical padding only increased for breathing room; horizontal padding unchanged. */
-  padding: 1.2rem 1.05rem 1.35rem;
+  /* Vertical padding only for length; horizontal padding unchanged (width preserved). */
+  padding: 1.4rem 1.05rem 1.55rem;
   box-sizing: border-box;
   min-width: 0;
 }
 
-.qc-auth-card form,
-.qc-auth-card .qc-btn-block {
+.qc-auth-card form {
+  display: block;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   min-width: 0;
 }
 
+.qc-auth-card .qc-btn.qc-btn-block,
+.qc-auth-card .qc-btn-block {
+  display: inline-flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  /* Avoid text-wrap:balance expanding past the content box on long labels. */
+  text-wrap: unset;
+}
+
 @media (min-width: 640px) {
   .qc-auth-card {
-    padding: 1.4rem 1.3rem 1.55rem;
+    padding: 1.6rem 1.3rem 1.75rem;
   }
 }
 

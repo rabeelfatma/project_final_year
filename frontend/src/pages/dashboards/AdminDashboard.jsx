@@ -768,7 +768,7 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
             <th scope="col">Attempt</th>
             {isPending && (
               <th scope="col" className="qc-table-actions">
-                Actions
+                <span className="qc-table-actions__label">Actions</span>
               </th>
             )}
           </tr>

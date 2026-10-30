@@ -263,7 +263,7 @@ describe("QC-23 schema and route contracts", () => {
     assert.match(signup, /accountId/);
     assert.match(
       signup,
-      /Minimum 8 characters, including 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character/
+      /Minimum 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character/
     );
     assert.doesNotMatch(signup, /PASSWORD_REQUIREMENTS\.map/);
     assert.match(admin, /REAPPLIED|Reapplied/);

@@ -47,9 +47,14 @@ describe("QC-24 auth form layout + validation UI contracts", () => {
 
     assert.match(
       signup,
-      /Minimum 8 characters, including 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character\./
+      /Minimum 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character\./
     );
-    assert.match(css, /\.qc-auth-card\s+\.qc-btn-block/);
+    assert.match(
+      read("frontend/src/pages/dashboards/AdminDashboard.jsx"),
+      /qc-table-actions__label/
+    );
+    assert.match(css, /\.qc-table-actions__label/);
+    assert.match(css, /\.qc-auth-card\s+\.qc-btn(?:\.qc-btn-block)?/);
     assert.match(css, /\.qc-table-actions/);
     assert.doesNotMatch(
       read("frontend/src/components/common/DashboardTopBar.jsx"),
