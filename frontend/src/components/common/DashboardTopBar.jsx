@@ -87,9 +87,6 @@ function NotificationsPanel({
         >
           <div>
             <b className="text-sm">Notifications</b>
-            <p className="text-[10px] theme-muted uppercase tracking-wide mt-0.5">
-              {role} account updates
-            </p>
           </div>
           <button
             type="button"

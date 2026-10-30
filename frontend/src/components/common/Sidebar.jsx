@@ -140,7 +140,7 @@ export default function SidebarControls({ role }) {
       {notificationsOpen && (
         <div ref={notificationPanelRef} className="sidebar-popover">
           <div className="flex items-center justify-between border-b pb-3 mb-2" style={{borderColor:"var(--border)"}}>
-            <div><b className="text-sm">Notifications</b><p className="text-[10px] theme-muted">{role} account updates</p></div>
+            <div><b className="text-sm">Notifications</b></div>
             <div className="flex items-center gap-3">
               <button className="accent-text text-[10px] flex items-center gap-1" onClick={markAllRead}><CheckCheck size={13}/> Read all</button>
               <button className="text-red-400 text-[10px] font-bold" onClick={clearNotifications} disabled={!notifications.length}>Clear all</button>

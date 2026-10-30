@@ -34,6 +34,12 @@ describe("QC-24 auth form layout + validation UI contracts", () => {
 
     assert.match(css, /\.qc-auth-shell\s*\{/);
     assert.match(css, /\.qc-auth-card\s*\{/);
+    assert.match(css, /align-items:\s*safe center/);
+    assert.match(css, /\.qc-auth-card\s*\{[^}]*max-width:\s*28rem/);
+    assert.doesNotMatch(
+      css,
+      /@media\s*\(max-height:\s*720px\)\s*\{\s*\.qc-auth-shell\s*\{[^}]*align-items:\s*flex-start/
+    );
     assert.match(css, /\.qc-btn-block\s*\{[\s\S]*max-width:\s*100%/);
     assert.match(css, /\.qc-field-error/);
     assert.match(css, /\.qc-field-error-text/);
@@ -41,7 +47,13 @@ describe("QC-24 auth form layout + validation UI contracts", () => {
 
     assert.match(
       signup,
-      /Password must be 8\+ characters with uppercase, lowercase, number & special character\./
+      /Minimum 8 characters, including 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character\./
+    );
+    assert.match(css, /\.qc-auth-card\s+\.qc-btn-block/);
+    assert.match(css, /\.qc-table-actions/);
+    assert.doesNotMatch(
+      read("frontend/src/components/common/DashboardTopBar.jsx"),
+      /\{role\} account updates/
     );
     assert.match(signup, /qc-field-error/);
     assert.match(signup, /qc-field-error-text/);

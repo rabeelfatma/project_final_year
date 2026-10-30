@@ -736,14 +736,14 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
         <colgroup>
           {isPending ? (
             <>
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '9%' }} />
               <col style={{ width: '7%' }} />
-              <col style={{ width: '19%' }} />
+              <col style={{ width: '25%' }} />
             </>
           ) : (
             <>
@@ -767,7 +767,7 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
             <th scope="col">Status</th>
             <th scope="col">Attempt</th>
             {isPending && (
-              <th scope="col" className="text-right">
+              <th scope="col" className="qc-table-actions">
                 Actions
               </th>
             )}
@@ -830,8 +830,8 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                 </button>
               </td>
               {isPending && (
-                <td className="text-right">
-                  <div className="inline-flex items-center gap-1.5 justify-end flex-wrap">
+                <td className="qc-table-actions">
+                  <div className="qc-table-actions__btns">
                     <button
                       type="button"
                       disabled={Boolean(actionId) || item.emailVerified !== true}

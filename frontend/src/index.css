@@ -3210,9 +3210,11 @@ button,
   justify-content: center;
   gap: 0.5rem;
   min-height: 2.5rem;
+  max-width: 100%;
   padding: 0.55rem 1rem;
   border-radius: var(--radius);
   border: 1px solid transparent;
+  box-sizing: border-box;
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -3353,6 +3355,24 @@ button,
   line-height: 1.35;
 }
 
+.qc-table--registration th.qc-table-actions,
+.qc-table--registration td.qc-table-actions {
+  text-align: right;
+  vertical-align: middle;
+  padding-right: 0.85rem;
+  padding-left: 0.4rem;
+}
+
+.qc-table--registration .qc-table-actions__btns {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .qc-table--registration .qc-email-cell {
   overflow-wrap: break-word;
   word-break: normal;
@@ -3401,9 +3421,12 @@ button,
   min-height: 100dvh;
   display: flex;
   justify-content: center;
-  /* Fallback: top-aligned with safe padding so content is never clipped above the viewport. */
-  align-items: flex-start;
-  /* Prefer optical centering; "safe" falls back to start when the card is taller than the viewport. */
+  /* Fallback for browsers without "safe" alignment keywords. */
+  align-items: center;
+  /*
+   * Optical viewport centering. "safe" uses start alignment instead of clipping
+   * when the card is taller than the viewport (short screens / tall forms).
+   */
   align-items: safe center;
   box-sizing: border-box;
   padding:
@@ -3426,21 +3449,23 @@ button,
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
-  padding: 1rem 1.05rem 1.15rem;
+  /* Vertical padding only increased for breathing room; horizontal padding unchanged. */
+  padding: 1.2rem 1.05rem 1.35rem;
   box-sizing: border-box;
+  min-width: 0;
+}
+
+.qc-auth-card form,
+.qc-auth-card .qc-btn-block {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 @media (min-width: 640px) {
   .qc-auth-card {
-    padding: 1.2rem 1.3rem 1.3rem;
-  }
-}
-
-/* Short viewports: keep the card fully reachable via natural page scroll. */
-@media (max-height: 720px) {
-  .qc-auth-shell {
-    align-items: flex-start;
-    padding-top: max(1rem, env(safe-area-inset-top, 0px));
+    padding: 1.4rem 1.3rem 1.55rem;
   }
 }
 

@@ -168,7 +168,6 @@ export default function PortalControls({ role }) {
           <div className="flex items-center justify-between px-2 pb-3 border-b" style={{ borderColor: "var(--border)" }}>
             <div>
               <p className="font-black text-sm">Notifications</p>
-              <p className="text-[10px] theme-muted">{role} account updates</p>
             </div>
             <button type="button" onClick={markAllRead} className="text-xs accent-text flex items-center gap-1">
               <CheckCheck size={14} /> Mark all read
