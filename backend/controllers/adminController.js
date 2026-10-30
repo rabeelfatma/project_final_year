@@ -7,6 +7,13 @@ const {
     normalizeRole,
 } = require('../utils/authPassword');
 const { approvedRoleFilter } = require('../utils/approvedUserQuery');
+const {
+    sanitizeRejectionReason,
+    currentAttempt,
+    submittedAtFor,
+    buildHistoryEntry,
+    toAdminRegistrationRequest,
+} = require('../utils/registrationApplication');
 
 /* =========================================================
    1. DASHBOARD INSIGHTS
@@ -277,8 +284,10 @@ exports.listRegistrationRequests = async (req, res) => {
         }
 
         const users = await User.find(filter)
-            .select("name email role approvalStatus createdAt approvedAt rejectedAt isAllowedLogin emailVerified emailVerifiedAt")
-            .sort({ createdAt: -1 })
+            .select(
+                "name email role approvalStatus createdAt approvedAt rejectedAt isAllowedLogin emailVerified emailVerifiedAt rejectionReason reapplicationDisabled applicationAttempt lastSubmittedAt applicationHistory previousName previousEmail previousRole pendingEmail"
+            )
+            .sort({ lastSubmittedAt: -1, createdAt: -1 })
             .lean();
 
         const pendingBase = {
@@ -299,19 +308,7 @@ exports.listRegistrationRequests = async (req, res) => {
         const pendingCount = readyForApprovalCount;
 
         res.json({
-            requests: users.map((u) => ({
-                id: String(u._id),
-                name: u.name,
-                email: u.email,
-                role: u.role,
-                approvalStatus: u.approvalStatus || "approved",
-                // Only proven verification — never invent VERIFIED for missing fields.
-                emailVerified: u.emailVerified === true,
-                emailVerifiedAt: u.emailVerifiedAt || null,
-                createdAt: u.createdAt,
-                approvedAt: u.approvedAt || null,
-                rejectedAt: u.rejectedAt || null,
-            })),
+            requests: users.map((u) => toAdminRegistrationRequest(u)),
             pendingCount,
             readyForApprovalCount,
             awaitingVerificationCount,
@@ -326,7 +323,9 @@ exports.listRegistrationRequests = async (req, res) => {
 exports.approveRegistrationRequest = async (req, res) => {
     try {
         const existing = await User.findById(req.params.id)
-            .select("role approvalStatus emailVerified")
+            .select(
+                "name email role approvalStatus emailVerified applicationAttempt lastSubmittedAt createdAt previousName previousEmail previousRole pendingEmail"
+            )
             .lean();
         if (!existing || !["teacher", "student"].includes(existing.role)) {
             return res.status(409).json({
@@ -344,6 +343,22 @@ exports.approveRegistrationRequest = async (req, res) => {
             });
         }
 
+        const decidedAt = new Date();
+        const historyEntry = buildHistoryEntry({
+            attempt: currentAttempt(existing),
+            submittedAt: submittedAtFor(existing),
+            decision: "approved",
+            rejectionReason: null,
+            decidedBy: req.user._id,
+            decidedAt,
+            name: existing.name,
+            email: existing.email,
+            role: existing.role,
+            previousName: existing.previousName,
+            previousEmail: existing.previousEmail,
+            previousRole: existing.previousRole,
+        });
+
         const updated = await User.findOneAndUpdate(
             {
                 _id: req.params.id,
@@ -355,14 +370,20 @@ exports.approveRegistrationRequest = async (req, res) => {
                 $set: {
                     approvalStatus: "approved",
                     isAllowedLogin: true,
-                    approvedAt: new Date(),
+                    approvedAt: decidedAt,
                     approvedBy: req.user._id,
                     rejectedAt: null,
                     rejectedBy: null,
+                    rejectionReason: null,
+                    reapplicationDisabled: false,
+                    pendingEmail: null,
                 },
+                $push: { applicationHistory: historyEntry },
             },
             { new: true }
-        ).select("name email role approvalStatus isAllowedLogin emailVerified approvedAt");
+        ).select(
+            "name email role approvalStatus isAllowedLogin emailVerified approvedAt applicationAttempt applicationHistory"
+        );
 
         if (!updated) {
             return res.status(409).json({
@@ -391,6 +412,46 @@ exports.approveRegistrationRequest = async (req, res) => {
 
 exports.rejectRegistrationRequest = async (req, res) => {
     try {
+        const existing = await User.findById(req.params.id)
+            .select(
+                "name email role approvalStatus applicationAttempt lastSubmittedAt createdAt previousName previousEmail previousRole pendingEmail"
+            )
+            .lean();
+        if (!existing || !["teacher", "student"].includes(existing.role)) {
+            return res.status(409).json({
+                message: "Request not found or is no longer pending.",
+            });
+        }
+        if (existing.approvalStatus !== "pending") {
+            return res.status(409).json({
+                message: "Request not found or is no longer pending.",
+            });
+        }
+
+        const reason = sanitizeRejectionReason(
+            req.body?.reason ?? req.body?.rejectionReason
+        );
+        const permanent =
+            req.body?.permanent === true ||
+            req.body?.disableReapplication === true ||
+            req.body?.reapplicationDisabled === true;
+
+        const decidedAt = new Date();
+        const historyEntry = buildHistoryEntry({
+            attempt: currentAttempt(existing),
+            submittedAt: submittedAtFor(existing),
+            decision: "rejected",
+            rejectionReason: reason,
+            decidedBy: req.user._id,
+            decidedAt,
+            name: existing.name,
+            email: existing.pendingEmail || existing.email,
+            role: existing.role,
+            previousName: existing.previousName,
+            previousEmail: existing.previousEmail,
+            previousRole: existing.previousRole,
+        });
+
         const updated = await User.findOneAndUpdate(
             {
                 _id: req.params.id,
@@ -401,12 +462,17 @@ exports.rejectRegistrationRequest = async (req, res) => {
                 $set: {
                     approvalStatus: "rejected",
                     isAllowedLogin: false,
-                    rejectedAt: new Date(),
+                    rejectedAt: decidedAt,
                     rejectedBy: req.user._id,
+                    rejectionReason: reason,
+                    reapplicationDisabled: permanent,
                 },
+                $push: { applicationHistory: historyEntry },
             },
             { new: true }
-        ).select("name email role approvalStatus isAllowedLogin emailVerified rejectedAt");
+        ).select(
+            "name email role approvalStatus isAllowedLogin emailVerified rejectedAt rejectionReason reapplicationDisabled applicationAttempt applicationHistory"
+        );
 
         if (!updated) {
             return res.status(409).json({
@@ -424,7 +490,9 @@ exports.rejectRegistrationRequest = async (req, res) => {
         }
 
         res.json({
-            message: "Registration rejected. The user cannot log in.",
+            message: permanent
+                ? "Registration permanently rejected. Reapplication is disabled."
+                : "Registration rejected. The user cannot log in.",
             user: toPublicUser(updated),
         });
     } catch (err) {

@@ -107,7 +107,10 @@ function getLoginDenialReason(user) {
     return "Your registration is pending Admin approval. Please wait before logging in.";
   }
   if (status === "rejected") {
-    return "Your registration request was rejected. Contact an administrator.";
+    if (user.reapplicationDisabled === true) {
+      return "Your registration request was permanently declined. Contact an administrator if you need help.";
+    }
+    return "Your registration request was rejected. You may correct your information and resubmit from the registration page.";
   }
   if (user.isAllowedLogin === false) {
     return "This account is not allowed to log in. Contact an administrator.";

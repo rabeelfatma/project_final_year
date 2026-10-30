@@ -39,11 +39,19 @@ function createDefaultDeps() {
 /**
  * Issue a new verification token for a user (invalidates prior unused tokens).
  * Returns raw token for emailing; only the hash is stored.
+ * Optional targetEmail supports pending-email reapplication without changing User.email yet.
  */
-async function issueEmailVerificationToken(user, deps = createDefaultDeps()) {
+async function issueEmailVerificationToken(
+  user,
+  deps = createDefaultDeps(),
+  targetEmail = null
+) {
   const rawToken = generateRawToken();
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(deps.now().getTime() + TOKEN_TTL_MS);
+  const email = String(targetEmail || user.pendingEmail || user.email || "")
+    .trim()
+    .toLowerCase();
 
   await deps.EmailVerificationToken.updateMany(
     { user: user._id, usedAt: null },
@@ -52,16 +60,21 @@ async function issueEmailVerificationToken(user, deps = createDefaultDeps()) {
 
   await deps.EmailVerificationToken.create({
     user: user._id,
-    email: user.email,
+    email,
     tokenHash,
     expiresAt,
     usedAt: null,
   });
 
-  return { rawToken, expiresAt, expiresHours: EXPIRES_HOURS };
+  return { rawToken, expiresAt, expiresHours: EXPIRES_HOURS, email };
 }
 
-async function sendSignupVerificationEmail(user, rawToken, deps = createDefaultDeps()) {
+async function sendSignupVerificationEmail(
+  user,
+  rawToken,
+  deps = createDefaultDeps(),
+  targetEmail = null
+) {
   const config = deps.getEmailConfig(deps.env);
   if (!config.configured) {
     return {
@@ -70,6 +83,9 @@ async function sendSignupVerificationEmail(user, rawToken, deps = createDefaultD
       message: "Email verification is not configured.",
     };
   }
+  const to = String(targetEmail || user.pendingEmail || user.email || "")
+    .trim()
+    .toLowerCase();
   const verifyLink = buildVerificationLink(config.publicApiUrl, rawToken);
   const content = templateSignupVerification({
     name: user.name || "Applicant",
@@ -78,7 +94,7 @@ async function sendSignupVerificationEmail(user, rawToken, deps = createDefaultD
   });
   return deps.sendTransactionalEmail(
     {
-      to: user.email,
+      to,
       subject: content.subject,
       text: content.text,
       html: content.html,
@@ -169,20 +185,95 @@ async function verifyEmailWithToken(rawToken, deps = createDefaultDeps()) {
     };
   }
 
-  const user = await deps.User.findOneAndUpdate(
-    {
-      _id: consumed.user,
-      email: consumed.email,
-      role: { $in: ["teacher", "student"] },
-    },
-    {
-      $set: {
-        emailVerified: true,
-        emailVerifiedAt: now,
+  const existing = await deps.User.findById(consumed.user).select(
+    "name email pendingEmail role approvalStatus emailVerified emailVerifiedAt adminNotifiedAt createdAt"
+  );
+
+  if (
+    !existing ||
+    !["teacher", "student"].includes(existing.role)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      message: "This verification link is invalid or has expired.",
+    };
+  }
+
+  const tokenEmail = String(consumed.email || "").trim().toLowerCase();
+  const currentEmail = String(existing.email || "").trim().toLowerCase();
+  const pendingEmail = existing.pendingEmail
+    ? String(existing.pendingEmail).trim().toLowerCase()
+    : null;
+
+  let user = null;
+
+  if (pendingEmail && tokenEmail === pendingEmail) {
+    // Apply pending email only after ownership of the new address is proven.
+    const conflict = await deps.User.findOne({
+      email: pendingEmail,
+      _id: { $ne: existing._id },
+    });
+    if (conflict) {
+      return {
+        ok: false,
+        status: 409,
+        code: "EMAIL_IN_USE",
+        message:
+          "This email is no longer available. Contact an administrator for help.",
+      };
+    }
+
+    try {
+      user = await deps.User.findOneAndUpdate(
+        {
+          _id: existing._id,
+          role: { $in: ["teacher", "student"] },
+          pendingEmail: tokenEmail,
+        },
+        {
+          $set: {
+            email: tokenEmail,
+            pendingEmail: null,
+            emailVerified: true,
+            emailVerifiedAt: now,
+          },
+        },
+        { new: true }
+      ).select(
+        "name email role approvalStatus emailVerified emailVerifiedAt adminNotifiedAt createdAt pendingEmail"
+      );
+    } catch (err) {
+      if (err && err.code === 11000) {
+        return {
+          ok: false,
+          status: 409,
+          code: "EMAIL_IN_USE",
+          message:
+            "This email is no longer available. Contact an administrator for help.",
+        };
+      }
+      throw err;
+    }
+  } else if (tokenEmail === currentEmail) {
+    user = await deps.User.findOneAndUpdate(
+      {
+        _id: existing._id,
+        email: tokenEmail,
+        role: { $in: ["teacher", "student"] },
       },
-    },
-    { new: true }
-  ).select("name email role approvalStatus emailVerified emailVerifiedAt adminNotifiedAt createdAt");
+      {
+        $set: {
+          emailVerified: true,
+          emailVerifiedAt: now,
+          pendingEmail: null,
+        },
+      },
+      { new: true }
+    ).select(
+      "name email role approvalStatus emailVerified emailVerifiedAt adminNotifiedAt createdAt pendingEmail"
+    );
+  }
 
   if (!user) {
     return {
@@ -270,19 +361,34 @@ async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()
   };
 
   // Include legacy pending rows where emailVerified is missing/undefined.
-  const user = await deps.User.findOne({
+  // Also match pendingEmail so reapplicants who changed address can resend.
+  let user = await deps.User.findOne({
     email: normalized,
     role: { $in: ["teacher", "student"] },
     approvalStatus: "pending",
     emailVerified: { $ne: true },
   });
+  if (!user) {
+    user = await deps.User.findOne({
+      pendingEmail: normalized,
+      role: { $in: ["teacher", "student"] },
+      approvalStatus: "pending",
+      emailVerified: { $ne: true },
+    });
+  }
 
   if (!user) {
     return generic;
   }
 
-  const issued = await issueEmailVerificationToken(user, deps);
-  const sent = await sendSignupVerificationEmail(user, issued.rawToken, deps);
+  const targetEmail = user.pendingEmail || user.email;
+  const issued = await issueEmailVerificationToken(user, deps, targetEmail);
+  const sent = await sendSignupVerificationEmail(
+    user,
+    issued.rawToken,
+    deps,
+    targetEmail
+  );
   if (!sent.ok) {
     console.error(
       "RESEND VERIFICATION DELIVERY FAILED:",

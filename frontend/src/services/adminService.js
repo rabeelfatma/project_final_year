@@ -92,8 +92,11 @@ const adminService = {
         return response.data;
     },
 
-    rejectRegistrationRequest: async (id) => {
-        const response = await adminClient.post(`/registration-requests/${id}/reject`);
+    rejectRegistrationRequest: async (id, payload = {}) => {
+        const response = await adminClient.post(
+            `/registration-requests/${id}/reject`,
+            payload
+        );
         return response.data;
     },
 };

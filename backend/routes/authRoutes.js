@@ -37,6 +37,10 @@ router.post("/signup", gateSignup, (req, res) => authController.registerUser(req
 router.post("/register-request", (req, res) =>
   authController.requestPublicSignup(req, res)
 );
+/** Rejected Teacher/Student reapplication — reuses the existing User document. */
+router.post("/reapply", (req, res) =>
+  authController.reapplyPublicSignup(req, res)
+);
 router.post("/verify-email", (req, res) => authController.verifyEmail(req, res));
 router.get("/verify-email", (req, res) => authController.verifyEmail(req, res));
 router.post("/resend-verification", (req, res) =>

@@ -42,6 +42,10 @@ export default function AdminDashboard() {
   const [awaitingVerificationCount, setAwaitingVerificationCount] = useState(0);
   const [totalPendingCount, setTotalPendingCount] = useState(0);
   const [registrationActionId, setRegistrationActionId] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectPermanent, setRejectPermanent] = useState(false);
+  const [historyModal, setHistoryModal] = useState(null);
 
   const applyRegistrationCounts = (payload) => {
     const ready = Number(payload?.readyForApprovalCount ?? payload?.pendingCount ?? 0) || 0;
@@ -131,21 +135,42 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleRegistrationAction = async (id, action) => {
+  const handleRegistrationAction = async (id, action, rejectOptions = null) => {
     if (!id || registrationActionId) return;
     setRegistrationActionId(id);
     try {
       if (action === 'approve') {
         await adminService.approveRegistrationRequest(id);
       } else {
-        await adminService.rejectRegistrationRequest(id);
+        await adminService.rejectRegistrationRequest(id, {
+          reason: rejectOptions?.reason || undefined,
+          permanent: Boolean(rejectOptions?.permanent),
+        });
       }
+      setRejectModal(null);
+      setRejectReason('');
+      setRejectPermanent(false);
       await fetchContent();
     } catch (err) {
       alert(err?.response?.data?.message || `Failed to ${action} registration request.`);
     } finally {
       setRegistrationActionId(null);
     }
+  };
+
+  const openRejectModal = (item) => {
+    if (!item?.id || registrationActionId) return;
+    setRejectModal(item);
+    setRejectReason('');
+    setRejectPermanent(false);
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModal?.id || registrationActionId) return;
+    await handleRegistrationAction(rejectModal.id, 'reject', {
+      reason: rejectReason.trim(),
+      permanent: rejectPermanent,
+    });
   };
 
   const handleDelete = async (id) => {
@@ -405,7 +430,8 @@ export default function AdminDashboard() {
               filter={registrationFilter}
               actionId={registrationActionId}
               onApprove={(id) => handleRegistrationAction(id, 'approve')}
-              onReject={(id) => handleRegistrationAction(id, 'reject')}
+              onReject={(item) => openRejectModal(item)}
+              onViewHistory={(item) => setHistoryModal(item)}
             />
           </div>
         ) : (
@@ -420,6 +446,188 @@ export default function AdminDashboard() {
         )}
         <AIChatbot role="admin" showTrigger={false} />
         <MessagePanel role="admin" showTrigger={false} />
+
+      {rejectModal && (
+        <div className="qc-modal-backdrop">
+          <div className="qc-modal max-w-md">
+            <button
+              type="button"
+              onClick={() => {
+                if (registrationActionId) return;
+                setRejectModal(null);
+              }}
+              className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]"
+              aria-label="Close reject dialog"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="qc-page-title pr-10 mb-2">Reject Registration</h2>
+            <p className="text-sm theme-muted mb-4">
+              {rejectModal.name} · {rejectModal.email}
+            </p>
+            <label className="qc-label" htmlFor="reject-reason">
+              Rejection reason (shown to applicant)
+            </label>
+            <textarea
+              id="reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value.slice(0, 500))}
+              rows={4}
+              className="qc-input mb-3"
+              placeholder="Briefly explain what needs to be corrected…"
+              maxLength={500}
+            />
+            <label className="flex items-start gap-2 text-sm mb-5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rejectPermanent}
+                onChange={(e) => setRejectPermanent(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                Permanently reject — disable reapplication for this account
+                (policy or security only).
+              </span>
+            </label>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                className="qc-btn qc-btn-secondary"
+                disabled={Boolean(registrationActionId)}
+                onClick={() => setRejectModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="qc-btn qc-btn-danger"
+                disabled={Boolean(registrationActionId)}
+                onClick={confirmReject}
+              >
+                {registrationActionId === rejectModal.id ? 'Rejecting…' : 'Confirm Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {historyModal && (
+        <div className="qc-modal-backdrop">
+          <div className="qc-modal max-w-lg">
+            <button
+              type="button"
+              onClick={() => setHistoryModal(null)}
+              className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]"
+              aria-label="Close application history"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="qc-page-title pr-10 mb-2">Application Details</h2>
+            <p className="text-sm theme-muted mb-4 break-all">
+              {historyModal.name} · {historyModal.email}
+              {historyModal.reapplied ? ' · Reapplied' : ''}
+            </p>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
+              <div>
+                <dt className="qc-stat-label">Current name</dt>
+                <dd className="font-semibold">{historyModal.name || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Previous name</dt>
+                <dd>{historyModal.previousName || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Current email</dt>
+                <dd className="break-all">
+                  {historyModal.pendingEmail || historyModal.currentEmail || historyModal.email || 'N/A'}
+                  {historyModal.pendingEmail ? (
+                    <span className="block text-[10px] theme-muted mt-0.5">
+                      Pending verification (prior: {historyModal.currentEmail || historyModal.previousEmail || 'N/A'})
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Previous email</dt>
+                <dd className="break-all">{historyModal.previousEmail || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Current role</dt>
+                <dd className="font-semibold uppercase">{historyModal.role}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Previous role</dt>
+                <dd className="uppercase">{historyModal.previousRole || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Attempt</dt>
+                <dd className="font-semibold">{historyModal.applicationAttempt || 1}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Email verified</dt>
+                <dd>{historyModal.emailVerified === true ? 'Verified' : 'Unverified'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Status</dt>
+                <dd className="uppercase font-semibold">{historyModal.approvalStatus}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Last submitted</dt>
+                <dd>
+                  {historyModal.lastSubmittedAt
+                    ? new Date(historyModal.lastSubmittedAt).toLocaleString()
+                    : 'N/A'}
+                </dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="qc-stat-label">Current / previous rejection reason</dt>
+                <dd className="whitespace-pre-wrap">
+                  {historyModal.rejectionReason ||
+                    historyModal.previousRejectionReason ||
+                    'None recorded'}
+                </dd>
+              </div>
+            </dl>
+            <p className="qc-stat-label mb-2">Previous decisions</p>
+            {Array.isArray(historyModal.applicationHistory) &&
+            historyModal.applicationHistory.length > 0 ? (
+              <ul className="space-y-2 max-h-56 overflow-y-auto text-sm">
+                {historyModal.applicationHistory.map((entry, idx) => (
+                  <li
+                    key={`${entry.attempt || idx}-${entry.decidedAt || idx}`}
+                    className="rounded-lg border border-[var(--border)] px-3 py-2"
+                  >
+                    <p className="font-semibold uppercase tracking-wide text-xs">
+                      Attempt {entry.attempt || '?'} · {entry.decision || 'n/a'}
+                    </p>
+                    <p className="theme-muted text-xs mt-1">
+                      {entry.name || entry.email || entry.role
+                        ? `${entry.name || '—'} · ${entry.email || '—'} · ${entry.role || '—'}`
+                        : null}
+                    </p>
+                    <p className="theme-muted text-xs mt-1">
+                      Submitted:{' '}
+                      {entry.submittedAt
+                        ? new Date(entry.submittedAt).toLocaleString()
+                        : 'N/A'}
+                      {' · '}
+                      Decided:{' '}
+                      {entry.decidedAt
+                        ? new Date(entry.decidedAt).toLocaleString()
+                        : 'N/A'}
+                    </p>
+                    {entry.rejectionReason ? (
+                      <p className="mt-1 whitespace-pre-wrap">{entry.rejectionReason}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm theme-muted">No prior decisions recorded.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {isEditModalOpen && editingItem && (
         <div className="qc-modal-backdrop">
@@ -505,11 +713,11 @@ export default function AdminDashboard() {
   );
 }
 
-function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject }) {
-  const colSpan = filter === 'pending' ? 7 : 6;
+function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject, onViewHistory }) {
+  const colSpan = filter === 'pending' ? 8 : 7;
   return (
     <div className="qc-table-wrap">
-      <table className="qc-table min-w-[780px]">
+      <table className="qc-table min-w-[900px]">
         <thead>
           <tr>
             <th>Full Name</th>
@@ -518,17 +726,38 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
             <th>Registration Date</th>
             <th>Email Verified</th>
             <th>Status</th>
+            <th>Attempt</th>
             {filter === 'pending' && <th className="text-right">Actions</th>}
           </tr>
         </thead>
         <tbody>
           {data.length > 0 ? data.map((item) => (
             <tr key={item.id}>
-              <td className="font-semibold">{item.name}</td>
+              <td className="font-semibold">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{item.name}</span>
+                  {item.reapplied ? (
+                    <span
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                      style={{
+                        color: 'var(--warning)',
+                        background: 'color-mix(in srgb, var(--warning) 16%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+                      }}
+                    >
+                      Reapplied
+                    </span>
+                  ) : null}
+                </div>
+              </td>
               <td className="theme-muted break-all">{item.email}</td>
               <td className="accent-text text-xs font-semibold uppercase tracking-wide">{item.role}</td>
               <td className="theme-muted whitespace-nowrap">
-                {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+                {item.lastSubmittedAt
+                  ? new Date(item.lastSubmittedAt).toLocaleDateString()
+                  : item.createdAt
+                    ? new Date(item.createdAt).toLocaleDateString()
+                    : 'N/A'}
               </td>
               <td className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
                 {item.emailVerified === true ? (
@@ -541,13 +770,28 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
               </td>
               <td className="theme-muted text-xs font-semibold uppercase tracking-wide">
                 {item.approvalStatus}
+                {item.reapplicationDisabled ? (
+                  <span className="block text-[10px] normal-case tracking-normal mt-0.5" style={{ color: 'var(--danger)' }}>
+                    Reapply disabled
+                  </span>
+                ) : null}
+              </td>
+              <td className="theme-muted text-xs whitespace-nowrap">
+                <button
+                  type="button"
+                  className="underline-offset-2 hover:underline accent-text"
+                  onClick={() => onViewHistory?.(item)}
+                  aria-label={`View application history for ${item.name}`}
+                >
+                  #{item.applicationAttempt || 1}
+                </button>
               </td>
               {filter === 'pending' && (
                 <td className="text-right whitespace-nowrap">
                   <div className="inline-flex items-center gap-2 justify-end">
                     <button
                       type="button"
-                      disabled={actionId === item.id || item.emailVerified !== true}
+                      disabled={Boolean(actionId) || item.emailVerified !== true}
                       onClick={() => onApprove(item.id)}
                       className="qc-btn qc-btn-secondary !min-h-8 !px-2.5 !text-xs"
                       style={{ color: 'var(--success)' }}
@@ -558,8 +802,8 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                     </button>
                     <button
                       type="button"
-                      disabled={actionId === item.id}
-                      onClick={() => onReject(item.id)}
+                      disabled={Boolean(actionId)}
+                      onClick={() => onReject(item)}
                       className="qc-btn qc-btn-danger !min-h-8 !px-2.5 !text-xs"
                       aria-label={`Reject ${item.name}`}
                     >

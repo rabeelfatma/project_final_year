@@ -554,9 +554,25 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
       approvalStatus: "rejected",
       isAllowedLogin: false,
       rejectedAt: new Date(),
+      rejectionReason: null,
       toObject() { return { ...this }; },
     };
     const userMock = {
+      findById() {
+        return {
+          select() {
+            return {
+              lean: async () => ({
+                role: "teacher",
+                approvalStatus: "pending",
+                applicationAttempt: 1,
+                lastSubmittedAt: new Date(),
+                createdAt: new Date(),
+              }),
+            };
+          },
+        };
+      },
       findOneAndUpdate(filter, update) {
         query = { filter, update };
         return {
@@ -569,13 +585,14 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
     const adminController = loadAdminController(userMock);
     const res = mockRes();
     await adminController.rejectRegistrationRequest(
-      { params: { id: "req1" }, user: { _id: "admin1", role: "admin" } },
+      { params: { id: "req1" }, user: { _id: "admin1", role: "admin" }, body: {} },
       res
     );
     assert.equal(res.statusCode, 200);
     assert.equal(query.filter.approvalStatus, "pending");
     assert.equal(query.update.$set.approvalStatus, "rejected");
     assert.equal(query.update.$set.isAllowedLogin, false);
+    assert.equal(query.update.$push.applicationHistory.decision, "rejected");
   });
 
   it("repeated approve on non-pending returns conflict", async () => {

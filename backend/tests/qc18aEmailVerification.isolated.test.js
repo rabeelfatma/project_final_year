@@ -220,6 +220,27 @@ describe("QC-18A verification token lifecycle (mocked stores)", () => {
     const deps = {
       EmailVerificationToken: tokens,
       User: {
+        findById(id) {
+          const match = String(id) === String(userDoc._id) ? { ...userDoc } : null;
+          return {
+            select() {
+              return Promise.resolve(match);
+            },
+          };
+        },
+        findOne(filter) {
+          if (
+            filter &&
+            filter.email &&
+            filter._id &&
+            filter._id.$ne &&
+            String(filter.email) === String(userDoc.email) &&
+            String(filter._id.$ne) !== String(userDoc._id)
+          ) {
+            return Promise.resolve(null);
+          }
+          return Promise.resolve(null);
+        },
         findOneAndUpdate(filter, update) {
           if (String(filter._id) !== String(userDoc._id)) {
             return { select() { return Promise.resolve(null); } };

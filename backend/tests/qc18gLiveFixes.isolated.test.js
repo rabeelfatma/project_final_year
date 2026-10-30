@@ -301,14 +301,23 @@ describe("QC-18G duplicate signup guidance", () => {
     assert.match(res.body.message, /Sign in|Forgot Password/i);
   });
 
-  it("preserves rejected state without reactivation", async () => {
+  it("preserves rejected state without reactivation via register-request", async () => {
+    const existing = {
+      _id: "rej1",
+      name: "Rejected User",
+      email: "rej@example.com",
+      role: "teacher",
+      approvalStatus: "rejected",
+      emailVerified: true,
+      rejectionReason: "Incomplete profile",
+      reapplicationDisabled: false,
+      applicationAttempt: 1,
+    };
+    let created = false;
     const authController = loadAuthController({
-      findOne: async () => ({
-        role: "teacher",
-        approvalStatus: "rejected",
-        emailVerified: true,
-      }),
+      findOne: async () => existing,
       create: async () => {
+        created = true;
         throw new Error("must not create");
       },
     });
@@ -325,8 +334,11 @@ describe("QC-18G duplicate signup guidance", () => {
       },
       res
     );
+    assert.equal(created, false);
+    assert.equal(existing.approvalStatus, "rejected");
     assert.equal(res.statusCode, 409);
-    assert.equal(res.body.code, "REGISTRATION_REJECTED");
+    assert.equal(res.body.code, "REAPPLICATION_AVAILABLE");
+    assert.equal(res.body.reapplication.rejectionReason, "Incomplete profile");
   });
 
   it("normal signup dispatches verification email once", async () => {
@@ -439,6 +451,7 @@ describe("QC-18G verification tokens and dual-gate", () => {
           if (String(id) !== userDoc._id) return null;
           return chainSelect(userDoc);
         },
+        findOne: async () => null,
       },
       notifyAdminsOfVerifiedRegistration: async () => {
         notifyCount += 1;
