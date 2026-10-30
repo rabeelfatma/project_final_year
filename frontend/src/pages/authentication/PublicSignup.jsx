@@ -538,9 +538,13 @@ export default function PublicSignup() {
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} noValidate className="space-y-0">
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            className="qc-auth-form qc-auth-form--signup"
+          >
             {reapplyMode && reapplication?.rejectionReason && (
-              <div className="mb-3 rounded-xl border border-rose-500/25 bg-rose-500/8 px-3 py-2">
+              <div className="rounded-xl border border-rose-500/25 bg-rose-500/8 px-3 py-2">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">
                   Previous rejection reason
                 </p>
@@ -550,7 +554,7 @@ export default function PublicSignup() {
               </div>
             )}
 
-            <div className={`mb-0.5 ${fieldErrorClass(Boolean(fieldErrors.name))}`}>
+            <div className={fieldErrorClass(Boolean(fieldErrors.name))}>
               <label className="sr-only" htmlFor="name">
                 Full name (required)
               </label>
@@ -569,7 +573,7 @@ export default function PublicSignup() {
               </p>
             )}
 
-            <div className={`mb-0.5 ${fieldErrorClass(Boolean(fieldErrors.email))}`}>
+            <div className={fieldErrorClass(Boolean(fieldErrors.email))}>
               <label className="sr-only" htmlFor="email">
                 Email address (required)
               </label>
@@ -588,7 +592,7 @@ export default function PublicSignup() {
               </p>
             )}
             {reapplyMode && (
-              <p className="mb-2 text-[11px] text-[var(--text-faint)] leading-snug">
+              <p className="text-[11px] text-[var(--text-faint)] leading-snug">
                 Your original account (
                 <span className="text-sky-400 break-words">
                   {lockedAccountEmail || reapplication?.email}
@@ -597,7 +601,7 @@ export default function PublicSignup() {
               </p>
             )}
 
-            <div className="relative mb-0.5">
+            <div className="relative">
               <div className={fieldErrorClass(Boolean(fieldErrors.password))}>
                 <label className="sr-only" htmlFor="password">
                   Password (required)
@@ -627,13 +631,13 @@ export default function PublicSignup() {
               </p>
             )}
             <p
-              className="mb-2 text-[11px] text-[var(--text-faint)] leading-snug break-words"
+              className="qc-auth-password-hint"
               aria-label="Password requirements"
             >
               {PASSWORD_HELPER}
             </p>
 
-            <div className={`mb-0.5 ${fieldErrorClass(Boolean(fieldErrors.confirmPassword))}`}>
+            <div className={fieldErrorClass(Boolean(fieldErrors.confirmPassword))}>
               <label className="sr-only" htmlFor="confirmPassword">
                 Confirm password (required)
               </label>
@@ -652,7 +656,7 @@ export default function PublicSignup() {
               </p>
             )}
 
-            <fieldset className="mb-3 mt-1">
+            <fieldset className="qc-auth-role-fieldset">
               <legend className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1">
                 Requested Role *
               </legend>
@@ -714,14 +718,12 @@ export default function PublicSignup() {
             {(conflictCode === "EMAIL_NOT_CONFIGURED" ||
               conflictCode === "EMAIL_UNAVAILABLE" ||
               conflictCode === "EMAIL_PROVIDER_ERROR") && (
-              <div className="mt-3">
-                <p className="text-xs text-[var(--text-faint)] text-center">
-                  Email verification is temporarily unavailable. Try again later.
-                </p>
-              </div>
+              <p className="text-xs text-[var(--text-faint)] text-center">
+                Email verification is temporarily unavailable. Try again later.
+              </p>
             )}
 
-            <p className="text-center text-[var(--text-faint)] mt-3 text-[11px] font-bold uppercase tracking-[0.2em]">
+            <p className="qc-auth-footer-link text-center text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em]">
               Already have an account?{" "}
               <Link to="/login" className="text-sky-400 hover:underline">
                 Log In

@@ -3458,6 +3458,7 @@ button,
 .qc-auth-card {
   width: 100%;
   max-width: 28rem;
+  height: auto;
   margin-inline: auto;
   flex-shrink: 0;
   background: var(--surface);
@@ -3465,10 +3466,11 @@ button,
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
-  /* Vertical padding only for length; horizontal padding unchanged (width preserved). */
-  padding: 1.55rem 1.05rem 1.75rem;
+  /* Bottom ~30px; horizontal padding unchanged (width preserved). */
+  padding: 1.55rem 1.05rem 1.875rem;
   box-sizing: border-box;
   min-width: 0;
+  overflow: visible;
 }
 
 .qc-auth-card form {
@@ -3477,6 +3479,53 @@ button,
   max-width: 100%;
   box-sizing: border-box;
   min-width: 0;
+}
+
+/* Signup: consistent vertical rhythm via flex gap (not stacked one-off margins).
+ * Must beat `.qc-auth-card form { display: block }` specificity. */
+.qc-auth-card form.qc-auth-form--signup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9375rem; /* 15px between form sections */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.qc-auth-card form.qc-auth-form--signup .qc-field {
+  margin-bottom: 0;
+}
+
+.qc-auth-card form.qc-auth-form--signup .qc-field-error-text {
+  margin: 0;
+}
+
+.qc-auth-card form.qc-auth-form--signup .qc-auth-password-hint {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--text-faint);
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.qc-auth-card form.qc-auth-form--signup .qc-auth-role-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* Extra air above CTA (~20px total with form gap). */
+.qc-auth-card form.qc-auth-form--signup > .qc-auth-submit {
+  margin-top: 0.3125rem;
+}
+
+/* Extra air below CTA before login link (~16–18px total with form gap). */
+.qc-auth-card form.qc-auth-form--signup > .qc-auth-footer-link {
+  margin-top: 0.125rem;
+  margin-bottom: 0;
 }
 
 /* Submit/actions share the same content-box width as .qc-field inputs. */
@@ -3498,9 +3547,25 @@ button,
   min-width: 0;
 }
 
+.qc-auth-card .qc-auth-submit .qc-btn {
+  height: auto;
+  min-height: 2.5rem;
+  padding: 0.875rem 1.25rem; /* 14px 20px — no fixed height overflow */
+}
+
 @media (min-width: 640px) {
   .qc-auth-card {
-    padding: 1.75rem 1.3rem 1.95rem;
+    padding: 1.75rem 1.3rem 2rem; /* 32px bottom */
+  }
+}
+
+@media (max-width: 400px) {
+  .qc-auth-card {
+    padding: 1.4rem 0.95rem 1.85rem;
+  }
+
+  .qc-auth-card form.qc-auth-form--signup {
+    gap: 0.875rem; /* 14px on narrow phones */
   }
 }
 

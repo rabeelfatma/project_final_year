@@ -401,6 +401,8 @@ async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()
           Number(sent.providerStatus) > 0
             ? Number(sent.providerStatus)
             : null,
+        stage: "resend_verification_delivery",
+        errorName: sent.ok === false ? "DeliveryFailed" : null,
       })
     );
     return {

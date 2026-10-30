@@ -16,6 +16,7 @@ function read(rel) {
 const {
   sendTransactionalEmail,
   recipientDomain,
+  senderDomain,
   categorizeEmailProviderFailure,
   getEmailConfig,
 } = require("../services/transactionalEmail");
@@ -119,7 +120,15 @@ describe("QC-24 auth form layout + validation UI contracts", () => {
 describe("QC-24 transactional email diagnostics (mocked provider)", () => {
   it("categorizes provider HTTP and network failures without secrets", () => {
     assert.equal(
+      categorizeEmailProviderFailure({ status: 400 }),
+      "http_rejected"
+    );
+    assert.equal(
       categorizeEmailProviderFailure({ status: 401 }),
+      "auth_rejected"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 403 }),
       "auth_rejected"
     );
     assert.equal(
@@ -131,6 +140,10 @@ describe("QC-24 transactional email diagnostics (mocked provider)", () => {
       "rate_limited"
     );
     assert.equal(
+      categorizeEmailProviderFailure({ status: 500 }),
+      "provider_unavailable"
+    );
+    assert.equal(
       categorizeEmailProviderFailure({ status: 503 }),
       "provider_unavailable"
     );
@@ -140,6 +153,51 @@ describe("QC-24 transactional email diagnostics (mocked provider)", () => {
     );
     assert.equal(recipientDomain("Ada <ada@example.com>"), "example.com");
     assert.equal(recipientDomain("ada@campus.edu"), "campus.edu");
+    assert.equal(
+      senderDomain("QuickCheck Hub <noreply@duke.com.pk>"),
+      "duke.com.pk"
+    );
+    assert.equal(senderDomain("noreply@example.com"), "example.com");
+  });
+
+  it("maps Resend HTTP 400/401/403/422/429/5xx to EMAIL_PROVIDER_ERROR", async () => {
+    const statuses = [400, 401, 403, 422, 429, 500, 502, 503];
+    const expected = {
+      400: "http_rejected",
+      401: "auth_rejected",
+      403: "auth_rejected",
+      422: "validation_rejected",
+      429: "rate_limited",
+      500: "provider_unavailable",
+      502: "provider_unavailable",
+      503: "provider_unavailable",
+    };
+    for (const status of statuses) {
+      const result = await sendTransactionalEmail(
+        { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+        {
+          env: {
+            RESEND_API_KEY: "re_test_key",
+            PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+            PUBLIC_APP_URL: "http://localhost:5173",
+            PUBLIC_API_URL: "http://127.0.0.1:5000/api",
+          },
+          fetchImpl: async () => ({
+            ok: false,
+            status,
+            json: async () => ({ message: "should-not-surface" }),
+          }),
+        }
+      );
+      assert.equal(result.ok, false, `status ${status}`);
+      assert.equal(result.code, "EMAIL_PROVIDER_ERROR", `status ${status}`);
+      assert.equal(result.category, expected[status], `status ${status}`);
+      assert.equal(result.providerStatus, status, `status ${status}`);
+      assert.doesNotMatch(
+        JSON.stringify(result),
+        /should-not-surface|re_test_key/
+      );
+    }
   });
 
   it("fails closed when unconfigured and does not call fetch", async () => {

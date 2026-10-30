@@ -176,6 +176,20 @@ function categorizeEmailProviderFailure({ networkError = false, status = null } 
 }
 
 /**
+ * Extract sender domain only (supports `Name <user@domain>` or bare address).
+ * Never returns a full mailbox address.
+ */
+function senderDomain(fromValue) {
+  const raw = String(fromValue || "").trim();
+  if (!raw) return null;
+  const angle = raw.match(/<([^>]+)>/);
+  const addr = String(angle ? angle[1] : raw)
+    .trim()
+    .toLowerCase();
+  return recipientDomain(addr);
+}
+
+/**
  * Safe diagnostic log — never includes API keys, tokens, full addresses, or provider bodies.
  */
 function logTransactionalEmailFailure({
@@ -183,6 +197,9 @@ function logTransactionalEmailFailure({
   category,
   providerStatus = null,
   toDomain = null,
+  fromDomain = null,
+  stage = null,
+  errorName = null,
 }) {
   console.error(
     "TRANSACTIONAL_EMAIL_FAILED",
@@ -194,6 +211,9 @@ function logTransactionalEmailFailure({
           ? Number(providerStatus)
           : null,
       toDomain: toDomain || null,
+      fromDomain: fromDomain || null,
+      stage: stage || null,
+      errorName: errorName || null,
     })
   );
 }
@@ -220,6 +240,9 @@ async function sendTransactionalEmail(
       code: "EMAIL_TRANSPORT_UNAVAILABLE",
       category: "transport_unavailable",
       toDomain: recipientDomain(to),
+      fromDomain: senderDomain(config.fromEmail),
+      stage: "transport_check",
+      errorName: "TypeError",
     });
     return {
       ok: false,
@@ -231,6 +254,8 @@ async function sendTransactionalEmail(
   }
 
   const toDomain = recipientDomain(to);
+  const fromDomain = senderDomain(config.fromEmail);
+  const stage = "resend_http_send";
 
   try {
     const response = await fetchImpl("https://api.resend.com/emails", {
@@ -256,6 +281,9 @@ async function sendTransactionalEmail(
         category,
         providerStatus,
         toDomain,
+        fromDomain,
+        stage,
+        errorName: "HttpResponseError",
       });
       return {
         ok: false,
@@ -266,13 +294,20 @@ async function sendTransactionalEmail(
       };
     }
     return { ok: true };
-  } catch (_) {
+  } catch (err) {
     const category = categorizeEmailProviderFailure({ networkError: true });
+    const errorName =
+      err && typeof err === "object" && err.name
+        ? String(err.name).slice(0, 64)
+        : "Error";
     logTransactionalEmailFailure({
       code: "EMAIL_PROVIDER_ERROR",
       category,
       providerStatus: null,
       toDomain,
+      fromDomain,
+      stage,
+      errorName,
     });
     return {
       ok: false,
@@ -297,6 +332,7 @@ module.exports = {
   templateApplicantRejected,
   sendTransactionalEmail,
   recipientDomain,
+  senderDomain,
   categorizeEmailProviderFailure,
   logTransactionalEmailFailure,
 };
