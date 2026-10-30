@@ -141,7 +141,7 @@ export default function Login() {
 
   return (
     <div className="qc-auth-shell">
-      <div className="qc-auth-card max-w-lg">
+      <div className="qc-auth-card">
         <div className="text-center mb-4">
           <p className="qc-auth-brand">QuickCheck Hub</p>
           <h1 className="qc-auth-title">Welcome Back</h1>

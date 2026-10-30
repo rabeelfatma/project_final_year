@@ -40,7 +40,12 @@ describe("QC-24 auth form layout + validation UI contracts", () => {
       css,
       /@media\s*\(max-height:\s*720px\)\s*\{\s*\.qc-auth-shell\s*\{[^}]*align-items:\s*flex-start/
     );
-    assert.match(css, /\.qc-btn-block\s*\{[\s\S]*max-width:\s*100%/);
+    assert.match(css, /\.qc-btn-block\s*\{[\s\S]*?max-width:\s*100%/);
+    assert.match(css, /\.qc-btn-block\s*\{[\s\S]*?display:\s*flex/);
+    assert.doesNotMatch(css, /\.qc-btn-block\s*\{[^}]*text-wrap\s*:/);
+    assert.match(css, /\.qc-auth-submit/);
+    assert.match(signup, /qc-auth-submit/);
+    assert.doesNotMatch(signup, /qc-auth-card max-w-lg/);
     assert.match(css, /\.qc-field-error/);
     assert.match(css, /\.qc-field-error-text/);
     assert.match(css, /\.qc-alert\s*\{/);

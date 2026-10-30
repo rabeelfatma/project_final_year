@@ -307,7 +307,7 @@ export default function PublicSignup() {
 
   return (
     <div className="qc-auth-shell">
-      <div className="qc-auth-card max-w-lg">
+      <div className="qc-auth-card">
         <div className="text-center mb-3">
           <p className="qc-auth-brand">QuickCheck Hub</p>
           <h1 className="qc-auth-title">
@@ -690,24 +690,26 @@ export default function PublicSignup() {
               )}
             </fieldset>
 
-            <Button
-              text={
-                submitting
-                  ? reapplyMode
-                    ? "Resubmitting…"
-                    : "Submitting…"
-                  : reapplyMode
-                    ? "Resubmit Registration Request"
-                    : "Submit Registration Request"
-              }
-              type="submit"
-              disabled={submitting}
-              aria-label={
-                reapplyMode
-                  ? "Resubmit registration request"
-                  : "Submit registration request"
-              }
-            />
+            <div className="qc-auth-submit">
+              <Button
+                text={
+                  submitting
+                    ? reapplyMode
+                      ? "Resubmitting…"
+                      : "Submitting…"
+                    : reapplyMode
+                      ? "Resubmit Registration Request"
+                      : "Submit Registration Request"
+                }
+                type="submit"
+                disabled={submitting}
+                aria-label={
+                  reapplyMode
+                    ? "Resubmit registration request"
+                    : "Submit registration request"
+                }
+              />
+            </div>
 
             {(conflictCode === "EMAIL_NOT_CONFIGURED" ||
               conflictCode === "EMAIL_UNAVAILABLE" ||

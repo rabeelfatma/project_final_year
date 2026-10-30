@@ -3277,12 +3277,14 @@ button,
 }
 
 .qc-btn-block {
+  /* Block-level flex avoids inline-flex intrinsic min-width overflow on long labels. */
+  display: flex;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  min-width: 0;
   white-space: normal;
-  text-wrap: balance;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .qc-table-wrap {
@@ -3464,7 +3466,7 @@ button,
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   /* Vertical padding only for length; horizontal padding unchanged (width preserved). */
-  padding: 1.4rem 1.05rem 1.55rem;
+  padding: 1.55rem 1.05rem 1.75rem;
   box-sizing: border-box;
   min-width: 0;
 }
@@ -3477,20 +3479,28 @@ button,
   min-width: 0;
 }
 
-.qc-auth-card .qc-btn.qc-btn-block,
-.qc-auth-card .qc-btn-block {
-  display: inline-flex;
+/* Submit/actions share the same content-box width as .qc-field inputs. */
+.qc-auth-card .qc-auth-submit {
+  display: block;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   min-width: 0;
-  /* Avoid text-wrap:balance expanding past the content box on long labels. */
-  text-wrap: unset;
+}
+
+.qc-auth-card .qc-auth-submit .qc-btn,
+.qc-auth-card .qc-btn.qc-btn-block,
+.qc-auth-card .qc-btn-block {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 @media (min-width: 640px) {
   .qc-auth-card {
-    padding: 1.6rem 1.3rem 1.75rem;
+    padding: 1.75rem 1.3rem 1.95rem;
   }
 }
 
@@ -3520,9 +3530,11 @@ button,
 }
 
 .qc-field {
+  display: block;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  min-width: 0;
   min-height: 2.4rem;
   margin-bottom: 0.35rem;
   padding: 0.5rem 0.7rem;
