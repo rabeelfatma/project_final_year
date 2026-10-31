@@ -14,15 +14,6 @@ router.use(protect, authorize("student"));
 
 const PUBLISHED = ["PUBLISHED"];
 
-async function removeSubmissionFile(row) {
-  if (!row?.file) return;
-  try {
-    await storedFiles.remove(row.file);
-  } catch (error) {
-    console.warn("Could not remove submission file:", error.message);
-  }
-}
-
 router.get("/dashboard-stats", async (req, res) => {
   try {
     const [assignments, submissions] = await Promise.all([
@@ -119,7 +110,10 @@ router.get("/assignments", async (req, res) => {
           checkedAt: canShowResult ? submission.updatedAt || submission.createdAt : null,
           resultStatus: canShowResult ? submission.status : "PENDING",
           submissionId: submission?._id || null,
-          originalFileName: submission?.originalFileName || "",
+          // Keep Teacher assignment reference name on originalFileName (from ...assignment).
+          // Do not overwrite it with the student's uploaded filename.
+          originalFileName: assignment.originalFileName || "",
+          submissionOriginalFileName: submission?.originalFileName || "",
           isSubmitted: Boolean(submission),
           canSubmit,
           availabilityLabel: awaitingLabel,
@@ -159,43 +153,17 @@ router.get("/my-submissions", async (req, res) => {
   }
 });
 
+// Policy: students cannot delete their own submissions (preserve academic history).
 router.delete("/submissions/:id", async (req, res) => {
-  try {
-    const row = await Submission.findOne({ _id: req.params.id, student: req.user._id });
-    if (!row) return res.status(404).json({ message: "Your submission was not found." });
-    if (
-      PUBLISHED.includes(row.status) ||
-      ["graded", "GRADED", "AI_GRADED", "AI_PROCESSING", "Graded"].includes(row.status)
-    ) {
-      return res.status(400).json({ message: "Graded submissions cannot be deleted." });
-    }
-    await removeSubmissionFile(row);
-    await row.deleteOne();
-    return res.json({ success: true, message: "Submission deleted." });
-  } catch (error) {
-    return res.status(500).json({ message: "Could not delete submission." });
-  }
+  return res.status(403).json({
+    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+  });
 });
 
 router.post("/submissions/bulk-delete", async (req, res) => {
-  try {
-    const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(String))].slice(0, 200);
-    if (!ids.length) return res.status(400).json({ message: "Select at least one submission." });
-    const rows = await Submission.find({ _id: { $in: ids }, student: req.user._id });
-    const deletable = rows.filter(
-      (row) =>
-        !PUBLISHED.includes(row.status) &&
-        !["graded", "GRADED", "AI_GRADED", "AI_PROCESSING", "Graded"].includes(row.status)
-    );
-    for (const row of deletable) await removeSubmissionFile(row);
-    const result = await Submission.deleteMany({
-      _id: { $in: deletable.map((r) => r._id) },
-      student: req.user._id,
-    });
-    return res.json({ success: true, deleted: result.deletedCount || 0 });
-  } catch (error) {
-    return res.status(500).json({ message: "Could not delete selected submissions." });
-  }
+  return res.status(403).json({
+    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+  });
 });
 
 router.post("/assignments/:id/submit", upload.single("file"), async (req, res) => {
@@ -256,6 +224,34 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       };
     }
 
+    const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
+    let durable = null;
+    try {
+      durable = await resolveDurableUpload(req, {
+        category: "submissions",
+        folder: "submissions",
+      });
+    } catch (uploadErr) {
+      if (createdTextStored) {
+        await storedFiles.remove(createdTextStored).catch(() => {});
+      }
+      const status = uploadErr.statusCode || 400;
+      return res.status(status).json({
+        message: uploadErr.message || "Submission file upload is invalid.",
+        code: uploadErr.code,
+      });
+    }
+
+    if (durable?.storedPath) {
+      storedFile = {
+        filename: durable.storedPath.split("/").pop(),
+        originalname: durable.originalFileName,
+        mimetype: durable.fileMimeType,
+        path: durable.storedPath,
+        storedPath: durable.storedPath,
+      };
+    }
+
     if (!storedFile) {
       return res.status(400).json({
         message: "Upload a supported file or provide a short text answer.",
@@ -269,11 +265,14 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       return res.status(400).json({ message: "Assignment is not linked to a teacher." });
     }
 
+    const submissionFilePath =
+      storedFile.storedPath || `uploads/submissions/${storedFile.filename}`;
+
     const submission = await Submission.create({
       assignment: assignment._id,
       student: req.user._id,
       teacherId: assignment.teacher,
-      file: `uploads/submissions/${storedFile.filename}`,
+      file: submissionFilePath,
       originalFileName: storedFile.originalname || storedFile.filename,
       fileMimeType: storedFile.mimetype || "",
       answerText: answerText ? answerText.slice(0, 120000) : "",

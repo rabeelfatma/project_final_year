@@ -14,15 +14,6 @@ const storedFiles = require("../utils/storedFiles");
 // Keep this unused module aligned so it cannot be re-mounted with a weaker gate.
 const GRADED = ["PUBLISHED"];
 
-async function removeSubmissionFile(row) {
-  if (!row?.file) return;
-  try {
-    await storedFiles.remove(row.file);
-  } catch (error) {
-    console.warn("Could not remove submission file:", error.message);
-  }
-}
-
 // Dashboard stats
 router.get("/dashboard-stats", protect, async (req, res) => {
   try {
@@ -154,74 +145,18 @@ router.get("/my-submissions", protect, async (req, res) => {
   }
 });
 
-// Delete one submission belonging to the logged-in student
+// Policy: students cannot delete their own submissions (preserve academic history).
 router.delete("/submissions/:id", protect, async (req, res) => {
-  try {
-    const row = await Submission.findOne({
-      _id: req.params.id,
-      student: req.user._id,
-    });
-
-    if (!row) {
-      return res.status(404).json({
-        message: "Your submission was not found.",
-      });
-    }
-
-    await removeSubmissionFile(row);
-    await row.deleteOne();
-
-    return res.json({
-      success: true,
-      message: "Submission deleted.",
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Could not delete submission.",
-      error: error.message,
-    });
-  }
+  return res.status(403).json({
+    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+  });
 });
 
-// Bulk delete selected submissions belonging to the logged-in student
+// Bulk delete blocked for students (legacy route kept for clear 403).
 router.post("/submissions/bulk-delete", protect, async (req, res) => {
-  try {
-    const ids = [
-      ...new Set(
-        (Array.isArray(req.body.ids) ? req.body.ids : []).map(String)
-      ),
-    ].slice(0, 200);
-
-    if (!ids.length) {
-      return res.status(400).json({
-        message: "Select at least one submission.",
-      });
-    }
-
-    const rows = await Submission.find({
-      _id: { $in: ids },
-      student: req.user._id,
-    });
-
-    for (const row of rows) {
-      await removeSubmissionFile(row);
-    }
-
-    const result = await Submission.deleteMany({
-      _id: { $in: rows.map((row) => row._id) },
-      student: req.user._id,
-    });
-
-    return res.json({
-      success: true,
-      deleted: result.deletedCount || 0,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Could not delete selected submissions.",
-      error: error.message,
-    });
-  }
+  return res.status(403).json({
+    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+  });
 });
 
 // Submit assignment

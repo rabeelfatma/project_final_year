@@ -176,6 +176,63 @@ function categorizeEmailProviderFailure({ networkError = false, status = null } 
 }
 
 /**
+ * Conservative allowlist of Resend machine-readable error `name` values.
+ * Only these short identifiers may appear in server logs — never free-form text.
+ */
+const PROVIDER_ERROR_NAME_ALLOWLIST = new Set([
+  "application_error",
+  "concurrent_idempotent_requests",
+  "daily_quota_exceeded",
+  "internal_server_error",
+  "invalid_access",
+  "invalid_api_key",
+  "invalid_attachment",
+  "invalid_from_address",
+  "invalid_idempotency_key",
+  "invalid_idempotent_request",
+  "invalid_parameter",
+  "method_not_allowed",
+  "missing_api_key",
+  "missing_required_field",
+  "not_found",
+  "rate_limit_exceeded",
+  "restricted_api_key",
+  "security_error",
+  "validation_error",
+]);
+
+/**
+ * Accept only short snake_case names present on the allowlist.
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function sanitizeProviderErrorName(value) {
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  if (!name || name.length > 64) return null;
+  if (!/^[a-z][a-z0-9_]*$/.test(name)) return null;
+  if (!PROVIDER_ERROR_NAME_ALLOWLIST.has(name)) return null;
+  return name;
+}
+
+/**
+ * Best-effort parse of Resend error JSON for allowlisted `name` only.
+ * Never returns message/body content. Parse failures yield null.
+ * @param {{ json?: () => Promise<unknown> }|null|undefined} response
+ * @returns {Promise<string|null>}
+ */
+async function readAllowlistedProviderErrorName(response) {
+  try {
+    if (!response || typeof response.json !== "function") return null;
+    const body = await response.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    return sanitizeProviderErrorName(/** @type {{ name?: unknown }} */ (body).name);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Extract sender domain only (supports `Name <user@domain>` or bare address).
  * Never returns a full mailbox address.
  */
@@ -200,6 +257,7 @@ function logTransactionalEmailFailure({
   fromDomain = null,
   stage = null,
   errorName = null,
+  providerErrorName = null,
 }) {
   console.error(
     "TRANSACTIONAL_EMAIL_FAILED",
@@ -214,6 +272,7 @@ function logTransactionalEmailFailure({
       fromDomain: fromDomain || null,
       stage: stage || null,
       errorName: errorName || null,
+      providerErrorName: providerErrorName || null,
     })
   );
 }
@@ -276,6 +335,7 @@ async function sendTransactionalEmail(
     if (!response.ok) {
       const providerStatus = Number(response.status) || null;
       const category = categorizeEmailProviderFailure({ status: providerStatus });
+      const providerErrorName = await readAllowlistedProviderErrorName(response);
       logTransactionalEmailFailure({
         code: "EMAIL_PROVIDER_ERROR",
         category,
@@ -284,7 +344,9 @@ async function sendTransactionalEmail(
         fromDomain,
         stage,
         errorName: "HttpResponseError",
+        providerErrorName,
       });
+      // Client/API result stays generic — providerErrorName is server-log only.
       return {
         ok: false,
         code: "EMAIL_PROVIDER_ERROR",
@@ -335,4 +397,7 @@ module.exports = {
   senderDomain,
   categorizeEmailProviderFailure,
   logTransactionalEmailFailure,
+  sanitizeProviderErrorName,
+  readAllowlistedProviderErrorName,
+  PROVIDER_ERROR_NAME_ALLOWLIST,
 };

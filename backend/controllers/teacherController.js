@@ -210,13 +210,22 @@ exports.createAssignment = async (req, res) => {
 
 
 
-    const fileUrl = req.file
+    const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
+    let durable = null;
+    try {
+      durable = await resolveDurableUpload(req, {
+        category: "assignments",
+        folder: "assignments",
+      });
+    } catch (uploadErr) {
+      const status = uploadErr.statusCode || 400;
+      return res.status(status).json({
+        message: uploadErr.message || "Assignment file upload is invalid.",
+        code: uploadErr.code,
+      });
+    }
 
-      ? `uploads/assignments/${req.file.filename}`
-
-      : null;
-
-
+    const fileUrl = durable?.storedPath || null;
 
     const assignment = await Assignment.create({
 
@@ -236,9 +245,9 @@ exports.createAssignment = async (req, res) => {
 
       fileUrl,
 
-      originalFileName: req.file?.originalname || "",
+      originalFileName: durable?.originalFileName || "",
 
-      fileMimeType: req.file?.mimetype || "",
+      fileMimeType: durable?.fileMimeType || "",
 
       teacher: req.user._id,
 
@@ -360,28 +369,34 @@ exports.updateAssignment = async (req, res) => {
 
 
 
-    if (req.file) {
-
-      const newPath = `uploads/assignments/${req.file.filename}`;
-
-
-
-      updateData.file = newPath;
-
-      updateData.fileUrl = newPath;
-
-      updateData.originalFileName = req.file.originalname || req.file.filename;
-
-      updateData.fileMimeType = req.file.mimetype || "";
-
-
-
-      if (current.file && current.file !== newPath) {
-
-        await removeStoredAcademicFile(current.file);
-
+    {
+      const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
+      let durable = null;
+      try {
+        durable = await resolveDurableUpload(req, {
+          category: "assignments",
+          folder: "assignments",
+        });
+      } catch (uploadErr) {
+        const status = uploadErr.statusCode || 400;
+        return res.status(status).json({
+          message: uploadErr.message || "Assignment file upload is invalid.",
+          code: uploadErr.code,
+        });
       }
 
+      if (durable?.storedPath) {
+        const newPath = durable.storedPath;
+        updateData.file = newPath;
+        updateData.fileUrl = newPath;
+        updateData.originalFileName =
+          durable.originalFileName || durable.storedPath;
+        updateData.fileMimeType = durable.fileMimeType || "";
+
+        if (current.file && current.file !== newPath) {
+          await removeStoredAcademicFile(current.file);
+        }
+      }
     }
 
 
@@ -468,13 +483,22 @@ exports.updateAssignmentStatus = async (req, res) => {
 
   try {
 
+    const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+    const allowed = ["active", "deactive", "archived"];
+    if (!allowed.includes(nextStatus)) {
+      return res.status(400).json({
+        message: "Status must be active, deactive, or archived.",
+      });
+    }
+
+    // Ownership enforced in the filter. Archive/restore never deletes files or submissions.
     const updated = await Assignment.findOneAndUpdate(
 
       { _id: req.params.id, teacher: req.user._id },
 
-      { status: req.body.status },
+      { $set: { status: nextStatus } },
 
-      { new: true }
+      { new: true, runValidators: true }
 
     );
 
@@ -502,6 +526,117 @@ exports.updateAssignmentStatus = async (req, res) => {
 
   }
 
+};
+
+/**
+ * Archive many assignments owned by the caller.
+ * - body.scope === "all": archive every non-archived assignment for this teacher
+ * - body.ids: archive only those IDs that are owned; report unowned IDs as failed
+ * Never deletes files, submissions, grades, or R2 objects.
+ */
+exports.archiveAssignmentsBulk = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const scopeAll = String(req.body?.scope || "").toLowerCase() === "all";
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : null;
+
+    if (!scopeAll && (!rawIds || !rawIds.length)) {
+      return res.status(400).json({
+        message: "Select at least one assignment, or use scope=all.",
+      });
+    }
+
+    if (scopeAll) {
+      const owned = await Assignment.find({
+        teacher: teacherId,
+        status: { $ne: "archived" },
+      }).select("_id status file originalFileName");
+
+      if (!owned.length) {
+        return res.json({
+          success: true,
+          archived: 0,
+          archivedIds: [],
+          failed: [],
+          skipped: [],
+          requested: 0,
+        });
+      }
+
+      const ids = owned.map((row) => row._id);
+      const result = await Assignment.updateMany(
+        { _id: { $in: ids }, teacher: teacherId, status: { $ne: "archived" } },
+        { $set: { status: "archived" } }
+      );
+
+      return res.json({
+        success: true,
+        archived: result.modifiedCount || 0,
+        archivedIds: ids.map(String),
+        failed: [],
+        skipped: [],
+        requested: ids.length,
+      });
+    }
+
+    const requestedIds = [
+      ...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    ].slice(0, 200);
+
+    const owned = await Assignment.find({
+      _id: { $in: requestedIds },
+      teacher: teacherId,
+    }).select("_id status");
+
+    const ownedById = new Map(owned.map((row) => [String(row._id), row]));
+    const failed = [];
+    const skipped = [];
+    const toArchive = [];
+
+    for (const id of requestedIds) {
+      const row = ownedById.get(id);
+      if (!row) {
+        failed.push({ id, reason: "not found or not owned" });
+        continue;
+      }
+      if (row.status === "archived") {
+        skipped.push({ id, reason: "already archived" });
+        continue;
+      }
+      toArchive.push(row._id);
+    }
+
+    let modified = 0;
+    if (toArchive.length) {
+      const result = await Assignment.updateMany(
+        {
+          _id: { $in: toArchive },
+          teacher: teacherId,
+          status: { $ne: "archived" },
+        },
+        { $set: { status: "archived" } }
+      );
+      modified = result.modifiedCount || 0;
+    }
+
+    return res.json({
+      success: failed.length === 0,
+      archived: modified,
+      archivedIds: toArchive.map(String),
+      failed,
+      skipped,
+      requested: requestedIds.length,
+      message:
+        failed.length > 0
+          ? `Archived ${modified} of ${requestedIds.length}. ${failed.length} could not be archived.`
+          : undefined,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to archive assignments",
+      error: error.message,
+    });
+  }
 };
 
 

@@ -19,7 +19,29 @@ const {
   senderDomain,
   categorizeEmailProviderFailure,
   getEmailConfig,
+  sanitizeProviderErrorName,
 } = require("../services/transactionalEmail");
+
+const MOCK_EMAIL_ENV = {
+  RESEND_API_KEY: "re_test_key",
+  PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+  PUBLIC_APP_URL: "http://localhost:5173",
+  PUBLIC_API_URL: "http://127.0.0.1:5000/api",
+};
+
+function captureConsoleError(fn) {
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => {
+    lines.push(args.map((a) => String(a)).join(" "));
+  };
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      console.error = original;
+    })
+    .then((result) => ({ result, logText: lines.join("\n") }));
+}
 const {
   resendVerificationEmail,
   sendSignupVerificationEmail,
@@ -222,12 +244,7 @@ describe("QC-24 transactional email diagnostics (mocked provider)", () => {
     const result = await sendTransactionalEmail(
       { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
       {
-        env: {
-          RESEND_API_KEY: "re_test_key",
-          PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
-          PUBLIC_APP_URL: "http://localhost:5173",
-          PUBLIC_API_URL: "http://127.0.0.1:5000/api",
-        },
+        env: MOCK_EMAIL_ENV,
         fetchImpl: async () => ({
           ok: false,
           status: 422,
@@ -241,6 +258,106 @@ describe("QC-24 transactional email diagnostics (mocked provider)", () => {
     assert.equal(result.providerStatus, 422);
     assert.equal(result.message, "Email provider rejected the message.");
     assert.doesNotMatch(JSON.stringify(result), /should-not-surface|re_test_key/);
+  });
+
+  it("logs allowlisted providerErrorName for HTTP 403 without exposing body to clients", async () => {
+    assert.equal(sanitizeProviderErrorName("validation_error"), "validation_error");
+    assert.equal(sanitizeProviderErrorName("not_in_allowlist"), null);
+    assert.equal(sanitizeProviderErrorName("Validation Error"), null);
+    assert.equal(sanitizeProviderErrorName({ name: "validation_error" }), null);
+
+    const { result, logText } = await captureConsoleError(() =>
+      sendTransactionalEmail(
+        { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+        {
+          env: MOCK_EMAIL_ENV,
+          fetchImpl: async () => ({
+            ok: false,
+            status: 403,
+            json: async () => ({
+              name: "validation_error",
+              message: "secret body with user@victim.test must not appear",
+              statusCode: 403,
+            }),
+          }),
+        }
+      )
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.equal(result.category, "auth_rejected");
+    assert.equal(result.providerStatus, 403);
+    assert.equal(result.message, "Email provider rejected the message.");
+    assert.equal(result.providerErrorName, undefined);
+    assert.match(logText, /"providerErrorName":"validation_error"/);
+    assert.match(logText, /"providerStatus":403/);
+    assert.match(logText, /"category":"auth_rejected"/);
+    assert.match(logText, /"fromDomain":"example.com"/);
+    assert.match(logText, /"stage":"resend_http_send"/);
+    assert.doesNotMatch(logText, /user@victim\.test|secret body|re_test_key/);
+    assert.doesNotMatch(JSON.stringify(result), /validation_error|user@victim\.test|secret body/);
+  });
+
+  it("keeps generic EMAIL_PROVIDER_ERROR when HTTP 403 body JSON is malformed", async () => {
+    const { result, logText } = await captureConsoleError(() =>
+      sendTransactionalEmail(
+        { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+        {
+          env: MOCK_EMAIL_ENV,
+          fetchImpl: async () => ({
+            ok: false,
+            status: 403,
+            json: async () => {
+              throw new SyntaxError("Unexpected token");
+            },
+          }),
+        }
+      )
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.equal(result.category, "auth_rejected");
+    assert.equal(result.providerStatus, 403);
+    assert.equal(result.message, "Email provider rejected the message.");
+    assert.match(logText, /"providerErrorName":null/);
+    assert.match(logText, /"providerStatus":403/);
+  });
+
+  it("ignores missing or invalid provider error names on HTTP 403", async () => {
+    const cases = [
+      { name: undefined },
+      { name: "" },
+      { name: "NOT_ALLOWED_CASE" },
+      { name: "free form text with spaces" },
+      { name: "x".repeat(80) },
+      { name: "unknown_resend_code" },
+      { message: "only message, no name" },
+    ];
+
+    for (const body of cases) {
+      const { result, logText } = await captureConsoleError(() =>
+        sendTransactionalEmail(
+          { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+          {
+            env: MOCK_EMAIL_ENV,
+            fetchImpl: async () => ({
+              ok: false,
+              status: 403,
+              json: async () => body,
+            }),
+          }
+        )
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+      assert.equal(result.category, "auth_rejected");
+      assert.equal(result.providerStatus, 403);
+      assert.equal(result.message, "Email provider rejected the message.");
+      assert.match(logText, /"providerErrorName":null/);
+      assert.doesNotMatch(JSON.stringify(result), /providerErrorName/);
+    }
   });
 
   it("maps network failure to EMAIL_PROVIDER_ERROR network_failure", async () => {

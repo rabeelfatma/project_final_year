@@ -21,12 +21,23 @@ import OverflowMenu from '../../components/ui/OverflowMenu';
 import ProfilePage from '../account/ProfilePage';
 import SettingsPage from '../account/SettingsPage';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
+import {
+  ACADEMIC_ACCEPT,
+  assertAcademicFile,
+  uploadDurableFile,
+  appendDurableFields,
+} from '../../services/r2UploadService';
 import api from '../../utils/api';
 import {
   normalizeAssignmentId,
   toggleAssignmentSelection,
   isAssignmentSelected,
 } from '../../utils/assignmentSelection';
+import {
+  filterAssignmentsByShelf,
+  shelfAfterArchive,
+  shelfAfterRestore,
+} from '../../utils/assignmentShelf';
 
 function StatCard({ label, value, icon }) {
   const [selected, setSelected] = useState(false);
@@ -92,6 +103,8 @@ export default function TeacherDashboard() {
   const [selectedSubmissions, setSelectedSubmissions] = useState([]);
   const [selectedAssignments, setSelectedAssignments] = useState([]);
   const [manageAssignments, setManageAssignments] = useState(false);
+  /** Active list = non-archived (active + legacy deactive). Archived = status archived only. */
+  const [assignmentShelf, setAssignmentShelf] = useState('active');
   const [selectedQuestionAssignments, setSelectedQuestionAssignments] = useState([]);
   const [aiLoading, setAiLoading]               = useState(false);
   const [isPublishing, setIsPublishing]         = useState(false);
@@ -109,9 +122,10 @@ export default function TeacherDashboard() {
   const [form, setForm] = useState({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
 
   // ── Fetch ─────────────────────────────────────────────────
-  const fetchAllData = async () => {
+  // silent: refresh lists without the full-page loading gate (status archive/restore).
+  const fetchAllData = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [sData, aData, subData, stData] = await Promise.all([
         teacherService.getOverviewStats().catch(() => null),
         teacherService.getMyAssignments().catch(() => []),
@@ -138,24 +152,26 @@ export default function TeacherDashboard() {
     } catch (err) {
       console.error('Dashboard Load Error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => { fetchAllData(); }, []);
 
-  // Auto-deactivate overdue
+  // Legacy display helper: mark overdue non-archived rows as deactive in UI only.
+  // Never auto-archive, and never rewrite archived status.
+  // Empty deps: do not rebind on every assignments change (that raced with Archive UI updates).
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      setAssignments(prev => prev.map(asgn =>
-        new Date(asgn.deadline) < now && asgn.status !== 'deactive'
-          ? { ...asgn, status: 'deactive' }
-          : asgn
-      ));
+      setAssignments((prev) => prev.map((asgn) => {
+        if (asgn.status === 'archived' || asgn.status === 'deactive') return asgn;
+        if (new Date(asgn.deadline) < now) return { ...asgn, status: 'deactive' };
+        return asgn;
+      }));
     }, 60000);
     return () => clearInterval(interval);
-  }, [assignments]);
+  }, []);
 
   // ── Selection ─────────────────────────────────────────────
   const toggleSelect = (id) => {
@@ -323,13 +339,13 @@ export default function TeacherDashboard() {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const allowed = [
-      'pdf','doc','docx','txt','md','rtf','csv','tsv','json','xml','yaml','yml','xlsx','xls','ods','pptx','ppt','odp','zip','rar','7z','tar','gz',
-      'py','ipynb','js','jsx','ts','tsx','cpp','c','h','hpp','java','php','cs','swift','go','rs','kt','kts','sql','html','htm','css','scss','sass','less','vue','svelte','sh','bat','ps1','rb','r','m','mm','dart','lua','pl',
-      'jpg','jpeg','png','gif','webp','bmp','svg','heic','heif','tif','tiff','mp4','mkv','webm','mov','avi','wmv','mpeg','mpg','m4v','mp3','wav','ogg','aac','flac','m4a'
-    ];
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (!allowed.includes(ext)) { alert('❌ File extension not allowed!'); e.target.value = null; return; }
+    try {
+      assertAcademicFile(file);
+    } catch (err) {
+      alert(err.message || 'File not allowed.');
+      e.target.value = null;
+      return;
+    }
     setForm({ ...form, file });
   };
 
@@ -341,11 +357,118 @@ export default function TeacherDashboard() {
 
   const handleStatusToggle = async (id, currentStatus) => {
     try {
+      // Preserve legacy Active/Deactive for non-archived rows only.
+      if (currentStatus === 'archived') return;
       const newStatus = currentStatus === 'active' ? 'deactive' : 'active';
       await teacherService.updateAssignmentStatus(id, { status: newStatus });
       fetchAllData();
     } catch { alert('❌ Failed to change status.'); }
   };
+
+  const applyArchivedIdsLocally = (archivedIds) => {
+    const idSet = new Set((archivedIds || []).map(normalizeAssignmentId).filter(Boolean));
+    if (!idSet.size) return;
+    setAssignments((prev) =>
+      prev.map((asgn) =>
+        idSet.has(normalizeAssignmentId(asgn._id))
+          ? { ...asgn, status: 'archived' }
+          : asgn
+      )
+    );
+  };
+
+  const handleArchiveAssignment = async (id) => {
+    if (!window.confirm('Archive this assignment? Students will no longer see it. Files and submissions are kept.')) return;
+    try {
+      const assignmentId = normalizeAssignmentId(id);
+      const updated = await teacherService.updateAssignmentStatus(assignmentId, { status: 'archived' });
+      if (String(updated?.status || '').toLowerCase() !== 'archived') {
+        throw new Error('Server did not archive this assignment.');
+      }
+      // Move to Archived shelf without a full-page reload so the row stays visible.
+      setAssignmentShelf(shelfAfterArchive());
+      setSelectedAssignments((prev) =>
+        prev.filter((value) => normalizeAssignmentId(value) !== assignmentId)
+      );
+      applyArchivedIdsLocally([assignmentId]);
+      await fetchAllData({ silent: true });
+    } catch (error) {
+      alert(error.response?.data?.message || error.message || 'Could not archive assignment.');
+    }
+  };
+
+  const handleRestoreAssignment = async (id) => {
+    if (!window.confirm('Restore this assignment to Active? Students will see it again if it is open.')) return;
+    try {
+      const assignmentId = normalizeAssignmentId(id);
+      const updated = await teacherService.updateAssignmentStatus(assignmentId, { status: 'active' });
+      if (String(updated?.status || '').toLowerCase() !== 'active') {
+        throw new Error('Server did not restore this assignment.');
+      }
+      setAssignmentShelf(shelfAfterRestore());
+      setSelectedAssignments([]);
+      setAssignments((prev) =>
+        prev.map((asgn) =>
+          normalizeAssignmentId(asgn._id) === assignmentId
+            ? { ...asgn, status: 'active' }
+            : asgn
+        )
+      );
+      await fetchAllData({ silent: true });
+    } catch (error) {
+      alert(error.response?.data?.message || error.message || 'Could not restore assignment.');
+    }
+  };
+
+  const handleArchiveSelectedAssignments = async () => {
+    const selectedActiveIds = selectedAssignments
+      .map(normalizeAssignmentId)
+      .filter(Boolean)
+      .filter((id) => {
+        const row = assignments.find((asgn) => normalizeAssignmentId(asgn._id) === id);
+        return row && row.status !== 'archived';
+      });
+    if (!selectedActiveIds.length) {
+      alert('Select at least one active assignment to archive.');
+      return;
+    }
+    if (!window.confirm(`Archive ${selectedActiveIds.length} selected assignment(s)? Files and submissions are kept.`)) return;
+    try {
+      const result = await teacherService.archiveAssignmentsBulk(selectedActiveIds);
+      applyArchivedIdsLocally(result?.archivedIds || selectedActiveIds);
+      setSelectedAssignments([]);
+      setAssignmentShelf(shelfAfterArchive());
+      await fetchAllData({ silent: true });
+      if (result?.failed?.length) {
+        alert(result.message || `Archived ${result.archived || 0}. ${result.failed.length} could not be archived.`);
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || error.message || 'Could not archive selected assignments.');
+    }
+  };
+
+  const handleArchiveAllAssignments = async () => {
+    const activeOwned = assignments.filter((asgn) => asgn.status !== 'archived');
+    if (!activeOwned.length) {
+      alert('No active assignments to archive.');
+      return;
+    }
+    if (!window.confirm(`Archive all ${activeOwned.length} active assignment(s)? Files and submissions are kept.`)) return;
+    try {
+      const result = await teacherService.archiveAllAssignments();
+      applyArchivedIdsLocally(result?.archivedIds || activeOwned.map((a) => a._id));
+      setSelectedAssignments([]);
+      setAssignmentShelf(shelfAfterArchive());
+      await fetchAllData({ silent: true });
+      if (result?.failed?.length) {
+        alert(result.message || `Archived ${result.archived || 0}. Some items could not be archived.`);
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || error.message || 'Could not archive all assignments.');
+    }
+  };
+
+  const visibleAssignments = filterAssignmentsByShelf(assignments, assignmentShelf);
 
   const describeDeleteError = (error) => {
     const status = error?.response?.status;
@@ -457,7 +580,12 @@ export default function TeacherDashboard() {
       formData.append('deadline',    new Date(form.deadline).toISOString());
       formData.append('description', form.description || '');
       formData.append('points', String(form.points));
-      if (form.file) formData.append('file', form.file);
+      // Durable assignment files go direct-to-R2 (presigned) so local + Vercel
+      // share the same private bucket and bypass serverless body limits.
+      if (form.file) {
+        const durable = await uploadDurableFile(form.file, 'assignments');
+        appendDurableFields(formData, durable);
+      }
 
       if (editingId) {
         await teacherService.updateAssignment(editingId, formData);
@@ -659,7 +787,7 @@ export default function TeacherDashboard() {
                 <textarea className="qc-input !h-36 resize-none" value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Instructions..."/>
               </div>
               <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all" onClick={() => fileInputRef.current.click()}>
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange}/>
+                <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
                 {form.file ? (
                   <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
                     <CheckCircle size={24}/> {form.file.name}
@@ -691,9 +819,19 @@ export default function TeacherDashboard() {
         {/* ══ ASSIGNMENTS TAB ══ */}
         {activeTab === 'assignments' && (
           <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
               <h1 className="qc-page-title">My Assignments</h1>
               <div className="qc-list-toolbar">
+                {assignmentShelf === 'active' && (
+                  <button
+                    type="button"
+                    onClick={handleArchiveAllAssignments}
+                    disabled={!assignments.some((a) => a.status !== 'archived')}
+                    className="qc-chat-toolbar-btn"
+                  >
+                    <BookOpen size={13} aria-hidden="true" /> Archive All
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
@@ -716,13 +854,13 @@ export default function TeacherDashboard() {
                       <input
                         type="checkbox"
                         checked={
-                          assignments.length > 0 &&
-                          assignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
+                          visibleAssignments.length > 0 &&
+                          visibleAssignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
                         }
                         onChange={(e) =>
                           setSelectedAssignments(
                             e.target.checked
-                              ? assignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
+                              ? visibleAssignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
                               : []
                           )
                         }
@@ -732,6 +870,16 @@ export default function TeacherDashboard() {
                     <span className="qc-chat-selection-count" aria-live="polite">
                       {selectedAssignments.length} selected
                     </span>
+                    {assignmentShelf === 'active' && (
+                      <button
+                        type="button"
+                        onClick={handleArchiveSelectedAssignments}
+                        disabled={!selectedAssignments.length}
+                        className="qc-chat-toolbar-btn"
+                      >
+                        <BookOpen size={13} aria-hidden="true" /> Archive Selected
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleDeleteSelectedAssignments}
@@ -744,13 +892,60 @@ export default function TeacherDashboard() {
                 )}
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2 mb-6" role="tablist" aria-label="Assignment shelf">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={assignmentShelf === 'active'}
+                className={`qc-filter-chip ${assignmentShelf === 'active' ? 'is-active' : ''}`}
+                onClick={() => { setAssignmentShelf('active'); setSelectedAssignments([]); }}
+              >
+                Active ({assignments.filter((a) => a.status !== 'archived').length})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={assignmentShelf === 'archived'}
+                className={`qc-filter-chip ${assignmentShelf === 'archived' ? 'is-active' : ''}`}
+                onClick={() => { setAssignmentShelf('archived'); setSelectedAssignments([]); }}
+              >
+                Archived ({assignments.filter((a) => a.status === 'archived').length})
+              </button>
+            </div>
             <div className="grid grid-cols-1 gap-4">
-              {assignments.map((asgn) => {
-                const isOverdue = new Date(asgn.deadline) < new Date();
-                const displayStatus = isOverdue ? 'deactive' : (asgn.status || 'active');
+              {visibleAssignments.map((asgn) => {
+                const isArchived = asgn.status === 'archived';
+                const isOverdue = !isArchived && new Date(asgn.deadline) < new Date();
+                const displayStatus = isArchived
+                  ? 'archived'
+                  : (isOverdue ? 'deactive' : (asgn.status || 'active'));
                 const assignmentId = normalizeAssignmentId(asgn._id);
+                const overflowItems = isArchived
+                  ? [{
+                      id: `restore-assignment-${assignmentId}`,
+                      label: 'Restore Assignment',
+                      icon: <RotateCcw size={14} />,
+                      onSelect: () => handleRestoreAssignment(asgn._id),
+                    }, {
+                      id: `delete-assignment-${assignmentId}`,
+                      label: 'Delete Assignment',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => handleDeleteAssignment(asgn._id),
+                    }]
+                  : [{
+                      id: `archive-assignment-${assignmentId}`,
+                      label: 'Archive Assignment',
+                      icon: <BookOpen size={14} />,
+                      onSelect: () => handleArchiveAssignment(asgn._id),
+                    }, {
+                      id: `delete-assignment-${assignmentId}`,
+                      label: 'Delete Assignment',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => handleDeleteAssignment(asgn._id),
+                    }];
                 return (
-                  // ✅ FIX: key uses _id instead of index
                   <div key={assignmentId || asgn._id} className="qc-card flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
                     <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
                       {manageAssignments && (
@@ -775,31 +970,37 @@ export default function TeacherDashboard() {
                         <p className={`text-[10px] uppercase tracking-widest font-black flex items-center gap-1 ${isOverdue ? 'text-red-400' : 'text-slate-500'}`}>
                           <Clock size={12}/> Deadline: {new Date(asgn.deadline).toLocaleString()}
                         </p>
+                        {isArchived && (
+                          <p className="text-[10px] uppercase tracking-widest font-black text-amber-400">Archived — hidden from students</p>
+                        )}
                       </div>
                     </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
                       {asgn.file && <button type="button" onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(asgn._id), asgn.originalFileName || 'assignment');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Open inside browser" aria-label="Open assignment file"><Eye size={18}/></button>}
                       {asgn.file && <button type="button" onClick={async()=>{try{await downloadProtectedFile(teacherService.downloadAssignment(asgn._id),asgn.originalFileName||"assignment");}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Download original reference file" aria-label="Download assignment file"><Download size={18}/></button>}
-                      <button type="button" onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400" aria-label="Edit assignment"><Edit3 size={18}/></button>
-                      <button type="button" onClick={() => handleStatusToggle(asgn._id, displayStatus)} className={`px-4 sm:px-6 py-2 rounded-lg text-[10px] font-black uppercase border tracking-widest transition-all ${displayStatus==='deactive' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-sky-500/10 text-sky-500 border-sky-500/20 hover:bg-sky-500 hover:text-white'} ${isOverdue ? 'cursor-not-allowed opacity-70' : ''}`}>
-                        {displayStatus === 'deactive' ? 'Deactive' : 'Active'}
-                      </button>
+                      {!isArchived && (
+                        <button type="button" onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400" aria-label="Edit assignment"><Edit3 size={18}/></button>
+                      )}
+                      {!isArchived && (
+                        <button type="button" onClick={() => handleStatusToggle(asgn._id, displayStatus)} disabled={isOverdue} className={`px-4 sm:px-6 py-2 rounded-lg text-[10px] font-black uppercase border tracking-widest transition-all ${displayStatus==='deactive' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-sky-500/10 text-sky-500 border-sky-500/20 hover:bg-sky-500 hover:text-white'} ${isOverdue ? 'cursor-not-allowed opacity-70' : ''}`}>
+                          {displayStatus === 'deactive' ? 'Deactive' : 'Active'}
+                        </button>
+                      )}
                       <OverflowMenu
                         label={`More actions for ${asgn.title || 'assignment'}`}
-                        items={[{
-                          id: `delete-assignment-${assignmentId}`,
-                          label: 'Delete assignment',
-                          danger: true,
-                          icon: <Trash2 size={14} />,
-                          onSelect: () => handleDeleteAssignment(asgn._id),
-                        }]}
+                        items={overflowItems}
                       />
                     </div>
                   </div>
                 );
               })}
-              {assignments.length === 0 && <NoDataMessage icon={<BookOpen size={40}/>} message="No assignments found."/>}
+              {visibleAssignments.length === 0 && (
+                <NoDataMessage
+                  icon={<BookOpen size={40}/>}
+                  message={assignmentShelf === 'archived' ? 'No archived assignments.' : 'No active assignments found.'}
+                />
+              )}
             </div>
           </div>
         )}

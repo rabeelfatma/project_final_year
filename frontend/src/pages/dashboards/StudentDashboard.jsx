@@ -16,11 +16,16 @@ import {
 
   Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp,
 
-  Sparkles, Trash2, ListChecks, Info
+  Sparkles, Info
 
 } from 'lucide-react';
 
 import studentService from '../../services/studentService';
+import {
+  ACADEMIC_ACCEPT,
+  assertAcademicFile,
+  uploadDurableFile,
+} from '../../services/r2UploadService';
 
 import SidebarControls from '../../components/common/SidebarControls';
 
@@ -37,8 +42,6 @@ import SettingsPage from '../account/SettingsPage';
 import AIChatbot from '../../components/common/AIChatbot';
 
 import MessagePanel from '../../components/common/MessagePanel';
-
-import OverflowMenu from '../../components/ui/OverflowMenu';
 
 import SearchField from '../../components/ui/SearchField';
 
@@ -98,30 +101,6 @@ export default function StudentDashboard() {
   const [assignments, setAssignments] = useState([]);
 
   const [checkedResults, setCheckedResults] = useState([]);
-
-  const [selectedResultIds, setSelectedResultIds] = useState([]);
-
-  const [selectedAssignmentSubmissionIds, setSelectedAssignmentSubmissionIds] = useState([]);
-
-  const [deletingAssignments, setDeletingAssignments] = useState(false);
-
-  const [deletingResults, setDeletingResults] = useState(false);
-
-  const [manageAssignments, setManageAssignments] = useState(false);
-
-  const [manageResults, setManageResults] = useState(false);
-
-
-
-  const allowedExtensions = [
-
-    'pdf','doc','docx','txt','md','rtf','csv','tsv','json','xml','yaml','yml','xlsx','xls','ods','pptx','ppt','odp','zip','rar','7z','tar','gz',
-
-    'py','ipynb','js','jsx','ts','tsx','cpp','c','h','hpp','java','php','cs','swift','go','rs','kt','kts','sql','html','htm','css','scss','sass','less','vue','svelte','sh','bat','ps1','rb','r','m','mm','dart','lua','pl',
-
-    'jpg','jpeg','png','gif','webp','bmp','svg','heic','heif','tif','tiff','mp4','mkv','webm','mov','avi','wmv','mpeg','mpg','m4v','mp3','wav','ogg','aac','flac','m4a'
-
-  ];
 
 
 
@@ -206,6 +185,7 @@ export default function StudentDashboard() {
             submissionId: s._id,
 
             originalFileName: s.originalFileName || '',
+            submissionOriginalFileName: s.originalFileName || '',
 
             status: s.status,
 
@@ -282,17 +262,13 @@ export default function StudentDashboard() {
       return;
     }
 
-    const fileExt = file.name.split('.').pop().toLowerCase();
-
-    if (!allowedExtensions.includes(fileExt)) {
-
-      alert(`Error: .${fileExt} files are not allowed.`);
+    try {
+      assertAcademicFile(file);
+    } catch (err) {
+      alert(err.message || `Error: file not allowed.`);
       input.value = "";
       return;
-
     }
-
-
 
     if (!localStorage.getItem('token')) {
 
@@ -310,9 +286,19 @@ export default function StudentDashboard() {
 
     const formData = new FormData();
 
-    formData.append('file', file);
-
-
+    try {
+      // Direct-to-R2 for durable submissions (shared bucket locally + on Vercel).
+      const durable = await uploadDurableFile(file, 'submissions');
+      formData.append('storedFileKey', durable.storedFileKey);
+      formData.append('originalFileName', durable.originalFileName || '');
+      formData.append('fileMimeType', durable.fileMimeType || '');
+      formData.append('fileSize', String(durable.fileSize || ''));
+    } catch (uploadErr) {
+      alert(uploadErr?.response?.data?.message || uploadErr.message || 'Upload failed.');
+      setUploadStatus({ id: null, loading: false, success: false });
+      input.value = "";
+      return;
+    }
 
     try {
 
@@ -326,7 +312,8 @@ export default function StudentDashboard() {
         status: 'submitted',
         availabilityLabel: 'Awaiting evaluation',
         submissionId: submission?._id || null,
-        originalFileName: submission?.originalFileName || '',
+        // Keep assignment.originalFileName; store the student's upload name separately.
+        submissionOriginalFileName: submission?.originalFileName || '',
         marks: null,
         aiScore: null,
         feedback: '',
@@ -384,76 +371,6 @@ export default function StudentDashboard() {
     localStorage.clear();
 
     navigate('/login');
-
-  };
-
-
-
-  const toggleResultSelection = (id) => setSelectedResultIds((prev) =>
-
-    prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-
-  );
-
-
-
-  const toggleAssignmentSubmission = (id) => setSelectedAssignmentSubmissionIds((previous) =>
-
-    previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]
-
-  );
-
-  const handleDeleteSelectedAssignmentSubmissions = async () => {
-
-    if (!selectedAssignmentSubmissionIds.length) return;
-
-    if (!window.confirm(`Delete ${selectedAssignmentSubmissionIds.length} selected submission(s)? This cannot be undone.`)) return;
-
-    setDeletingAssignments(true);
-
-    try {
-
-      await studentService.deleteMySubmissionsBulk(selectedAssignmentSubmissionIds);
-
-      setSelectedAssignmentSubmissionIds([]);
-
-      await fetchAllData();
-
-    } catch (error) {
-
-      alert(error.response?.data?.message || error.message || 'Could not delete selected submissions.');
-
-    } finally { setDeletingAssignments(false); }
-
-  };
-
-
-
-  const handleDeleteSelectedResults = async () => {
-
-    if (!selectedResultIds.length) return;
-
-    if (!window.confirm(`Delete ${selectedResultIds.length} selected submission/result(s)? This cannot be undone.`)) return;
-
-    setDeletingResults(true);
-
-    try {
-
-      await studentService.deleteMySubmissionsBulk(selectedResultIds);
-
-      setSelectedResultIds([]);
-
-      await fetchAllData();
-
-    } catch (error) {
-
-      alert(error.response?.data?.message || error.message || 'Could not delete selected results.');
-
-    } finally {
-
-      setDeletingResults(false);
-
-    }
 
   };
 
@@ -695,80 +612,6 @@ export default function StudentDashboard() {
 
               </div>
 
-              <div className="qc-list-toolbar">
-
-                <button
-
-                  type="button"
-
-                  className={`qc-manage-toggle ${manageResults ? 'is-active' : ''}`}
-
-                  onClick={() => {
-
-                    if (manageResults) {
-
-                      setManageResults(false);
-
-                      setSelectedResultIds([]);
-
-                    } else {
-
-                      setManageResults(true);
-
-                    }
-
-                  }}
-
-                  aria-pressed={manageResults}
-
-                  disabled={!checkedAssignments.length}
-
-                >
-
-                  <ListChecks size={14} aria-hidden="true" />{manageResults ? 'Done' : 'Manage'}
-
-                </button>
-
-                {manageResults && checkedAssignments.length > 0 && (
-
-                  <>
-
-                    <button
-
-                      type="button"
-
-                      className="qc-chat-toolbar-btn accent"
-
-                      onClick={() => {
-
-                        const eligible = checkedAssignments.map((item) => item.submissionId || item._id).filter(Boolean);
-
-                        const allSelected = eligible.length > 0 && eligible.every((id) => selectedResultIds.includes(id));
-
-                        setSelectedResultIds(allSelected ? [] : eligible);
-
-                      }}
-
-                    >
-
-                      {checkedAssignments.every((item) => selectedResultIds.includes(item.submissionId || item._id))
-
-                        ? 'Deselect all'
-
-                        : 'Select all'}
-
-                    </button>
-
-                    <span className="qc-chat-selection-count" aria-live="polite">{selectedResultIds.length} selected</span>
-
-                    <button type="button" onClick={handleDeleteSelectedResults} disabled={!selectedResultIds.length || deletingResults} className="qc-chat-toolbar-btn danger"><Trash2 size={14} aria-hidden="true"/>{deletingResults ? 'Deleting…' : 'Delete selected'}</button>
-
-                  </>
-
-                )}
-
-              </div>
-
             </div>
 
             {checkedAssignments.length ? checkedAssignments.map((asgn) => {
@@ -780,12 +623,6 @@ export default function StudentDashboard() {
                 <div key={asgn.submissionId || asgn._id} className="theme-card border p-4 sm:p-6 rounded-3xl flex flex-col md:flex-row md:items-center md:justify-between gap-5">
 
                   <div className="flex items-start gap-3 min-w-0">
-
-                    {manageResults && (
-
-                      <input aria-label={`Select ${asgn.title || 'result'}`} type="checkbox" checked={selectedResultIds.includes(asgn.submissionId || asgn._id)} onChange={() => toggleResultSelection(asgn.submissionId || asgn._id)} className="mt-2" />
-
-                    )}
 
                     <div className="min-w-0">
 
@@ -822,50 +659,6 @@ export default function StudentDashboard() {
                     </div>
 
                     <button onClick={() => setSelectedAsgn(asgn)} className="icon-btn" title="View checked result" aria-label="View checked result"><Eye size={17}/></button>
-
-                    {(asgn.submissionId || asgn._id) && (
-
-                      <OverflowMenu
-
-                        label={`Actions for ${asgn.title || 'result'}`}
-
-                        items={[{
-
-                          id: `delete-result-${asgn.submissionId || asgn._id}`,
-
-                          label: 'Delete submission',
-
-                          danger: true,
-
-                          icon: <Trash2 size={14} />,
-
-                          onSelect: async () => {
-
-                            const id = asgn.submissionId || asgn._id;
-
-                            if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return;
-
-                            try {
-
-                              await studentService.deleteMySubmission(id);
-
-                              setSelectedResultIds((previous) => previous.filter((item) => item !== id));
-
-                              await fetchAllData();
-
-                            } catch (error) {
-
-                              alert(error.response?.data?.message || error.message || 'Could not delete submission.');
-
-                            }
-
-                          },
-
-                        }]}
-
-                      />
-
-                    )}
 
                   </div>
 
@@ -1030,81 +823,6 @@ export default function StudentDashboard() {
                  <option value="due-desc">Due date: Latest first</option>
 
                </select>
-
-               <button
-
-                 type="button"
-
-                 className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
-
-                 onClick={() => {
-
-                   if (manageAssignments) {
-
-                     setManageAssignments(false);
-
-                     setSelectedAssignmentSubmissionIds([]);
-
-                   } else {
-
-                     setManageAssignments(true);
-
-                   }
-
-                 }}
-
-                 aria-pressed={manageAssignments}
-
-                 disabled={!assignments.some((a) => a.submissionId)}
-
-               >
-
-                 <ListChecks size={14} aria-hidden="true" />{manageAssignments ? 'Done' : 'Manage'}
-
-               </button>
-
-               {manageAssignments && assignments.some((a) => a.submissionId) && (
-
-                 <>
-
-                   <button
-
-                     type="button"
-
-                     className="qc-chat-toolbar-btn accent"
-
-                     onClick={() => {
-
-                       const eligible = assignments.map((a) => a.submissionId).filter(Boolean);
-
-                       const allSelected = eligible.length > 0 && eligible.every((id) => selectedAssignmentSubmissionIds.includes(id));
-
-                       setSelectedAssignmentSubmissionIds(allSelected ? [] : eligible);
-
-                     }}
-
-                   >
-
-                     {assignments.filter((a) => a.submissionId).every((a) => selectedAssignmentSubmissionIds.includes(a.submissionId))
-
-                       ? 'Deselect all'
-
-                       : 'Select all'}
-
-                   </button>
-
-                   <span className="qc-chat-selection-count" aria-live="polite">{selectedAssignmentSubmissionIds.length} selected</span>
-
-                   <button type="button" onClick={handleDeleteSelectedAssignmentSubmissions} disabled={!selectedAssignmentSubmissionIds.length || deletingAssignments} className="qc-chat-toolbar-btn danger">
-
-                     <Trash2 size={14} aria-hidden="true" />{deletingAssignments ? 'Deleting…' : 'Delete selected'}
-
-                   </button>
-
-                 </>
-
-               )}
-
              </div>
 
              {filteredSortedAssignments.map(asgn => (
@@ -1113,13 +831,7 @@ export default function StudentDashboard() {
 
                  <div className="flex items-start gap-3 min-w-0 flex-1">
 
-                 {manageAssignments && (
-
-                   <input type="checkbox" aria-label={`Select submission for ${asgn.title}`} className="mt-6 shrink-0" disabled={!asgn.submissionId} checked={Boolean(asgn.submissionId && selectedAssignmentSubmissionIds.includes(asgn.submissionId))} onChange={() => asgn.submissionId && toggleAssignmentSubmission(asgn.submissionId)} />
-
-                 )}
-
-                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)} onDismissDuplicate={() => setDuplicateNoticeId(null)} uploadStatus={uploadStatus} onDeleteSubmission={asgn.submissionId ? async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); setDuplicateNoticeId((previous) => previous && String(previous) === String(asgn._id) ? null : previous); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } } : null} /></div>
+                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)} onDismissDuplicate={() => setDuplicateNoticeId(null)} uploadStatus={uploadStatus} /></div>
 
                  </div>
 
@@ -1269,7 +981,7 @@ export default function StudentDashboard() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open Instructions</button>
+                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.originalFileName || 'assignment'}><Eye size={16}/> Open Instructions</button>
 
                   <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
 
@@ -1289,9 +1001,9 @@ export default function StudentDashboard() {
 
                 {selectedAsgn.submissionId && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
 
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || 'my-submission'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open my file</button>
+                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || 'my-submission'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.submissionOriginalFileName || 'my-submission'}><Eye size={16}/> Open my file</button>
 
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Download size={16}/> Download my file</button>
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.submissionOriginalFileName || 'my-submission'}><Download size={16}/> Download my file</button>
 
                 </div>}
 
@@ -1366,7 +1078,6 @@ function AssignmentRow({
   showDuplicateNotice = false,
   onDismissDuplicate,
   uploadStatus,
-  onDeleteSubmission,
 }) {
 
   const status = String(asgn.status || "").toLowerCase();
@@ -1459,7 +1170,7 @@ function AssignmentRow({
           {canUpload ? (
             <label className="px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all qc-btn-primary">
               {actionLabel}
-              <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />
+              <input type="file" accept={ACADEMIC_ACCEPT} className="hidden" onChange={(e) => onUpload(e, asgn._id)} />
             </label>
           ) : isSubmitted ? (
             <div className="qc-assignment-status-anchor">
@@ -1481,30 +1192,6 @@ function AssignmentRow({
             >
               {actionLabel}
             </span>
-          )}
-
-          {typeof onDeleteSubmission === 'function' && (
-
-            <OverflowMenu
-
-              label={`Actions for ${asgn.title || 'assignment'}`}
-
-              items={[{
-
-                id: `delete-submission-${asgn.submissionId || asgn._id}`,
-
-                label: 'Delete my submission',
-
-                danger: true,
-
-                icon: <Trash2 size={14} />,
-
-                onSelect: onDeleteSubmission,
-
-              }]}
-
-            />
-
           )}
 
         </div>

@@ -93,8 +93,10 @@ function configureUploadStatic(app, { setHeaders } = {}) {
   const profileDir = path.join(root, "profilePictures");
   const staticOpts = setHeaders ? { setHeaders } : undefined;
 
-  if (process.env.VERCEL === "1") {
-    const storedFiles = require("./storedFiles");
+  const storedFiles = require("./storedFiles");
+  // When R2 is configured (local + Vercel), stream avatars from the private bucket
+  // with legacy local-disk fallback inside storedFiles.exists/openDownloadStream.
+  if (storedFiles.usesObjectStorage()) {
     app.get("/uploads/profilePictures/:name", async (req, res) => {
       const name = path.basename(String(req.params.name || ""));
       if (!name) return res.status(404).end();

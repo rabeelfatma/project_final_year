@@ -1,6 +1,7 @@
 /**
  * Private Cloudflare R2 (S3-compatible) object storage.
- * Used only when Vercel requires durable uploads; never exposes public URLs.
+ * Used for durable uploads in BOTH local and Vercel when R2 env is configured.
+ * Never exposes public bucket URLs; downloads stay behind authenticated APIs.
  */
 const {
   S3Client,
@@ -9,6 +10,7 @@ const {
   DeleteObjectCommand,
   HeadObjectCommand,
 } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 function trimEnv(name) {
   return String(process.env[name] || "").trim();
@@ -133,18 +135,49 @@ async function deleteObject(key) {
 }
 
 async function objectExists(key) {
+  const meta = await headObject(key);
+  return Boolean(meta);
+}
+
+/**
+ * @returns {Promise<null|{ contentLength:number, contentType:string, eTag?:string }>}
+ */
+async function headObject(key) {
   const { client, bucket } = getClient();
   try {
-    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-    return true;
+    const out = await client.send(
+      new HeadObjectCommand({ Bucket: bucket, Key: key })
+    );
+    return {
+      contentLength: Number(out.ContentLength || 0),
+      contentType: String(out.ContentType || ""),
+      eTag: out.ETag ? String(out.ETag) : undefined,
+    };
   } catch (error) {
     const status = error?.$metadata?.httpStatusCode;
     const name = String(error?.name || "");
     if (status === 404 || name === "NotFound" || name === "NoSuchKey") {
-      return false;
+      return null;
     }
     throw error;
   }
+}
+
+/**
+ * Backend-authorized PUT URL for direct-to-R2 uploads (bypasses Vercel body limits).
+ * Credentials never leave the server; only a short-lived URL is returned.
+ */
+async function getPresignedPutUrl(key, contentType, expiresInSeconds = 900) {
+  const { client, bucket } = getClient();
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ContentType: contentType || "application/octet-stream",
+  });
+  const url = await getSignedUrl(client, command, {
+    expiresIn: Math.min(Math.max(Number(expiresInSeconds) || 900, 60), 3600),
+  });
+  return url;
 }
 
 module.exports = {
@@ -157,4 +190,6 @@ module.exports = {
   getObjectStream,
   deleteObject,
   objectExists,
+  headObject,
+  getPresignedPutUrl,
 };

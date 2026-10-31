@@ -232,3 +232,52 @@ exports.message = async (req, res) => {
     return res.status(500).json({ message: "Unable to load voice message." });
   }
 };
+
+const {
+  createPresignedUpload,
+  verifyPresignedUpload,
+} = require("../services/presignedUploadService");
+
+/** POST /api/files/presign — authorize a direct-to-R2 PUT (credentials stay on server). */
+exports.presign = async (req, res) => {
+  try {
+    const { category, originalFileName, contentType, size } = req.body || {};
+    const result = await createPresignedUpload({
+      category,
+      originalFileName,
+      contentType,
+      size,
+      userId: req.user?._id,
+    });
+    return res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    const status = error.statusCode || (error.code === "R2_NOT_CONFIGURED" ? 503 : 400);
+    return res.status(status).json({
+      message: error.message || "Could not authorize upload.",
+      code: error.code || "UPLOAD_PRESIGN_FAILED",
+    });
+  }
+};
+
+/** POST /api/files/verify-upload — confirm object exists before Mongo commit (optional helper). */
+exports.verifyUpload = async (req, res) => {
+  try {
+    const { objectKey, category, originalFileName, expectedSize } = req.body || {};
+    const result = await verifyPresignedUpload({
+      objectKey,
+      category,
+      originalFileName,
+      expectedSize,
+    });
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    const status = error.statusCode || (error.code === "R2_NOT_CONFIGURED" ? 503 : 400);
+    return res.status(status).json({
+      message: error.message || "Upload verification failed.",
+      code: error.code || "UPLOAD_VERIFY_FAILED",
+    });
+  }
+};

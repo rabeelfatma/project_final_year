@@ -169,6 +169,18 @@ const teacherService = {
     const response = await api.post('/teacher/assignments/bulk-delete', { ids });
     return response.data;
   },
+
+  /** Archive selected owned assignments (ownership validated server-side). */
+  archiveAssignmentsBulk: async (ids) => {
+    const response = await api.post('/teacher/assignments/bulk-archive', { ids });
+    return response.data;
+  },
+
+  /** Archive every non-archived assignment owned by the logged-in teacher. */
+  archiveAllAssignments: async () => {
+    const response = await api.post('/teacher/assignments/bulk-archive', { scope: 'all' });
+    return response.data;
+  },
   resetSubmissionGradesBulk: async (ids) => {
     if (!Array.isArray(ids) || !ids.length) throw new Error('Select at least one submission');
     const response = await api.post('/teacher/submissions/bulk-reset-grades', { ids });

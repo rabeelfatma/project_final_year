@@ -9,6 +9,15 @@ const {
   relativeStoredPath,
 } = require("../utils/storedFiles");
 const { assertR2Ready } = require("../utils/objectStorage");
+const {
+  ACADEMIC_EXTENSIONS,
+  MESSAGE_EXTENSIONS,
+  PROFILE_EXTENSIONS,
+  isVideoExtension,
+  makeSafeFilename,
+  MAX_PROXIED_UPLOAD_BYTES_VERCEL,
+  MAX_PROXIED_UPLOAD_BYTES_LOCAL,
+} = require("../utils/uploadAllowlist");
 
 // Soft-init: must not throw on Vercel read-only filesystem at module load.
 try {
@@ -33,12 +42,11 @@ const getUploadFolder = (req) => {
   return "others";
 };
 
-// Determine upload folder from the complete request URL
 const getUploadPath = (req) => {
   return path.join(getUploadsRoot(), getUploadFolder(req));
 };
 
-/** Ephemeral uploads stay in memory on Vercel and are not written to R2. */
+/** Ephemeral uploads stay in memory and are not written to R2. */
 function isEphemeralUpload(req) {
   const route = String(req.originalUrl || "").toLowerCase();
   return (
@@ -46,20 +54,6 @@ function isEphemeralUpload(req) {
     route.includes("/api/ai/chat") ||
     route.includes("/ai/chat")
   );
-}
-
-function makeSafeFilename(originalname) {
-  const rawName = path.basename(String(originalname || "upload"));
-  const safeName =
-    rawName
-      .normalize("NFKC")
-      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-      .replace(/\s+/g, " ")
-      .replace(/[. ]+$/g, "")
-      .trim() || "upload";
-  const ext = path.extname(safeName);
-  const stem = path.basename(safeName, ext);
-  return `${stem}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
 }
 
 const diskStorage = multer.diskStorage({
@@ -86,13 +80,12 @@ const diskStorage = multer.diskStorage({
 });
 
 /**
- * Vercel: memory storage + R2 put for durable routes.
+ * Memory + R2 put for durable routes when object storage is configured.
  * Ephemeral AI/reference uploads keep the buffer only (no R2 write).
  */
 const r2AwareStorage = {
   _handleFile(req, file, cb) {
     const ephemeral = isEphemeralUpload(req);
-    // Durable uploads need R2; ephemeral AI evaluate/chat stay in memory only.
     if (!ephemeral) {
       try {
         assertR2Ready();
@@ -104,7 +97,14 @@ const r2AwareStorage = {
     const chunks = [];
     let size = 0;
     let settled = false;
-    const limit = usesObjectStorage() ? 4 * 1024 * 1024 : 200 * 1024 * 1024;
+    const isVercel = process.env.VERCEL === "1";
+    const limit = ephemeral
+      ? isVercel
+        ? MAX_PROXIED_UPLOAD_BYTES_VERCEL
+        : MAX_PROXIED_UPLOAD_BYTES_LOCAL
+      : isVercel
+        ? MAX_PROXIED_UPLOAD_BYTES_VERCEL
+        : MAX_PROXIED_UPLOAD_BYTES_LOCAL;
 
     const settle = (err, info) => {
       if (settled) return;
@@ -120,7 +120,9 @@ const r2AwareStorage = {
         file.stream.destroy();
         settle(
           new Error(
-            `File too large for this platform (max ${Math.floor(limit / (1024 * 1024))} MB).`
+            `File too large for proxied upload (max ${Math.floor(
+              limit / (1024 * 1024)
+            )} MB). Use direct upload for larger files.`
           )
         );
         return;
@@ -166,62 +168,78 @@ const r2AwareStorage = {
   },
 
   _removeFile(req, file, cb) {
-    // Durable objects are removed by controllers when records are deleted.
-    // Ephemeral buffers need no disk cleanup.
     cb(null);
   },
 };
 
 const isVercel = process.env.VERCEL === "1";
 
+/** Pick R2 or disk per request so tests can toggle env without stale module state. */
+const adaptiveStorage = {
+  _handleFile(req, file, cb) {
+    // Vercel always uses r2AwareStorage (ephemeral=memory; durable requires R2).
+    // Local uses R2 when configured, otherwise classic disk under backend/uploads.
+    if (process.env.VERCEL === "1" || usesObjectStorage()) {
+      return r2AwareStorage._handleFile(req, file, cb);
+    }
+    return diskStorage._handleFile(req, file, cb);
+  },
+  _removeFile(req, file, cb) {
+    if (process.env.VERCEL === "1" || usesObjectStorage()) {
+      return r2AwareStorage._removeFile(req, file, cb);
+    }
+    return diskStorage._removeFile(req, file, cb);
+  },
+};
+
 const upload = multer({
-  storage: isVercel ? r2AwareStorage : diskStorage,
+  // When R2 is configured (local or Vercel), durable proxied uploads go through R2.
+  // Without R2, fall back to local disk (legacy / offline).
+  storage: adaptiveStorage,
 
   limits: {
-    // Vercel Hobby request body ~4.5MB; keep Hostinger at 200MB.
-    fileSize: isVercel ? 4 * 1024 * 1024 : 200 * 1024 * 1024,
+    // Proxied multipart only. 200 MB durable files use backend-authorized
+    // presigned direct-to-R2 uploads (see /api/files/presign).
+    fileSize: isVercel
+      ? MAX_PROXIED_UPLOAD_BYTES_VERCEL
+      : MAX_PROXIED_UPLOAD_BYTES_LOCAL,
   },
 
   fileFilter: (req, file, cb) => {
-    // Supported documents and archives
-    const allowedExtensions = [
-      ".pdf", ".doc", ".docx", ".txt", ".md", ".rtf",
-      ".csv", ".tsv", ".json", ".xml", ".yaml", ".yml",
-      ".xlsx", ".xls", ".ods", ".pptx", ".ppt", ".odp",
-      ".zip", ".rar", ".7z", ".tar", ".gz",
-
-      // Images
-      ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
-      ".svg", ".heic", ".heif", ".tif", ".tiff",
-
-      // Video
-      ".mp4", ".mkv", ".webm", ".mov", ".avi",
-      ".wmv", ".mpeg", ".mpg", ".m4v",
-
-      // Audio
-      ".mp3", ".wav", ".ogg", ".aac", ".flac", ".m4a",
-
-      // Code files
-      ".py", ".ipynb", ".js", ".jsx", ".ts", ".tsx",
-      ".cpp", ".c", ".h", ".hpp", ".java", ".php",
-      ".cs", ".swift", ".go", ".rs", ".kt", ".kts",
-      ".sql", ".html", ".htm", ".css", ".scss", ".sass",
-      ".less", ".vue", ".svelte", ".sh", ".bat", ".ps1",
-      ".rb", ".r", ".m", ".mm", ".dart", ".lua", ".pl",
-    ];
-
+    const folder = getUploadFolder(req);
     const ext = path.extname(file.originalname || "").toLowerCase();
+    const route = String(req.originalUrl || "").toLowerCase();
 
-    if (allowedExtensions.includes(ext)) {
+    if (folder === "profilePictures") {
+      if (PROFILE_EXTENSIONS.includes(ext)) return cb(null, true);
+      return cb(new Error(`File type ${ext || "unknown"} is not supported for profile pictures.`));
+    }
+
+    if (folder === "messages" || route.includes("/voice")) {
+      if (MESSAGE_EXTENSIONS.includes(ext)) return cb(null, true);
+      return cb(new Error(`File type ${ext || "unknown"} is not supported for messages.`));
+    }
+
+    // Academic + AI ephemeral: shared allowlist without the nine video containers.
+    if (isVideoExtension(ext)) {
+      return cb(
+        new Error(
+          `Video file type ${ext} is not supported for Teacher/Student uploads.`
+        )
+      );
+    }
+
+    if (ACADEMIC_EXTENSIONS.includes(ext) || MESSAGE_EXTENSIONS.includes(ext)) {
       return cb(null, true);
     }
 
-    return cb(
-      new Error(`File type ${ext || "unknown"} is not supported.`)
-    );
+    return cb(new Error(`File type ${ext || "unknown"} is not supported.`));
   },
 });
 
 module.exports = upload;
 module.exports.isEphemeralUpload = isEphemeralUpload;
 module.exports.r2AwareStorage = r2AwareStorage;
+module.exports.makeSafeFilename = makeSafeFilename;
+module.exports.getUploadFolder = getUploadFolder;
+module.exports.adaptiveStorage = adaptiveStorage;

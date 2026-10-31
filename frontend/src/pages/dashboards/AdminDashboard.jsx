@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Layout, Users, GraduationCap, FileText, Activity, 
-  Trash2, Edit2, X, UserRound, UsersRound, ClipboardList,
+  Trash2, X, UserRound, UsersRound, ClipboardList,
   UserPlus, Check, Ban
 } from 'lucide-react';
 import { 
@@ -26,9 +26,6 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [shellView, setShellView] = useState('main');
   const [loading, setLoading] = useState(false);
-  
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
 
   const [systemStats, setSystemStats] = useState({ 
     totalUsers: 0, totalTeachers: 0, totalStudents: 0, totalAssignments: 0, 
@@ -59,22 +56,6 @@ export default function AdminDashboard() {
   };
 
   const COLORS = ['var(--chart-primary)', 'var(--chart-secondary)', 'var(--chart-tertiary)', 'var(--chart-quaternary)'];
-
-  const SUBJECTS = [
-    "Introduction to IT (CS)", "Programming Fundamentals (CS)", "Object Oriented Programming (CS)",
-    "Data Structures (CS)", "Digital Logic Design (CS)", "Operating Systems (CS)",
-    "Database Systems (CS)", "Software Engineering (CS)", "Computer Networks (CS)",
-    "Analysis of Algorithms (CS)", "Artificial Intelligence (CS)", "Web Engineering (CS)",
-    "Mobile App Development (CS)", "Cyber Security (CS)", "Data Science (CS)",
-    "Cloud Computing (CS)", "Theory of Automata (CS)", "Compiler Construction (CS)",
-    "Human Computer Interaction (CS)", "Digital Image Processing (CS)", "Discrete Structures (SE)",
-    "Software Requirement Eng. (SE)", "Software Design & Architecture (SE)", "Software Quality Assurance (SE)",
-    "Software Project Management (SE)", "Formal Methods (SE)", "Software Re-Engineering (SE)",
-    "Calculus & Analytical Geometry", "Linear Algebra", "Probability & Statistics",
-    "Numerical Computing", "Differential Equations", "Pakistan Studies",
-    "Islamic Studies", "English Composition", "Communication Skills",
-    "Technical Report Writing", "Professional Ethics", "Psychology", "Management"
-  ];
 
   useEffect(() => {
     fetchContent();
@@ -192,23 +173,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleEditClick = (item) => {
-    setEditingItem({...item}); // Spread to avoid direct state mutation
-    setIsEditModalOpen(true);
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    try {
-        await adminService.updateUser(editingItem._id, editingItem);
-        setIsEditModalOpen(false);
-        fetchContent();
-        alert("Updated Successfully!");
-    } catch {
-        alert("Update failed");
-    }
-  };
-
   const handleLogout = () => {
     localStorage.clear();
     navigate('/admin');
@@ -253,13 +217,6 @@ export default function AdminDashboard() {
       : shellView === 'settings'
         ? 'Settings'
         : pageCopy.title;
-
-  const editEntityLabel =
-    activeTab === 'Students'
-      ? 'Student'
-      : activeTab === 'Teachers'
-        ? 'Teacher'
-        : 'Record';
 
   return (
     <DashboardNavShell
@@ -445,7 +402,7 @@ export default function AdminDashboard() {
             <div className="flex flex-wrap justify-between items-center gap-3">
                 <p className="text-sm theme-muted">{viewData.length} records</p>
             </div>
-            <DataTable data={viewData} onDelete={handleDelete} onEdit={handleEditClick} type={activeTab} />
+            <DataTable data={viewData} onDelete={handleDelete} type={activeTab} />
           </div>
         )}
         </>
@@ -635,86 +592,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {isEditModalOpen && editingItem && (
-        <div className="qc-modal-backdrop">
-          <div className="qc-modal">
-            <button type="button" onClick={() => setIsEditModalOpen(false)} className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]" aria-label="Close edit dialog">
-              <X size={20}/>
-            </button>
-            <h2 className="qc-page-title pr-10 mb-5">Edit {editEntityLabel}</h2>
-            
-            <form onSubmit={handleUpdate} className="space-y-4 custom-scrollbar">
-              <div>
-                <label className="qc-label">Full Name</label>
-                <input 
-                  type="text" 
-                  value={editingItem.name || editingItem.title || ''} 
-                  onChange={(e) => setEditingItem({...editingItem, name: e.target.value, title: e.target.value})}
-                  className="qc-input"
-                />
-              </div>
-
-              {(activeTab === 'Students' || activeTab === 'Teachers') && (
-                <div>
-                  <label className="qc-label">Email Address</label>
-                  <input 
-                    type="email" 
-                    value={editingItem.email || ''} 
-                    onChange={(e) => setEditingItem({...editingItem, email: e.target.value})}
-                    className="qc-input"
-                  />
-                </div>
-              )}
-
-              {(activeTab === 'Students' || activeTab === 'Teachers') && (
-                <div>
-                  <label className="qc-label">Department</label>
-                  <select 
-                    value={editingItem.department || 'CS'} 
-                    onChange={(e) => setEditingItem({...editingItem, department: e.target.value})}
-                    className="qc-input"
-                  >
-                    <option value="CS">Computer Science (CS)</option>
-                    <option value="SE">Software Engineering (SE)</option>
-                  </select>
-                </div>
-              )}
-
-              {activeTab === 'Teachers' && (
-                <div>
-                  <label className="qc-label">Assigned Subject</label>
-                  <select 
-                    value={editingItem.subject || ''} 
-                    onChange={(e) => setEditingItem({...editingItem, subject: e.target.value})}
-                    className="qc-input"
-                  >
-                    <option value="">Select Subject</option>
-                    {SUBJECTS.map((sub, idx) => (
-                      <option key={idx} value={sub}>{sub}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {activeTab === 'Students' && (
-                <div>
-                  <label className="qc-label">Registration Number</label>
-                  <input 
-                    type="text" 
-                    value={editingItem.registrationNumber || ''} 
-                    readOnly
-                    className="qc-input opacity-70 cursor-not-allowed"
-                  />
-                </div>
-              )}
-
-              <button type="submit" className="qc-btn qc-btn-primary qc-btn-block mt-2">
-                Update Record
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </DashboardNavShell>
   );
 }
@@ -892,7 +769,7 @@ function StatBox({ label, value, icon }) {
   );
 }
 
-function DataTable({ data, onDelete, onEdit, type }) {
+function DataTable({ data, onDelete, type }) {
   const isAssignment = type === 'Assignments';
   const isStudent = type === 'Students';
 
@@ -904,7 +781,7 @@ function DataTable({ data, onDelete, onEdit, type }) {
             <th>{isAssignment ? 'Title' : 'Full Name'}</th>
             <th>{isStudent ? 'Reg #' : (isAssignment ? 'Teacher' : 'Subject')}</th>
             <th>{isAssignment ? 'Due Date' : 'Dept'}</th>
-            <th className="text-right">Actions</th>
+            <th className="text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -920,13 +797,8 @@ function DataTable({ data, onDelete, onEdit, type }) {
               <td className="theme-muted text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
                 {isAssignment ? (item.deadline ? new Date(item.deadline).toLocaleDateString() : 'N/A') : (item.department || 'CS')}
               </td>
-              <td className="text-right whitespace-nowrap">
-                <div className="inline-flex items-center gap-2 justify-end">
-                  {!isAssignment && (
-                    <button type="button" onClick={() => onEdit(item)} className="qc-btn qc-btn-secondary !min-h-8 !px-2 !py-1.5" aria-label="Edit record">
-                      <Edit2 size={15}/>
-                    </button>
-                  )}
+              <td className="text-center whitespace-nowrap">
+                <div className="inline-flex items-center justify-center">
                   <OverflowMenu
                     label={`More actions for ${isAssignment ? (item.title || 'assignment') : (item.name || 'record')}`}
                     items={[{

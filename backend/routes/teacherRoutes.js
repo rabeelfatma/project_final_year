@@ -44,8 +44,10 @@ router.put('/assignments/:id', upload.single('file'), teacherController.updateAs
 router.delete('/assignments/:id', teacherController.deleteAssignment);
 router.post('/assignments/bulk-delete', teacherController.deleteAssignmentsBulk);
 
-// Assignment ka status change karna (e.g., active se deactive)
+// Assignment ka status change karna (e.g., active se deactive / archived)
 router.patch('/assignments/:id/status', teacherController.updateAssignmentStatus);
+// Bulk archive (ownership validated per id; never deletes files/submissions)
+router.post('/assignments/bulk-archive', teacherController.archiveAssignmentsBulk);
 
 
 // ==========================================

@@ -97,6 +97,16 @@ describe("storedFiles local-disk mode (Hostinger compatible)", () => {
     fs.mkdirSync(path.join(tempRoot, "submissions"), { recursive: true });
     prev.VERCEL = process.env.VERCEL;
     prev.UPLOADS_DIR = process.env.UPLOADS_DIR;
+    for (const k of [
+      "R2_ACCOUNT_ID",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_BUCKET_NAME",
+      "R2_ENDPOINT",
+    ]) {
+      prev[k] = process.env[k];
+      delete process.env[k];
+    }
     delete process.env.VERCEL;
     process.env.UPLOADS_DIR = tempRoot;
     clear(storedFilesPath, uploadsPathUtil, objectStoragePath);
@@ -107,6 +117,16 @@ describe("storedFiles local-disk mode (Hostinger compatible)", () => {
     else process.env.VERCEL = prev.VERCEL;
     if (prev.UPLOADS_DIR === undefined) delete process.env.UPLOADS_DIR;
     else process.env.UPLOADS_DIR = prev.UPLOADS_DIR;
+    for (const k of [
+      "R2_ACCOUNT_ID",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_BUCKET_NAME",
+      "R2_ENDPOINT",
+    ]) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
     clear(storedFilesPath, uploadsPathUtil, objectStoragePath);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });

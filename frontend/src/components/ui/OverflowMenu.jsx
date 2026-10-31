@@ -114,7 +114,12 @@ export default function OverflowMenu({
                   event.stopPropagation();
                   if (item.disabled) return;
                   setOpen(false);
-                  item.onSelect?.();
+                  // Defer confirm/dialogs until after the portaled menu unmounts
+                  // (sync window.confirm here made Archive look unreliable).
+                  const select = item.onSelect;
+                  if (typeof select === "function") {
+                    window.setTimeout(() => select(), 0);
+                  }
                 }}
               >
                 {item.icon ? (
