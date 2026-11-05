@@ -146,6 +146,16 @@ async function getAssignment(req) {
   if (!(isAdmin || isOwnerTeacher || isStudentActive)) {
     return { error: [403, "Access denied."] };
   }
+  // Students cannot open/download reference files before the scheduled start (server time).
+  if (req.user.role === "student") {
+    const { evaluateAssignmentWindow } = require("../utils/assignmentAvailability");
+    const windowState = evaluateAssignmentWindow(a.startDate, a.deadline, Date.now());
+    if (windowState.notOpenYet) {
+      return {
+        error: [403, "Assignment is not open yet."],
+      };
+    }
+  }
   if (!a.file) return { error: [404, "This assignment has no attached file."] };
   return { row: a };
 }

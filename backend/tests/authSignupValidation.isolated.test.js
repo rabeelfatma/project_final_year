@@ -202,7 +202,7 @@ describe("password validation (new passwords)", () => {
   it("rejects fewer than 8 characters", () => {
     const result = validatePasswordInput("Ab1!xyz");
     assert.equal(result.ok, false);
-    assert.match(result.message, /8 characters/i);
+    assert.match(result.message, /too short/i);
   });
 
   it("rejects missing uppercase", () => {

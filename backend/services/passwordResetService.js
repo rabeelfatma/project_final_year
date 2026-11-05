@@ -1,9 +1,11 @@
 const crypto = require("crypto");
 const {
   validatePasswordInput,
+  validatePasswordConfirmation,
   hashPassword,
   isBcryptHash,
 } = require("../utils/authPassword");
+const { validateEmailInput } = require("../utils/emailValidation");
 const { assertWithinRateLimit, DEFAULT_WINDOW_MS } = require("./authRateLimit");
 const {
   getResetEmailConfig,
@@ -18,17 +20,9 @@ const IP_RATE_LIMIT = 20;
 const CONFIRM_IP_RATE_LIMIT = 20;
 
 const GENERIC_REQUEST_MESSAGE =
-  "If an account exists for that email, password reset instructions will be sent shortly.";
+  "If the account exists, a reset link has been sent.";
 const SERVICE_UNAVAILABLE_MESSAGE =
   "Password recovery is temporarily unavailable. Please try again later.";
-
-function normalizeEmail(email) {
-  return typeof email === "string" ? email.toLowerCase().trim() : "";
-}
-
-function isValidEmailFormat(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
-}
 
 function hashResetToken(rawToken) {
   return crypto.createHash("sha256").update(String(rawToken), "utf8").digest("hex");
@@ -55,14 +49,15 @@ function createDefaultDeps() {
  * when the request is accepted; fails closed if email is not configured.
  */
 async function requestPasswordReset({ email, ip }, deps = createDefaultDeps()) {
-  const normalized = normalizeEmail(email);
-  if (!normalized || !isValidEmailFormat(normalized)) {
+  const emailCheck = validateEmailInput(email);
+  if (!emailCheck.ok) {
     return {
       ok: false,
       status: 400,
-      message: "A valid email address is required.",
+      message: emailCheck.message,
     };
   }
+  const normalized = emailCheck.email;
 
   const emailConfig = deps.getResetEmailConfig(deps.env);
   if (!emailConfig.configured) {
@@ -151,7 +146,7 @@ async function requestPasswordReset({ email, ip }, deps = createDefaultDeps()) {
  * IP rate limit runs first so probing invalid tokens still counts against the window.
  */
 async function confirmPasswordReset(
-  { token, newPassword, ip },
+  { token, newPassword, confirmPassword, ip },
   deps = createDefaultDeps()
 ) {
   const confirmIpKey = `pwdreset:confirm:ip:${ip || "unknown"}`;
@@ -168,12 +163,35 @@ async function confirmPasswordReset(
 
   const rawToken = typeof token === "string" ? token.trim() : "";
   if (!rawToken || rawToken.length < 32) {
-    return { ok: false, status: 400, message: "Invalid or expired reset link." };
+    return {
+      ok: false,
+      status: 400,
+      message: "Reset link is invalid or expired.",
+      code: "RESET_TOKEN_INVALID",
+    };
   }
 
   const passwordCheck = validatePasswordInput(newPassword);
   if (!passwordCheck.ok) {
-    return { ok: false, status: 400, message: passwordCheck.message };
+    return {
+      ok: false,
+      status: 400,
+      message: passwordCheck.message,
+      code: passwordCheck.code || "PASSWORD_POLICY",
+    };
+  }
+
+  const confirmCheck = validatePasswordConfirmation(
+    passwordCheck.password,
+    confirmPassword
+  );
+  if (!confirmCheck.ok) {
+    return {
+      ok: false,
+      status: 400,
+      message: confirmCheck.message,
+      code: confirmCheck.code,
+    };
   }
 
   const tokenHash = hashResetToken(rawToken);
@@ -190,7 +208,12 @@ async function confirmPasswordReset(
   );
 
   if (!consumed) {
-    return { ok: false, status: 400, message: "Invalid or expired reset link." };
+    return {
+      ok: false,
+      status: 400,
+      message: "Reset link is invalid or expired.",
+      code: "RESET_TOKEN_INVALID",
+    };
   }
 
   const hashedPassword = await hashPassword(passwordCheck.password);
@@ -221,7 +244,8 @@ async function confirmPasswordReset(
     return {
       ok: false,
       status: 400,
-      message: "Invalid or expired reset link. Please request a new reset link.",
+      message: "Reset link is invalid or expired.",
+      code: "RESET_TOKEN_INVALID",
     };
   }
 
@@ -234,7 +258,7 @@ async function confirmPasswordReset(
   return {
     ok: true,
     status: 200,
-    message: "Password updated successfully. You can sign in with your new password.",
+    message: "Password reset successfully.",
   };
 }
 

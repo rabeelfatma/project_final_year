@@ -34,7 +34,7 @@ function validateIdentity({ name, email }) {
     return {
       ok: false,
       message:
-        emailCheck.message === "Email is required"
+        /email is required/i.test(emailCheck.message)
           ? "Admin email is required."
           : "Admin email format is invalid.",
     };

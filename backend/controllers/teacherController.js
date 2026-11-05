@@ -18,6 +18,21 @@ const { checkAssignment } = require("../services/geminiService");
 
 const { create: createNotification } = require("./notificationController");
 
+const {
+  validateAssignmentFields,
+} = require("../utils/assignmentFieldValidation");
+
+const {
+  findActiveDuplicateAssignment,
+  duplicateConflictPayload,
+  isMongoDuplicateKeyError,
+} = require("../utils/assignmentDuplicate");
+
+const {
+  issueScheduleIntent,
+  verifyScheduleIntent,
+} = require("../utils/assignmentScheduleIntent");
+
 
 
 function extractTotalMarks(instructions) {
@@ -166,49 +181,118 @@ exports.getOverviewStats = async (req, res) => {
 
 
 
+/** POST /assignments/schedule-intent — validate schedule before slow durable upload. */
+exports.createScheduleIntent = async (req, res) => {
+  try {
+    const issued = issueScheduleIntent({
+      teacherId: req.user._id,
+      startDate: req.body?.startDate,
+      deadline: req.body?.deadline,
+    });
+    if (!issued.ok) {
+      return res.status(400).json({
+        message: issued.message,
+        code: issued.code || "ASSIGNMENT_VALIDATION",
+        errors: issued.errors,
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      scheduleIntentToken: issued.scheduleIntentToken,
+      expiresIn: issued.expiresIn,
+      startDate: issued.startDate,
+      deadline: issued.deadline,
+      projectTimezone: issued.projectTimezone,
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      message:
+        status >= 500
+          ? "Unable to save assignment. Please try again."
+          : error.message || "Schedule could not be verified.",
+      code: error.code || "SCHEDULE_INTENT_FAILED",
+    });
+  }
+};
+
 exports.createAssignment = async (req, res) => {
 
   try {
 
-    const { title, startDate, deadline, description, points, subject } = req.body;
+    const { subject } = req.body;
 
-    const totalMarks = Number(points);
-
-
-
-    if (
-
-      !title ||
-
-      !String(description || "").trim() ||
-
-      !startDate ||
-
-      !deadline ||
-
-      !Number.isFinite(totalMarks) ||
-
-      totalMarks <= 0
-
-    ) {
-
+    const intentCheck = verifyScheduleIntent(
+      req.body?.scheduleIntentToken,
+      {
+        teacherId: req.user._id,
+        startDate: req.body?.startDate,
+        deadline: req.body?.deadline,
+      }
+    );
+    if (!intentCheck.ok) {
       return res.status(400).json({
-
-        message: "Title, academic instructions, dates, and total marks greater than 0 are required.",
-
-      });
-
-    }
-
-    const start = new Date(startDate);
-    const end = new Date(deadline);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
-      return res.status(400).json({
-        message: "Deadline must be a valid date on or after the start date.",
+        message: intentCheck.message,
+        code: intentCheck.code || "SCHEDULE_INTENT_INVALID",
+        errors: {
+          startDate: intentCheck.message,
+        },
       });
     }
 
+    const validated = validateAssignmentFields(req.body, {
+      mode: "create",
+    });
+    if (!validated.ok) {
+      return res.status(400).json({
+        message: validated.message,
+        code: validated.code,
+        errors: validated.errors,
+      });
+    }
 
+    const { title, description, points: totalMarks, startDate: start, deadline: end } =
+      validated.values;
+
+    // Preserve existing subject resolution / defaults (do not invent new defaults).
+    const resolvedSubject = subject || req.user.subject || "General";
+
+    // Reject missing reference file before durable resolve (avoids needless verify work).
+    // Client-only filename/mime without multipart or a storedFileKey is not accepted.
+    const hasMultipartFile = Boolean(req.file?.filename);
+    const hasPresignedKey = Boolean(
+      String(req.body?.storedFileKey || req.body?.objectKey || "").trim()
+    );
+    const extraFiles = Array.isArray(req.files) ? req.files.length : 0;
+    if (extraFiles > 1 || (hasMultipartFile && hasPresignedKey)) {
+      return res.status(400).json({
+        message: "Upload one reference file.",
+        code: "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: "Upload one reference file.",
+        },
+      });
+    }
+    if (!hasMultipartFile && !hasPresignedKey) {
+      return res.status(400).json({
+        message: "Upload a reference file.",
+        code: "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: "Upload a reference file.",
+        },
+      });
+    }
+
+    // Duplicate check before durable upload / R2 side effects on this request.
+    const duplicate = await findActiveDuplicateAssignment({
+      AssignmentModel: Assignment,
+      teacherId: req.user._id,
+      subject: resolvedSubject,
+      title,
+    });
+    if (duplicate) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
 
     const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
     let durable = null;
@@ -221,33 +305,46 @@ exports.createAssignment = async (req, res) => {
       const status = uploadErr.statusCode || 400;
       return res.status(status).json({
         message: uploadErr.message || "Assignment file upload is invalid.",
-        code: uploadErr.code,
+        code: uploadErr.code || "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: uploadErr.message || "Assignment file upload is invalid.",
+        },
       });
     }
 
-    const fileUrl = durable?.storedPath || null;
+    if (!durable?.storedPath) {
+      return res.status(400).json({
+        message: "Upload a valid reference file.",
+        code: "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: "Upload a valid reference file.",
+        },
+      });
+    }
+
+    const fileUrl = durable.storedPath;
 
     const assignment = await Assignment.create({
 
-      title: title.trim(),
+      title,
 
       startDate: start,
 
       deadline: end,
 
-      description: String(description).trim(),
+      description,
 
       points: totalMarks,
 
-      subject: subject || req.user.subject || "General",
+      subject: resolvedSubject,
 
       file: fileUrl,
 
       fileUrl,
 
-      originalFileName: durable?.originalFileName || "",
+      originalFileName: durable.originalFileName || "",
 
-      fileMimeType: durable?.fileMimeType || "",
+      fileMimeType: durable.fileMimeType || "",
 
       teacher: req.user._id,
 
@@ -291,14 +388,14 @@ exports.createAssignment = async (req, res) => {
 
   } catch (error) {
 
+    if (isMongoDuplicateKeyError(error)) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
+
     console.error("CREATE ASSIGNMENT ERROR:", error);
 
     res.status(500).json({
-
-      message: "Creation failed",
-
-      error: error.message,
-
+      message: "Unable to save assignment. Please try again.",
     });
 
   }
@@ -310,46 +407,6 @@ exports.createAssignment = async (req, res) => {
 exports.updateAssignment = async (req, res) => {
 
   try {
-
-    const updateData = { ...req.body };
-
-
-
-    if (updateData.startDate) {
-
-      updateData.startDate = new Date(updateData.startDate);
-
-    }
-
-
-
-    if (updateData.deadline) {
-
-      updateData.deadline = new Date(updateData.deadline);
-
-    }
-
-
-
-    if (updateData.points !== undefined) {
-
-      updateData.points = Number(updateData.points);
-
-
-
-      if (!Number.isFinite(updateData.points) || updateData.points <= 0) {
-
-        return res.status(400).json({
-
-          message: "Total marks must be greater than 0.",
-
-        });
-
-      }
-
-    }
-
-
 
     const current = await Assignment.findOne({
 
@@ -369,6 +426,57 @@ exports.updateAssignment = async (req, res) => {
 
 
 
+    const validated = validateAssignmentFields(req.body, {
+      mode: "update",
+      existing: {
+        title: current.title,
+        description: current.description,
+        points: current.points,
+        startDate: current.startDate,
+        deadline: current.deadline,
+      },
+    });
+    if (!validated.ok) {
+      return res.status(400).json({
+        message: validated.message,
+        code: validated.code,
+        errors: validated.errors,
+      });
+    }
+
+    const updateData = {};
+    if (validated.values.title !== undefined) {
+      updateData.title = validated.values.title;
+    }
+    if (validated.values.description !== undefined) {
+      updateData.description = validated.values.description;
+    }
+    if (validated.values.points !== undefined) {
+      updateData.points = validated.values.points;
+    }
+    if (validated.values.startDate !== undefined) {
+      updateData.startDate = validated.values.startDate;
+    }
+    if (validated.values.deadline !== undefined) {
+      updateData.deadline = validated.values.deadline;
+    }
+
+    // Update path does not currently rewrite subject; keep existing stored subject.
+    const effectiveTitle =
+      updateData.title !== undefined ? updateData.title : current.title;
+    const effectiveSubject = current.subject || "General";
+
+    const duplicate = await findActiveDuplicateAssignment({
+      AssignmentModel: Assignment,
+      teacherId: req.user._id,
+      subject: effectiveSubject,
+      title: effectiveTitle,
+      excludeId: current._id,
+    });
+    if (duplicate) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
+
     {
       const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
       let durable = null;
@@ -381,10 +489,14 @@ exports.updateAssignment = async (req, res) => {
         const status = uploadErr.statusCode || 400;
         return res.status(status).json({
           message: uploadErr.message || "Assignment file upload is invalid.",
-          code: uploadErr.code,
+          code: uploadErr.code || "ASSIGNMENT_VALIDATION",
+          errors: {
+            file: uploadErr.message || "Assignment file upload is invalid.",
+          },
         });
       }
 
+      // Optional replacement only — keep existing file metadata when no new upload.
       if (durable?.storedPath) {
         const newPath = durable.storedPath;
         updateData.file = newPath;
@@ -417,12 +529,12 @@ exports.updateAssignment = async (req, res) => {
 
   } catch (error) {
 
+    if (isMongoDuplicateKeyError(error)) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
+
     res.status(500).json({
-
-      message: "Update failed",
-
-      error: error.message,
-
+      message: "Unable to save assignment. Please try again.",
     });
 
   }

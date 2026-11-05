@@ -124,6 +124,7 @@ function loadTeacherRouter(authedUser) {
         getRecentSubmissions: empty,
         getStudents: empty,
         getTeachers: empty,
+        createScheduleIntent: ok,
         createAssignment: (_req, res) => res.status(201).json({ ok: true }),
         updateAssignment: ok,
         deleteAssignment: ok,

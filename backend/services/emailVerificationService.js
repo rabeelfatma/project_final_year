@@ -313,7 +313,7 @@ async function resendVerificationEmail({ email, ip }, deps = createDefaultDeps()
     return {
       ok: false,
       status: 400,
-      message: "A valid email address is required.",
+      message: emailCheck.message,
     };
   }
   const normalized = emailCheck.email;

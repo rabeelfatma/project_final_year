@@ -140,6 +140,9 @@ const DURABLE_FOLDERS = new Set([
 /** Max durable object size (presigned and verified) — both local and Vercel. */
 const MAX_DURABLE_FILE_BYTES = 200 * 1024 * 1024;
 
+/** Original client filename cap. Stored object names are generated separately. */
+const MAX_ORIGINAL_FILENAME_CHARS = 180;
+
 /**
  * Server-proxied multipart ceiling on Vercel Hobby (~4.5MB body).
  * Larger durable files must use presigned direct-to-R2 uploads.
@@ -189,6 +192,52 @@ function acceptAttributeFromExtensions(exts) {
   return exts.map((e) => (e.startsWith(".") ? e : `.${e}`)).join(",");
 }
 
+function evaluateOriginalFilename(name) {
+  const base = path.basename(String(name || "").replace(/\\/g, "/")).trim();
+  if (!base || base === "." || base === "..") {
+    return {
+      ok: false,
+      code: "UPLOAD_NAME_INVALID",
+      message: "Enter a valid file name.",
+    };
+  }
+  if (base.length > MAX_ORIGINAL_FILENAME_CHARS) {
+    return {
+      ok: false,
+      code: "UPLOAD_NAME_TOO_LONG",
+      message: "File name is too long.",
+    };
+  }
+  return { ok: true, basename: base };
+}
+
+function evaluateDurableFileSize(size, maxBytes = MAX_DURABLE_FILE_BYTES) {
+  const raw = typeof size === "number" ? String(size) : String(size ?? "");
+  if (raw.trim() === "") {
+    return {
+      ok: false,
+      code: "UPLOAD_SIZE_INVALID",
+      message: "File is empty.",
+    };
+  }
+  const n = Number(raw.trim());
+  if (!Number.isFinite(n) || n <= 0) {
+    return {
+      ok: false,
+      code: "UPLOAD_EMPTY",
+      message: "File is empty.",
+    };
+  }
+  if (n > maxBytes) {
+    return {
+      ok: false,
+      code: "UPLOAD_TOO_LARGE",
+      message: "File size exceeds the limit.",
+    };
+  }
+  return { ok: true, size: n };
+}
+
 function makeSafeFilename(originalname) {
   const rawName = path.basename(String(originalname || "upload"));
   const safeName =
@@ -210,8 +259,11 @@ module.exports = {
   MESSAGE_EXTENSIONS,
   DURABLE_FOLDERS,
   MAX_DURABLE_FILE_BYTES,
+  MAX_ORIGINAL_FILENAME_CHARS,
   MAX_PROXIED_UPLOAD_BYTES_VERCEL,
   MAX_PROXIED_UPLOAD_BYTES_LOCAL,
+  evaluateOriginalFilename,
+  evaluateDurableFileSize,
   normalizeExt,
   extensionOf,
   isVideoExtension,

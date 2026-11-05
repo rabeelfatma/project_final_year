@@ -4,7 +4,7 @@ import { Eye, EyeOff, Shield } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail } from "../../utils/validators";
+import { emailValidationMessage } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function AdminLogin() {
@@ -31,9 +31,12 @@ export default function AdminLogin() {
     if (submitting) return;
     setMsg("");
 
-    if (!form.email) return setMsg("Email address is required.");
-    if (!validateEmail(form.email)) return setMsg("Enter a valid email address.");
-    if (!form.password) return setMsg("Password is required.");
+    const emailEmpty = !String(form.email || "").trim();
+    const passwordEmpty = !form.password || !String(form.password).trim();
+    if (emailEmpty && passwordEmpty) return setMsg("Complete all required fields.");
+    const emailMessage = emailValidationMessage(form.email);
+    if (emailMessage) return setMsg(emailMessage);
+    if (passwordEmpty) return setMsg("Password is required.");
 
     setSubmitting(true);
     try {
@@ -55,6 +58,9 @@ export default function AdminLogin() {
       }
 
       if (!res.ok) {
+        if (res.status >= 500) {
+          return setMsg("Something went wrong. Please try again.");
+        }
         return setMsg(data.message || "Invalid email or password.");
       }
 
@@ -71,7 +77,7 @@ export default function AdminLogin() {
 
       navigate("/dashboard/admin", { replace: true });
     } catch {
-      setMsg("Server unavailable. Check that the backend is running and try again.");
+      setMsg("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }

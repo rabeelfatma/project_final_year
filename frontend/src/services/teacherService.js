@@ -26,6 +26,15 @@ const teacherService = {
     }
   },
 
+  // Validate start/deadline on the server before a slow durable upload.
+  createScheduleIntent: async ({ startDate, deadline }) => {
+    const response = await api.post('/teacher/assignments/schedule-intent', {
+      startDate,
+      deadline,
+    });
+    return response.data;
+  },
+
   // 3. Create Assignment (File Upload)
   createAssignment: async (formData) => {
     try {

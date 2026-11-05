@@ -34,6 +34,9 @@ router.get('/list', teacherController.getTeachers);
 // 2. ASSIGNMENT CRUD (Create, Read, Update, Delete)
 // ==========================================
 
+// Validate start/deadline before a slow durable upload (signed schedule intent).
+router.post('/assignments/schedule-intent', teacherController.createScheduleIntent);
+
 // Nayi assignment create karna (File upload support ke saath)
 router.post('/assignments', upload.single('file'), teacherController.createAssignment);
 

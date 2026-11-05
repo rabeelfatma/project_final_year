@@ -1,12 +1,14 @@
 const bcrypt = require("bcryptjs");
 
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
 const ALLOWED_ROLES = ["student", "admin", "teacher"];
 const BCRYPT_HASH_RE = /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/;
 const SPECIAL_CHAR_RE = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/;
 
-const PASSWORD_POLICY_MESSAGE =
-  "Password must be at least 8 characters and include uppercase, lowercase, a digit, and a special character (e.g. @ # $ !).";
+const PASSWORD_HINT =
+  "Min. 8 characters · 1 uppercase · 1 lowercase · 1 number · 1 special character";
+const PASSWORD_POLICY_MESSAGE = PASSWORD_HINT;
 
 function normalizeRole(role) {
   return role ? String(role).toLowerCase().trim() : "student";
@@ -20,30 +22,57 @@ function isBcryptHash(value) {
  * Complexity rules for setting a new password (signup, reset, admin create).
  * Does not trim or alter the password value.
  */
-function validatePasswordInput(password) {
+function passwordPolicyError(password) {
   if (password == null || typeof password !== "string" || password.length === 0) {
-    return { ok: false, message: "Password is required" };
+    return "Password is required.";
   }
   if (isBcryptHash(password)) {
-    // Prevent treating an existing hash as plaintext (which would re-hash and corrupt it).
-    return { ok: false, message: "Invalid password format" };
+    return "Invalid password format.";
+  }
+  if (/\s/.test(password)) {
+    return "Password cannot contain spaces.";
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
-    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+    return "Password is too short.";
   }
-  if (!/[A-Z]/.test(password)) {
-    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return "Password is too long.";
   }
-  if (!/[a-z]/.test(password)) {
-    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
-  }
-  if (!/[0-9]/.test(password)) {
-    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
-  }
-  if (!SPECIAL_CHAR_RE.test(password)) {
-    return { ok: false, message: PASSWORD_POLICY_MESSAGE };
+  if (!/[A-Z]/.test(password)) return "Add an uppercase letter.";
+  if (!/[a-z]/.test(password)) return "Add a lowercase letter.";
+  if (!/[0-9]/.test(password)) return "Add a number.";
+  if (!SPECIAL_CHAR_RE.test(password)) return "Add a special character.";
+  return "";
+}
+
+function validatePasswordInput(password) {
+  const message = passwordPolicyError(password);
+  if (message) {
+    return { ok: false, message, code: "PASSWORD_POLICY" };
   }
   return { ok: true, password };
+}
+
+function validatePasswordConfirmation(password, confirmPassword) {
+  if (
+    confirmPassword == null ||
+    typeof confirmPassword !== "string" ||
+    confirmPassword.length === 0
+  ) {
+    return {
+      ok: false,
+      message: "Confirm your password.",
+      code: "PASSWORD_CONFIRM_REQUIRED",
+    };
+  }
+  if (confirmPassword !== password) {
+    return {
+      ok: false,
+      message: "Passwords do not match.",
+      code: "PASSWORD_MISMATCH",
+    };
+  }
+  return { ok: true };
 }
 
 /**
@@ -51,11 +80,16 @@ function validatePasswordInput(password) {
  * Existing accounts may predate the stronger signup policy.
  */
 function validateLoginPasswordInput(password) {
-  if (password == null || typeof password !== "string" || password.length === 0) {
-    return { ok: false, message: "Password is required" };
+  if (
+    password == null ||
+    typeof password !== "string" ||
+    password.length === 0 ||
+    password.trim().length === 0
+  ) {
+    return { ok: false, message: "Password is required." };
   }
   if (isBcryptHash(password)) {
-    return { ok: false, message: "Invalid password format" };
+    return { ok: false, message: "Invalid email or password." };
   }
   return { ok: true, password };
 }
@@ -124,6 +158,8 @@ function canUserLogin(user) {
 
 module.exports = {
   MIN_PASSWORD_LENGTH,
+  MAX_PASSWORD_LENGTH,
+  PASSWORD_HINT,
   PASSWORD_POLICY_MESSAGE,
   ALLOWED_ROLES,
   APPROVAL_STATUSES,
@@ -131,6 +167,7 @@ module.exports = {
   isBcryptHash,
   isPublicAdminBootstrapAllowed,
   validatePasswordInput,
+  validatePasswordConfirmation,
   validateLoginPasswordInput,
   hashPassword,
   passwordsMatch,

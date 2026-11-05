@@ -4,7 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail, validatePassword } from "../../utils/validators";
+import {
+  emailValidationMessage,
+  passwordValidationMessage,
+  confirmPasswordMessage,
+  PASSWORD_HINT,
+} from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function TeacherSignup() {
@@ -13,6 +18,7 @@ export default function TeacherSignup() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
     subject: "",
     department: "CS", 
   });
@@ -73,17 +79,15 @@ export default function TeacherSignup() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.name || !form.email || !form.password || !form.subject) {
-      return setMsg("Please fill all fields ❌");
+    if (!form.name.trim() || !form.subject) {
+      return setMsg("Complete all required fields.");
     }
-
-    if (!validateEmail(form.email)) {
-      return setMsg("Invalid Email ❌");
-    }
-
-    if (!validatePassword(form.password)) {
-      return setMsg("Weak password ❌");
-    }
+    const emailMessage = emailValidationMessage(form.email);
+    if (emailMessage) return setMsg(emailMessage);
+    const passwordMessage = passwordValidationMessage(form.password);
+    if (passwordMessage) return setMsg(passwordMessage);
+    const confirmMessage = confirmPasswordMessage(form.password, form.confirmPassword);
+    if (confirmMessage) return setMsg(confirmMessage);
 
     const token = localStorage.getItem("token");
     if (!token) {
@@ -109,13 +113,24 @@ export default function TeacherSignup() {
 
       const data = await res.json();
       if (res.ok) {
-        setMsg("Teacher Added Successfully ✅");
-        setForm({ name: "", email: "", password: "", subject: "", department: "CS" });
+        setMsg("Account created successfully.");
+        setForm({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          subject: "",
+          department: "CS",
+        });
       } else {
-        setMsg(data.message || "Failed to add teacher ❌");
+        setMsg(
+          res.status >= 500
+            ? "Something went wrong. Please try again."
+            : data.message || "Something went wrong. Please try again."
+        );
       }
     } catch (err) {
-      setMsg("Server error ❌");
+      setMsg("Something went wrong. Please try again.");
     }
   };
 
@@ -160,6 +175,15 @@ export default function TeacherSignup() {
               {showPassword ? "Hide" : "Show"}
             </span>
           </div>
+          <p className="qc-auth-password-hint">{PASSWORD_HINT}</p>
+          <InputField
+            name="confirmPassword"
+            type={showPassword ? "text" : "password"}
+            placeholder="Confirm Password"
+            onChange={handleChange}
+            value={form.confirmPassword}
+            autoComplete="new-password"
+          />
 
           {/* Department Selection */}
           <div>

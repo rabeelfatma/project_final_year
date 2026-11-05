@@ -143,11 +143,12 @@ export default function StudentDashboard() {
       if (stats) setStudentData(prev => ({ ...prev, ...stats }));
 
       if (Array.isArray(asgns)) {
-        setAssignments(asgns);
+        const visible = asgns.filter((item) => item?.notOpenYet !== true);
+        setAssignments(visible);
         setSelectedAsgn((previous) => {
           if (!previous) return previous;
-          const fresh = asgns.find((item) => String(item._id) === String(previous._id));
-          return fresh || previous;
+          const fresh = visible.find((item) => String(item._id) === String(previous._id));
+          return fresh || null;
         });
       }
 
@@ -294,7 +295,15 @@ export default function StudentDashboard() {
       formData.append('fileMimeType', durable.fileMimeType || '');
       formData.append('fileSize', String(durable.fileSize || ''));
     } catch (uploadErr) {
-      alert(uploadErr?.response?.data?.message || uploadErr.message || 'Upload failed.');
+      const uploadStatus = uploadErr?.response?.status;
+      const uploadMessage = uploadErr?.response?.data?.message;
+      alert(
+        uploadStatus && uploadStatus < 500 && uploadMessage
+          ? uploadMessage
+          : !uploadErr?.response && uploadErr?.message && !/network|axios|failed to fetch/i.test(uploadErr.message)
+            ? uploadErr.message
+            : 'Unable to upload file. Please try again.'
+      );
       setUploadStatus({ id: null, loading: false, success: false });
       input.value = "";
       return;
@@ -344,7 +353,8 @@ export default function StudentDashboard() {
     } catch (err) {
 
       const errCode = err.response?.data?.code;
-      const errMsg = err.response?.data?.message || "Submission Failed: Check if you are logged in.";
+      const errStatus = err.response?.status;
+      const errMsg = err.response?.data?.message || "";
       const isDuplicate =
         errCode === "ALREADY_SUBMITTED" ||
         /already submitted/i.test(String(errMsg));
@@ -353,7 +363,7 @@ export default function StudentDashboard() {
         showAlreadySubmittedNotice(asgnId);
         await fetchAllData();
       } else {
-        alert(errMsg);
+        alert(errStatus && errStatus < 500 && errMsg ? errMsg : "Unable to submit. Please try again.");
       }
 
       setUploadStatus({ id: null, loading: false, success: false });
@@ -979,6 +989,11 @@ export default function StudentDashboard() {
 
 
 
+                {selectedAsgn.notOpenYet || selectedAsgn.canAccessMaterials === false ? (
+                  <p className="text-center text-xs font-semibold theme-muted border border-dashed border-slate-700 rounded-xl py-4">
+                    Not open yet.
+                  </p>
+                ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
                   <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.originalFileName || 'assignment'}><Eye size={16}/> Open Instructions</button>
@@ -986,6 +1001,7 @@ export default function StudentDashboard() {
                   <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
 
                 </div>
+                )}
 
                 {(selectedAsgn.isSubmitted || selectedAsgn.submissionId) && !selectedAsgn.marks && (
                   <p className="mt-4 text-center text-xs theme-muted font-semibold">

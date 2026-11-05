@@ -55,7 +55,7 @@ describe("QC-16D / QC-17A public login contracts", () => {
     assert.match(src, /submitting/);
     assert.match(src, /if \(submitting\) return/);
     assert.match(src, /Signing in/);
-    assert.match(src, /Server unavailable/);
+    assert.match(src, /Something went wrong\. Please try again\./);
   });
 
   it("authenticated role comes from backend response, not selected portal role alone", () => {

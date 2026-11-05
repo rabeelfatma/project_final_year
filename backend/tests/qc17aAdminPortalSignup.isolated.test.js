@@ -329,7 +329,8 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
     assert.match(createdPayload.password, /^\$2[aby]?\$/);
     assert.equal(res.body.token, undefined);
     assert.equal(res.body.verificationEmailSent, true);
-    assert.match(res.body.message, /verify your email|Admin approval/i);
+    assert.match(res.body.message, /Account created successfully/i);
+    assert.equal(res.body.status, "pending_verification");
   });
 
   it("student signup request creates pending account without JWT", async () => {

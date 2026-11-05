@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
 import {
-  validatePassword,
   passwordValidationMessage,
-  PASSWORD_REQUIREMENTS,
+  confirmPasswordMessage,
+  PASSWORD_HINT,
 } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
@@ -22,27 +22,39 @@ function readTokenFromHash() {
   }
 }
 
+function captureResetToken() {
+  const token = readTokenFromHash();
+  if (!token || token.length < 32) {
+    return {
+      token: "",
+      linkInvalid: true,
+      msg: "Reset link is invalid or expired.",
+    };
+  }
+  return { token, linkInvalid: false, msg: "" };
+}
+
 export default function ResetPassword() {
   const navigate = useNavigate();
 
-  const [token, setToken] = useState("");
+  // Read the fragment during the first render only. The effect below deletes it,
+  // and Strict Mode runs that effect again — do not re-read the hash there.
+  const [captured] = useState(captureResetToken);
+  const capturedTokenRef = useRef(captured.token);
+
+  const [token, setToken] = useState(captured.token);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [linkInvalid, setLinkInvalid] = useState(false);
+  const [msg, setMsg] = useState(captured.msg);
+  const [linkInvalid, setLinkInvalid] = useState(captured.linkInvalid);
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const t = readTokenFromHash();
-    if (!t || t.length < 32) {
-      setLinkInvalid(true);
-      setMsg("This reset link is invalid or incomplete.");
-      return;
-    }
-    setToken(t);
+    const already = capturedTokenRef.current;
+    if (!already || already.length < 32) return;
     // Remove token from the address bar so it is less likely to linger in history/referrers.
     if (typeof window !== "undefined" && window.history?.replaceState) {
       window.history.replaceState(
@@ -59,23 +71,20 @@ export default function ResetPassword() {
     setMsg("");
 
     if (linkInvalid || !token) {
-      return setMsg("This reset link is invalid or expired.");
+      return setMsg("Reset link is invalid or expired.");
     }
 
-    if (!password || !validatePassword(password)) {
-      return setMsg(passwordValidationMessage(password));
-    }
-
-    if (password !== confirmPassword) {
-      return setMsg("Passwords do not match");
-    }
+    const passwordMessage = passwordValidationMessage(password);
+    if (passwordMessage) return setMsg(passwordMessage);
+    const confirmMessage = confirmPasswordMessage(password, confirmPassword);
+    if (confirmMessage) return setMsg(confirmMessage);
 
     setBusy(true);
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/password-reset/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword: password }),
+        body: JSON.stringify({ token, newPassword: password, confirmPassword }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -88,8 +97,18 @@ export default function ResetPassword() {
       }
 
       if (!res.ok) {
+        if (res.status >= 500) {
+          return setMsg("Something went wrong. Please try again.");
+        }
+        if (
+          data.code === "PASSWORD_POLICY" ||
+          data.code === "PASSWORD_MISMATCH" ||
+          data.code === "PASSWORD_CONFIRM_REQUIRED"
+        ) {
+          return setMsg(data.message || "Enter a valid password.");
+        }
         setLinkInvalid(true);
-        return setMsg(data.message || "Invalid or expired reset link.");
+        return setMsg(data.message || "Reset link is invalid or expired.");
       }
 
       setSuccess(true);
@@ -97,11 +116,10 @@ export default function ResetPassword() {
       setConfirmPassword("");
       setToken("");
       setMsg(
-        data.message ||
-          "Password updated successfully. You can sign in with your new password."
+        data.message || "Password reset successfully."
       );
     } catch (_) {
-      setMsg("Server error. Please try again later.");
+      setMsg("Something went wrong. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -141,14 +159,9 @@ export default function ResetPassword() {
               </button>
             </div>
 
-            <ul
-              className="mb-4 text-[11px] text-[var(--text-faint)] space-y-0.5 list-disc list-inside"
-              aria-label="Password requirements"
-            >
-              {PASSWORD_REQUIREMENTS.map((rule) => (
-                <li key={rule}>{rule}</li>
-              ))}
-            </ul>
+            <p className="qc-auth-password-hint" aria-label="Password requirements">
+              {PASSWORD_HINT}
+            </p>
 
             <div className="relative">
               <label className="sr-only" htmlFor="confirmPassword">

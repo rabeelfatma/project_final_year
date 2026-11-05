@@ -20,6 +20,7 @@ export const ACADEMIC_EXTENSIONS = [
 export const ACADEMIC_ACCEPT = ACADEMIC_EXTENSIONS.map((e) => `.${e}`).join(',');
 
 export const MAX_DURABLE_FILE_BYTES = 200 * 1024 * 1024;
+export const MAX_ORIGINAL_FILENAME_CHARS = 180;
 
 export function extensionOf(filename) {
   const parts = String(filename || '').split('.');
@@ -35,15 +36,22 @@ export function isAllowedAcademicFile(file) {
 
 export function assertAcademicFile(file) {
   if (!file) throw new Error('No file selected.');
+  const name = String(file.name || '').trim();
+  if (!name || name.length > MAX_ORIGINAL_FILENAME_CHARS) {
+    throw new Error(name ? 'File name is too long.' : 'Enter a valid file name.');
+  }
   if (!isAllowedAcademicFile(file)) {
     const ext = extensionOf(file.name);
     if (VIDEO_EXTENSIONS.has(ext)) {
-      throw new Error(`Video .${ext} files are not supported for Teacher/Student uploads.`);
+      throw new Error('File type is not supported.');
     }
-    throw new Error(`File extension .${ext || 'unknown'} is not allowed.`);
+    throw new Error('File type is not supported.');
+  }
+  if (!Number.isFinite(file.size) || file.size <= 0) {
+    throw new Error('File is empty.');
   }
   if (file.size > MAX_DURABLE_FILE_BYTES) {
-    throw new Error('File too large (max 200 MB).');
+    throw new Error('File size exceeds the limit.');
   }
 }
 

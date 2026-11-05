@@ -115,6 +115,19 @@ async function getObjectBuffer(key) {
   return streamToBuffer(out.Body);
 }
 
+/** Read a small byte range. Used to check file signatures without downloading the object. */
+async function getObjectRange(key, start, end) {
+  const { client, bucket } = getClient();
+  const out = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Range: `bytes=${Number(start)}-${Number(end)}`,
+    })
+  );
+  return streamToBuffer(out.Body);
+}
+
 async function getObjectStream(key) {
   const { client, bucket } = getClient();
   const out = await client.send(
@@ -187,6 +200,7 @@ module.exports = {
   resetR2ClientCache,
   putObject,
   getObjectBuffer,
+  getObjectRange,
   getObjectStream,
   deleteObject,
   objectExists,

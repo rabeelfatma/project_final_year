@@ -275,6 +275,21 @@ describe("presigned upload service (mocked)", () => {
                 fakeStore.set(key, Buffer.alloc(cmd.input.Body?.length || 0));
                 return {};
               }
+              if (name === "GetObjectCommand") {
+                const buf = fakeStore.get(key);
+                if (!buf) {
+                  const err = new Error("missing");
+                  err.name = "NoSuchKey";
+                  throw err;
+                }
+                let body = buf;
+                const range = String(cmd.input.Range || "");
+                const match = /bytes=(\d+)-(\d+)/.exec(range);
+                if (match && Buffer.isBuffer(buf)) {
+                  body = buf.subarray(Number(match[1]), Number(match[2]) + 1);
+                }
+                return { Body: body };
+              }
               return {};
             }
           },
@@ -345,15 +360,13 @@ describe("presigned upload service (mocked)", () => {
       assert.match(intent.objectKey, /^uploads\/assignments\//);
       assert.equal(intent.maxBytes, 200 * 1024 * 1024);
 
-      fakeStore.set(
-        intent.objectKey.replace(/^\/+/, ""),
-        Buffer.alloc(12)
-      );
+      const pdfBytes = Buffer.from("%PDF-1.4\nxyz");
+      fakeStore.set(intent.objectKey.replace(/^\/+/, ""), pdfBytes);
       // Keys in fake store use toObjectKey form
       const key = intent.objectKey.startsWith("uploads/")
         ? intent.objectKey
         : `uploads/${intent.objectKey}`;
-      fakeStore.set(key, Buffer.alloc(12));
+      fakeStore.set(key, pdfBytes);
 
       const verified = await svc.verifyPresignedUpload({
         objectKey: intent.objectKey,
@@ -440,7 +453,9 @@ describe("encrypted mongo backup service (mocked, no network)", () => {
     assert.ok(events.includes("backup_start"));
     assert.ok(events.includes("backup_success"));
 
-    // Second + third backups trigger retention delete of oldest
+    // Second + third backups trigger retention delete of oldest.
+    // Stamp keys use millisecond ISO time, so wait so the three keys differ.
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await runEncryptedBackup({
       encryptionSecret: "unit-test-secret",
       retentionCount: 2,
@@ -453,6 +468,7 @@ describe("encrypted mongo backup service (mocked, no network)", () => {
         store.delete(key);
       },
     });
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await runEncryptedBackup({
       encryptionSecret: "unit-test-secret",
       retentionCount: 2,

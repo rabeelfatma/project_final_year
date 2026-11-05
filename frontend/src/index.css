@@ -3501,6 +3501,7 @@ button,
   margin: 0;
 }
 
+.qc-auth-card .qc-auth-password-hint,
 .qc-auth-card form.qc-auth-form--signup .qc-auth-password-hint {
   margin: 0;
   font-size: 0.6875rem;

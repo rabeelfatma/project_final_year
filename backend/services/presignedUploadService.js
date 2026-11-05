@@ -11,7 +11,10 @@ const {
   isDurableFolder,
   MAX_DURABLE_FILE_BYTES,
   extensionOf,
+  evaluateOriginalFilename,
+  evaluateDurableFileSize,
 } = require("../utils/uploadAllowlist");
+const { validateAcademicContent } = require("../utils/academicFileContent");
 const {
   usesObjectStorage,
   relativeStoredPath,
@@ -48,7 +51,14 @@ function resolveFolder(category) {
 }
 
 function assertExtensionForFolder(folder, originalFileName) {
-  const name = String(originalFileName || "");
+  const named = evaluateOriginalFilename(originalFileName);
+  if (!named.ok) {
+    const err = new Error(named.message);
+    err.code = named.code;
+    err.statusCode = 400;
+    throw err;
+  }
+  const name = named.basename;
   if (folder === "profilePictures") {
     if (!isAllowedProfileExtension(name)) {
       const err = new Error(
@@ -83,22 +93,14 @@ function assertExtensionForFolder(folder, originalFileName) {
 }
 
 function assertSize(size) {
-  const n = Number(size);
-  if (!Number.isFinite(n) || n <= 0) {
-    const err = new Error("A positive file size is required.");
-    err.code = "UPLOAD_SIZE_INVALID";
+  const result = evaluateDurableFileSize(size, MAX_DURABLE_FILE_BYTES);
+  if (!result.ok) {
+    const err = new Error(result.message);
+    err.code = result.code;
     err.statusCode = 400;
     throw err;
   }
-  if (n > MAX_DURABLE_FILE_BYTES) {
-    const err = new Error(
-      `File too large (max ${Math.floor(MAX_DURABLE_FILE_BYTES / (1024 * 1024))} MB).`
-    );
-    err.code = "UPLOAD_TOO_LARGE";
-    err.statusCode = 400;
-    throw err;
-  }
-  return n;
+  return result.size;
 }
 
 /**
@@ -166,6 +168,20 @@ async function verifyPresignedUpload({
     expectedSize,
     maxBytes: MAX_DURABLE_FILE_BYTES,
   });
+
+  if (folder === "assignments" || folder === "submissions") {
+    const header = await objectStorage.getObjectRange(key, 0, 511);
+    const content = validateAcademicContent(
+      originalFileName || path.basename(String(objectKey || "")),
+      header
+    );
+    if (!content.ok) {
+      const err = new Error(content.message);
+      err.code = content.code || "UPLOAD_CONTENT_MISMATCH";
+      err.statusCode = 400;
+      throw err;
+    }
+  }
 
   return {
     objectKey: key.startsWith("uploads/") ? key : `uploads/${key}`,

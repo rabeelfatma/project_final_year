@@ -5,14 +5,12 @@ import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
 import {
-  validateEmail,
-  validatePassword,
+  emailValidationMessage,
   passwordValidationMessage,
+  confirmPasswordMessage,
+  PASSWORD_HINT,
 } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
-
-const PASSWORD_HELPER =
-  "Minimum 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character.";
 
 /** Conflict codes that replace the registration form with a status panel. */
 const BLOCKING_STATUS_CODES = new Set([
@@ -51,7 +49,7 @@ function messageForSignupConflict(data) {
   if (code === "ALREADY_REGISTERED") {
     return (
       data.message ||
-      "An account with this email already exists. Sign in or use Forgot Password."
+      "Email already registered."
     );
   }
   if (code === "REGISTRATION_PERMANENTLY_REJECTED") {
@@ -63,11 +61,11 @@ function messageForSignupConflict(data) {
   if (code === "EMAIL_IN_USE") {
     return (
       data.message ||
-      "That email address is already associated with another account."
+      "Email already registered."
     );
   }
   if (code === "PASSWORD_MISMATCH" || code === "PASSWORD_CONFIRM_REQUIRED") {
-    return data.message || "Password confirmation does not match.";
+    return data.message || "Passwords do not match.";
   }
   if (code === "ADMIN_ROLE_FORBIDDEN" || code === "INVALID_ROLE") {
     return (
@@ -166,21 +164,12 @@ export default function PublicSignup() {
     if (!form.name.trim() || form.name.trim().length < 2) {
       next.name = "Full name is required (at least 2 characters).";
     }
-    if (!form.email.trim()) {
-      next.email = "Email address is required.";
-    } else if (!validateEmail(form.email)) {
-      next.email = "Enter a valid email address.";
-    }
-    if (!form.password) {
-      next.password = "Password is required.";
-    } else if (!validatePassword(form.password)) {
-      next.password = passwordValidationMessage(form.password);
-    }
-    if (!form.confirmPassword) {
-      next.confirmPassword = "Confirm your password.";
-    } else if (form.password !== form.confirmPassword) {
-      next.confirmPassword = "Password confirmation does not match.";
-    }
+    const emailMessage = emailValidationMessage(form.email);
+    if (emailMessage) next.email = emailMessage;
+    const passwordMessage = passwordValidationMessage(form.password);
+    if (passwordMessage) next.password = passwordMessage;
+    const confirmMessage = confirmPasswordMessage(form.password, form.confirmPassword);
+    if (confirmMessage) next.confirmPassword = confirmMessage;
     if (form.role !== "teacher" && form.role !== "student") {
       next.role = "Select Teacher or Student.";
     }
@@ -289,7 +278,7 @@ export default function PublicSignup() {
         setSuccess(true);
       }
     } catch {
-      setMsg("Server unavailable. Check that the backend is running and try again.");
+      setMsg("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
       if (!created) submitLock.current = false;
@@ -364,14 +353,13 @@ export default function PublicSignup() {
         ) : success ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--text)] text-center font-semibold">
-              Registration submitted.
+              Account created successfully.
             </p>
             {emailSent ? (
               <p className="text-sm text-[var(--text-faint)] text-center">
-                A verification link was sent to{" "}
-                <span className="text-sky-400 break-words">{submittedEmail}</span>.
-                Open that email and click the link. After verifying, an
-                administrator must approve your account before you can sign in.
+                Verify your email at{" "}
+                <span className="text-sky-400 break-words">{submittedEmail}</span>
+                , then wait for Admin approval.
               </p>
             ) : (
               <p className="text-sm text-[var(--text-faint)] text-center">
@@ -489,9 +477,7 @@ export default function PublicSignup() {
             {conflictCode === "ALREADY_REGISTERED" && (
               <StatusPanel title="Account Already Exists" tone="info">
                 <p className="text-sm text-[var(--text-faint)]">
-                  An account with this email already exists. Sign in or use
-                  Forgot Password if you need access. Registration and
-                  reapplication are not available for approved accounts.
+                  Email already registered.
                 </p>
               </StatusPanel>
             )}
@@ -634,7 +620,7 @@ export default function PublicSignup() {
               className="qc-auth-password-hint"
               aria-label="Password requirements"
             >
-              {PASSWORD_HELPER}
+              {PASSWORD_HINT}
             </p>
 
             <div className={fieldErrorClass(Boolean(fieldErrors.confirmPassword))}>

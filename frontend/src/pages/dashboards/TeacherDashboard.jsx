@@ -38,6 +38,15 @@ import {
   shelfAfterArchive,
   shelfAfterRestore,
 } from '../../utils/assignmentShelf';
+import {
+  validateAssignmentFormFields,
+  datetimeLocalToIso,
+  suggestStartDatetimeLocal,
+  utcIsoToKarachiDatetimeLocal,
+  assignmentCreatedMessage,
+} from '../../utils/assignmentFieldValidation';
+import { validateAcademicContent, referenceFileSelectionError } from '../../utils/academicFileContent';
+import { createSubmitLock } from '../../utils/submitLock';
 
 function StatCard({ label, value, icon }) {
   const [selected, setSelected] = useState(false);
@@ -120,6 +129,11 @@ export default function TeacherDashboard() {
   const [plagiarismResults, setPlagiarismResults] = useState([]);
   const [activePieIndex, setActivePieIndex]     = useState(null);
   const [form, setForm] = useState({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
+  /** Original ISO dates while editing — used so unchanged past start/deadline are not blocked. */
+  const [editingBaseline, setEditingBaseline] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+  const [savingAssignment, setSavingAssignment] = useState(false);
+  const assignmentSubmitLock = useRef(createSubmitLock());
 
   // ── Fetch ─────────────────────────────────────────────────
   // silent: refresh lists without the full-page loading gate (status archive/restore).
@@ -336,17 +350,29 @@ export default function TeacherDashboard() {
   };
 
   // ── File handlers ─────────────────────────────────────────
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  const handleFileChange = async (e) => {
+    const selected = e.target.files;
+    const multipleError = referenceFileSelectionError(selected);
+    if (multipleError) {
+      alert(multipleError);
+      e.target.value = null;
+      setFormErrors((prev) => ({ ...prev, file: multipleError }));
+      return;
+    }
+    const file = selected?.[0];
     if (!file) return;
     try {
       assertAcademicFile(file);
+      const head = new Uint8Array(await file.slice(0, 512).arrayBuffer());
+      const content = validateAcademicContent(file.name, head);
+      if (!content.ok) throw new Error(content.message);
     } catch (err) {
       alert(err.message || 'File not allowed.');
       e.target.value = null;
       return;
     }
     setForm({ ...form, file });
+    setFormErrors((prev) => ({ ...prev, file: undefined }));
   };
 
   const handleMultimediaChange = (e) => {
@@ -552,10 +578,19 @@ export default function TeacherDashboard() {
 
   const handleEditSetup = (asgn) => {
     setEditingId(asgn._id);
+    setFormErrors({});
+    const startLocal = asgn.startDate ? utcIsoToKarachiDatetimeLocal(asgn.startDate) : '';
+    const deadlineLocal = asgn.deadline ? utcIsoToKarachiDatetimeLocal(asgn.deadline) : '';
+    setEditingBaseline({
+      startDate: asgn.startDate || null,
+      deadline: asgn.deadline || null,
+      startDateLocal: startLocal,
+      deadlineLocal,
+    });
     setForm({
       title:       asgn.title,
-      startDate:   asgn.startDate ? asgn.startDate.slice(0, 16) : '',
-      deadline:    asgn.deadline  ? asgn.deadline.slice(0, 16)  : '',
+      startDate:   startLocal,
+      deadline:    deadlineLocal,
       description: asgn.description || '',
       points: asgn.points ?? '',
       file: null,
@@ -565,21 +600,101 @@ export default function TeacherDashboard() {
     setActiveTab('create');
   };
 
+  const handleCancelCreate = () => {
+    if (savingAssignment || assignmentSubmitLock.current.pending) return;
+    setForm({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
+    setFormErrors({});
+    setEditingBaseline(null);
+    setEditingId(null);
+    setActiveTab('assignments');
+  };
+
   const handleCreateOrUpdate = async (e) => {
     e.preventDefault();
-    if (!form.title || !String(form.description || '').trim() || !form.startDate || !form.deadline || !form.points || Number(form.points) <= 0) {
-      return alert('Title, academic instructions, Start Date, Deadline, and Total Marks are mandatory.');
+    if (savingAssignment || !assignmentSubmitLock.current.tryBegin()) return;
+
+    // Keep original UTC ISO when the teacher did not change datetime-local fields
+    // so edit-save does not shift timezone via slice(0,16) round-trip.
+    const startUnchanged =
+      Boolean(editingId) &&
+      form.startDate === editingBaseline?.startDateLocal;
+    const deadlineUnchanged =
+      Boolean(editingId) &&
+      form.deadline === editingBaseline?.deadlineLocal;
+    const startIso = startUnchanged
+      ? editingBaseline.startDate
+      : datetimeLocalToIso(form.startDate);
+    const deadlineIso = deadlineUnchanged
+      ? editingBaseline.deadline
+      : datetimeLocalToIso(form.deadline);
+    const validationOptions = editingId
+      ? {
+          mode: 'update',
+          existing: {
+            startDate: editingBaseline?.startDate || null,
+            deadline: editingBaseline?.deadline || null,
+          },
+        }
+      : { mode: 'create' };
+
+    // Early UX check (fresh Date.now — not form-open time). Backend remains authoritative.
+    const validatedEarly = validateAssignmentFormFields(
+      {
+        ...form,
+        startDate: startIso || form.startDate,
+        deadline: deadlineIso || form.deadline,
+      },
+      validationOptions
+    );
+    if (!validatedEarly.ok) {
+      assignmentSubmitLock.current.end();
+      setFormErrors(validatedEarly.errors || {});
+      return;
     }
-    if (new Date(form.deadline) < new Date(form.startDate)) {
-      return alert('Deadline must be on or after the start date.');
+
+    // Create requires a newly selected reference file; update may keep existingFileName.
+    const hasReferenceFile = Boolean(form.file) || Boolean(editingId && form.existingFileName);
+    if (!editingId && !form.file) {
+      assignmentSubmitLock.current.end();
+      setFormErrors((prev) => ({
+        ...prev,
+        file: 'Upload a reference file.',
+      }));
+      return;
     }
+    if (editingId && !hasReferenceFile) {
+      assignmentSubmitLock.current.end();
+      setFormErrors((prev) => ({
+        ...prev,
+        file: 'Upload a reference file.',
+      }));
+      return;
+    }
+
+    setFormErrors({});
+    setSavingAssignment(true);
     try {
       const formData = new FormData();
-      formData.append('title',       form.title);
-      formData.append('startDate',   new Date(form.startDate).toISOString());
-      formData.append('deadline',    new Date(form.deadline).toISOString());
-      formData.append('description', form.description || '');
-      formData.append('points', String(form.points));
+      formData.append('title', validatedEarly.values.title);
+      formData.append('description', validatedEarly.values.description);
+      formData.append('points', String(validatedEarly.values.points));
+      formData.append('startDate', startIso);
+      formData.append('deadline', deadlineIso);
+
+      // Create: sign the selected schedule BEFORE the slow R2 upload.
+      // The token stops date tampering. The server still re-checks that the
+      // start and due instants are strictly in the future when the assignment is saved.
+      if (!editingId) {
+        const intent = await teacherService.createScheduleIntent({
+          startDate: startIso,
+          deadline: deadlineIso,
+        });
+        if (!intent?.scheduleIntentToken) {
+          throw new Error('Unable to save assignment. Please try again.');
+        }
+        formData.append('scheduleIntentToken', intent.scheduleIntentToken);
+      }
+
       // Durable assignment files go direct-to-R2 (presigned) so local + Vercel
       // share the same private bucket and bypass serverless body limits.
       if (form.file) {
@@ -589,16 +704,46 @@ export default function TeacherDashboard() {
 
       if (editingId) {
         await teacherService.updateAssignment(editingId, formData);
-        alert('✅ Updated!');
+        alert('Assignment updated successfully.');
       } else {
         await teacherService.createAssignment(formData);
-        alert('✅ Uploaded!');
+        alert(assignmentCreatedMessage(startIso));
       }
       setForm({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
+      setFormErrors({});
+      setEditingBaseline(null);
       setEditingId(null);
       setActiveTab('assignments');
       fetchAllData();
-    } catch { alert('❌ Operation failed.'); }
+    } catch (err) {
+      const status = err?.response?.status;
+      const code = err?.response?.data?.code;
+      const apiErrors = err?.response?.data?.errors;
+      if (status === 409 || code === 'ASSIGNMENT_DUPLICATE') {
+        const duplicateMessage = 'Assignment already exists.';
+        setFormErrors((prev) => ({
+          ...prev,
+          ...(apiErrors && typeof apiErrors === 'object' ? apiErrors : null),
+          title: duplicateMessage,
+        }));
+        // Keep form values and selected/uploaded file on expected duplicate conflict.
+        alert(duplicateMessage);
+        return;
+      }
+      if (apiErrors && typeof apiErrors === 'object') {
+        setFormErrors(apiErrors);
+      }
+      const apiMessage = err?.response?.data?.message;
+      const validationMessage =
+        status >= 400 && status < 500 && typeof apiMessage === 'string' && apiMessage
+          ? apiMessage
+          : '';
+      // Keep form + file on schedule/validation failures from the authoritative backend.
+      alert(validationMessage || 'Unable to save assignment. Please try again.');
+    } finally {
+      assignmentSubmitLock.current.end();
+      setSavingAssignment(false);
+    }
   };
 
   const chartData = [
@@ -764,54 +909,86 @@ export default function TeacherDashboard() {
             </div>
             <form onSubmit={handleCreateOrUpdate} className="qc-card space-y-5 sm:space-y-6">
               <div>
-                <label className="qc-label">Assignment Title</label>
-                <input type="text" className="qc-input" value={form.title} onChange={e => setForm({...form, title:e.target.value})} placeholder="e.g. System Design Analysis"/>
+                <label className="qc-label">Assignment Title <span className="text-red-400" aria-hidden="true">*</span></label>
+                <input type="text" className="qc-input" value={form.title} onChange={e => { setForm({...form, title:e.target.value}); setFormErrors((prev) => ({ ...prev, title: undefined })); }} placeholder="e.g. System Design Analysis" maxLength={100} aria-required="true" aria-invalid={Boolean(formErrors.title)}/>
+                {formErrors.title ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.title}</p> : null}
               </div>
               <div>
-                <label className="qc-label">Total Marks</label>
-                <input type="number" min="1" className="qc-input" value={form.points} onChange={e => setForm({...form, points:e.target.value})} placeholder="e.g. 30" />
-                <p className="text-[9px] text-slate-500 mt-2">Students will see their score as obtained / this total only after grading.</p>
+                <label className="qc-label">Total Marks <span className="text-red-400" aria-hidden="true">*</span></label>
+                <input type="number" min="1" max="100" step="1" className="qc-input" value={form.points} onChange={e => { setForm({...form, points:e.target.value}); setFormErrors((prev) => ({ ...prev, points: undefined })); }} placeholder="e.g. 30" aria-required="true" aria-invalid={Boolean(formErrors.points)}/>
+                {formErrors.points ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.points}</p> : null}
+                <p className="text-[9px] text-slate-500 mt-2">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
-                  <label className="qc-label">Start Date</label>
-                  <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => setForm({...form, startDate:e.target.value})}/>
+                  <label className="qc-label">Start date and time <span className="text-red-400" aria-hidden="true">*</span></label>
+                  <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => { setForm({...form, startDate:e.target.value}); setFormErrors((prev) => ({ ...prev, startDate: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.startDate)}/>
+                  {formErrors.startDate ? (
+                    <div className="mt-1.5 space-y-1.5">
+                      <p className="text-red-400 text-[11px] font-semibold" role="alert">{formErrors.startDate}</p>
+                      <button
+                        type="button"
+                        className="text-[10px] font-black uppercase tracking-widest accent-text hover:underline"
+                        onClick={() => {
+                          setForm((prev) => ({
+                            ...prev,
+                            startDate: suggestStartDatetimeLocal(Date.now(), 5 * 60 * 1000),
+                          }));
+                          setFormErrors((prev) => ({ ...prev, startDate: undefined }));
+                        }}
+                      >
+                        Set start to 5 minutes from now
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
                 <div>
-                  <label className="qc-label">Deadline Date</label>
-                  <input type="datetime-local" className="qc-input" value={form.deadline} onChange={e => setForm({...form, deadline:e.target.value})}/>
+                  <label className="qc-label">Due date and time <span className="text-red-400" aria-hidden="true">*</span></label>
+                  <input type="datetime-local" className="qc-input" value={form.deadline} onChange={e => { setForm({...form, deadline:e.target.value}); setFormErrors((prev) => ({ ...prev, deadline: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.deadline)}/>
+                  {formErrors.deadline ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.deadline}</p> : null}
                 </div>
               </div>
               <div>
-                <label className="qc-label">Description</label>
-                <textarea className="qc-input !h-36 resize-none" value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Instructions..."/>
+                <label className="qc-label">Description <span className="text-red-400" aria-hidden="true">*</span></label>
+                <textarea className="qc-input !h-36 resize-none" value={form.description} onChange={e => { setForm({...form, description:e.target.value}); setFormErrors((prev) => ({ ...prev, description: undefined })); }} placeholder="Instructions..." maxLength={2000} aria-required="true" aria-invalid={Boolean(formErrors.description)}/>
+                {formErrors.description ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.description}</p> : null}
               </div>
-              <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all" onClick={() => fileInputRef.current.click()}>
-                <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
-                {form.file ? (
-                  <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
-                    <CheckCircle size={24}/> {form.file.name}
-                    <X className="text-slate-500 hover:text-white" onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
-                  </div>
-                ) : form.existingFileName ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <CheckCircle size={28} className="accent-text"/>
-                    <p className="font-bold text-sm">Current file: {form.existingFileName}</p>
-                    <div className="flex gap-3 text-[10px] font-black uppercase">
-                      <button type="button" className="accent-text" onClick={async (e) => { e.stopPropagation(); try { await openProtectedPreview(teacherService.previewAssignment(form.existingFileId), form.existingFileName); } catch (err) { alert(err.message); } }}>Preview current</button>
-                      <span className="theme-muted">Click this box to replace it</span>
+              <div>
+                <label className="qc-label">Reference File <span className="text-red-400" aria-hidden="true">*</span></label>
+                <div className={`border-2 border-dashed rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all ${formErrors.file ? 'border-red-500/60' : 'border-slate-800'}`} onClick={() => fileInputRef.current.click()} role="button" tabIndex={0} aria-invalid={Boolean(formErrors.file)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}>
+                  <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
+                  {form.file ? (
+                    <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
+                      <CheckCircle size={24}/> {form.file.name}
+                      <X className="text-slate-500 hover:text-white" onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <FileUp size={32} className="text-slate-600"/>
-                    <p className="text-white font-bold text-sm">Upload Reference File</p>
-                  </div>
-                )}
+                  ) : form.existingFileName ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <CheckCircle size={28} className="accent-text"/>
+                      <p className="font-bold text-sm">Current file: {form.existingFileName}</p>
+                      <div className="flex gap-3 text-[10px] font-black uppercase">
+                        <button type="button" className="accent-text" onClick={async (e) => { e.stopPropagation(); try { await openProtectedPreview(teacherService.previewAssignment(form.existingFileId), form.existingFileName); } catch (err) { alert(err.message); } }}>Preview current</button>
+                        <span className="theme-muted">Click this box to replace it</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <FileUp size={32} className="text-slate-600"/>
+                      <p className="text-white font-bold text-sm">Upload Reference File</p>
+                      <p className="text-[10px] theme-muted">Required for new assignments</p>
+                    </div>
+                  )}
+                </div>
+                {formErrors.file ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.file}</p> : null}
               </div>
-              <button type="submit" className="qc-btn qc-btn-primary qc-btn-block !py-3.5">
-                {editingId ? 'Update Assignment' : 'Upload Assignment'}
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button type="button" className="qc-btn qc-btn-secondary qc-btn-block !py-3.5" onClick={handleCancelCreate} disabled={savingAssignment}>
+                  Cancel
+                </button>
+                <button type="submit" className="qc-btn qc-btn-primary qc-btn-block !py-3.5" disabled={savingAssignment} aria-busy={savingAssignment}>
+                  {savingAssignment ? (editingId ? 'Updating…' : 'Uploading…') : (editingId ? 'Update Assignment' : 'Upload Assignment')}
+                </button>
+              </div>
             </form>
           </div>
         )}

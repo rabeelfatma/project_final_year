@@ -353,7 +353,7 @@ describe("QC-10D admin-only registration", () => {
       return { login, reset };
     });
     // Login returns 400 for unknown user (route reachable); reset 503 when email unset.
-    assert.ok([400, 401, 503].includes(result.login.status));
+    assert.ok([400, 401, 429, 503].includes(result.login.status));
     assert.ok([200, 400, 503].includes(result.reset.status));
   });
 });

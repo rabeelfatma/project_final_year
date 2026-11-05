@@ -298,7 +298,7 @@ describe("QC-18G duplicate signup guidance", () => {
     );
     assert.equal(res.statusCode, 409);
     assert.equal(res.body.code, "ALREADY_REGISTERED");
-    assert.match(res.body.message, /Sign in|Forgot Password/i);
+    assert.match(res.body.message, /Email already registered/i);
   });
 
   it("preserves rejected state without reactivation via register-request", async () => {

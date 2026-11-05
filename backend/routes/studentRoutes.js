@@ -1,3 +1,4 @@
+const { evaluateAssignmentWindow } = require("../utils/assignmentAvailability");
 const express = require("express");
 const fs = require("fs");
 const router = express.Router();
@@ -17,9 +18,14 @@ const PUBLISHED = ["PUBLISHED"];
 router.get("/dashboard-stats", async (req, res) => {
   try {
     const [assignments, submissions] = await Promise.all([
-      Assignment.find({ status: "active" }).select("title subject points createdAt"),
+      Assignment.find({ status: "active" }).select("title subject points createdAt startDate deadline"),
       Submission.find({ student: req.user._id }).populate("assignment", "title subject points"),
     ]);
+    const now = Date.now();
+    const visibleAssignments = assignments.filter((assignment) =>
+      evaluateAssignmentWindow(assignment.startDate, assignment.deadline, now).visibleToStudent
+    );
+    const visibleIds = new Set(visibleAssignments.map((assignment) => String(assignment._id)));
     const submittedCount = submissions.length;
     const graded = submissions.filter(
       (s) =>
@@ -28,7 +34,13 @@ router.get("/dashboard-stats", async (req, res) => {
         Number(s.totalMarks) > 0
     );
     const gradedCount = graded.length;
-    const pendingCount = Math.max(assignments.length - submittedCount, 0);
+    const pendingCount = Math.max(
+      visibleAssignments.length -
+        submissions.filter((submission) =>
+          visibleIds.has(String(submission.assignment?._id || submission.assignment))
+        ).length,
+      0
+    );
     const score = (s) => Number(s.marks ?? s.aiScore);
     const performanceHistory = graded.slice(-12).map((s, i) => ({
       assignmentId: String(s.assignment?._id || ""),
@@ -70,18 +82,23 @@ router.get("/assignments", async (req, res) => {
     const now = Date.now();
     // Active assignments only. Deactive = teacher-hidden drafts/closed items.
     const assignments = await Assignment.find({ status: "active" }).sort({ createdAt: -1 }).lean();
-    const finalAssignments = await Promise.all(
+    const finalAssignments = (
+      await Promise.all(
       assignments.map(async (assignment) => {
+        const windowState = evaluateAssignmentWindow(
+          assignment.startDate,
+          assignment.deadline,
+          now
+        );
+        if (!windowState.visibleToStudent) return null;
         const submission = await Submission.findOne({
           assignment: assignment._id,
           student: req.user._id,
         }).lean();
         const canShowResult = submission && PUBLISHED.includes(submission.status);
-        const opensAt = assignment.startDate ? new Date(assignment.startDate).getTime() : 0;
-        const dueAt = assignment.deadline ? new Date(assignment.deadline).getTime() : null;
-        const notOpenYet = opensAt && now < opensAt;
-        const overdue = dueAt != null && now > dueAt;
-        const canSubmit = !submission && !notOpenYet && !overdue;
+        const notOpenYet = windowState.notOpenYet;
+        const overdue = windowState.deadlineReached;
+        const canSubmit = !submission && windowState.canSubmit;
         // Until publish, do not expose AI_GRADED/graded process status to students.
         const studentStatus = !submission
           ? "pending"
@@ -97,8 +114,19 @@ router.get("/assignments", async (req, res) => {
           : canShowResult
             ? "Published"
             : "Awaiting evaluation";
+        const canAccessMaterials = !notOpenYet;
+        const hasFile = Boolean(assignment.file || assignment.fileUrl);
+        // Never expose storage keys/URLs to students; redact materials before open time.
+        const {
+          file: _omitFile,
+          fileUrl: _omitFileUrl,
+          ...assignmentPublic
+        } = assignment;
         return {
-          ...assignment,
+          ...assignmentPublic,
+          file: undefined,
+          fileUrl: undefined,
+          hasFile: canAccessMaterials ? hasFile : false,
           status: studentStatus,
           marks: canShowResult ? submission.marks ?? submission.aiScore : null,
           totalMarks: submission?.totalMarks || assignment.points || null,
@@ -110,16 +138,19 @@ router.get("/assignments", async (req, res) => {
           checkedAt: canShowResult ? submission.updatedAt || submission.createdAt : null,
           resultStatus: canShowResult ? submission.status : "PENDING",
           submissionId: submission?._id || null,
-          // Keep Teacher assignment reference name on originalFileName (from ...assignment).
-          // Do not overwrite it with the student's uploaded filename.
-          originalFileName: assignment.originalFileName || "",
+          originalFileName: canAccessMaterials
+            ? assignment.originalFileName || ""
+            : "",
           submissionOriginalFileName: submission?.originalFileName || "",
           isSubmitted: Boolean(submission),
           canSubmit,
+          canAccessMaterials,
+          notOpenYet: Boolean(notOpenYet),
           availabilityLabel: awaitingLabel,
         };
       })
-    );
+    )
+    ).filter(Boolean);
     res.json(finalAssignments);
   } catch (error) {
     console.error("ASSIGNMENT ERROR:", error);
@@ -156,13 +187,13 @@ router.get("/my-submissions", async (req, res) => {
 // Policy: students cannot delete their own submissions (preserve academic history).
 router.delete("/submissions/:id", async (req, res) => {
   return res.status(403).json({
-    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+    message: "Students cannot delete submissions.",
   });
 });
 
 router.post("/submissions/bulk-delete", async (req, res) => {
   return res.status(403).json({
-    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+    message: "Students cannot delete submissions.",
   });
 });
 
@@ -175,12 +206,16 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       return res.status(400).json({ message: "This assignment is not active." });
     }
 
-    const now = Date.now();
-    if (assignment.startDate && now < new Date(assignment.startDate).getTime()) {
-      return res.status(400).json({ message: "This assignment is not open for submissions yet." });
+    const windowState = evaluateAssignmentWindow(
+      assignment.startDate,
+      assignment.deadline,
+      Date.now()
+    );
+    if (windowState.notOpenYet) {
+      return res.status(400).json({ message: "Assignment is not open yet." });
     }
-    if (assignment.deadline && now > new Date(assignment.deadline).getTime()) {
-      return res.status(400).json({ message: "The submission deadline has passed." });
+    if (windowState.deadlineReached) {
+      return res.status(400).json({ message: "Submission deadline has passed." });
     }
 
     // Resubmission is not supported: block duplicates before writing any new file.
@@ -203,7 +238,7 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
     const answerText = String(req.body?.answerText || req.body?.text || "").trim();
     if (!req.file && answerText && answerText.length < 3) {
       return res.status(400).json({
-        message: "Text answer is too short. Enter at least a few words.",
+        message: "Answer is too short.",
       });
     }
     let storedFile = req.file;
@@ -254,7 +289,7 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
 
     if (!storedFile) {
       return res.status(400).json({
-        message: "Upload a supported file or provide a short text answer.",
+        message: "Upload a file or enter an answer.",
       });
     }
 
@@ -301,7 +336,7 @@ router.post("/assignments/:id/submit", upload.single("file"), async (req, res) =
       return res.status(503).json({ message: error.message });
     }
     console.error("SUBMISSION ERROR:", error);
-    res.status(500).json({ message: "Server error while submitting assignment." });
+    res.status(500).json({ message: "Unable to submit. Please try again." });
   }
 });
 

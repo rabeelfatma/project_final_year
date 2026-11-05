@@ -15,9 +15,11 @@ const {
   PROFILE_EXTENSIONS,
   isVideoExtension,
   makeSafeFilename,
+  evaluateOriginalFilename,
   MAX_PROXIED_UPLOAD_BYTES_VERCEL,
   MAX_PROXIED_UPLOAD_BYTES_LOCAL,
 } = require("../utils/uploadAllowlist");
+const { validateAcademicContent } = require("../utils/academicFileContent");
 
 // Soft-init: must not throw on Vercel read-only filesystem at module load.
 try {
@@ -120,9 +122,7 @@ const r2AwareStorage = {
         file.stream.destroy();
         settle(
           new Error(
-            `File too large for proxied upload (max ${Math.floor(
-              limit / (1024 * 1024)
-            )} MB). Use direct upload for larger files.`
+            "File size exceeds the limit."
           )
         );
         return;
@@ -136,6 +136,25 @@ const r2AwareStorage = {
         const buffer = Buffer.concat(chunks);
         const filename = makeSafeFilename(file.originalname);
         const folder = getUploadFolder(req);
+
+        if (folder === "assignments" || folder === "submissions") {
+          if (!buffer.length) {
+            const emptyErr = new Error("File is empty.");
+            emptyErr.code = "UPLOAD_EMPTY";
+            emptyErr.statusCode = 400;
+            return settle(emptyErr);
+          }
+          const content = validateAcademicContent(
+            file.originalname,
+            buffer.subarray(0, 512)
+          );
+          if (!content.ok) {
+            const contentErr = new Error(content.message);
+            contentErr.code = content.code;
+            contentErr.statusCode = 400;
+            return settle(contentErr);
+          }
+        }
 
         if (ephemeral) {
           return settle(null, {
@@ -206,34 +225,32 @@ const upload = multer({
   },
 
   fileFilter: (req, file, cb) => {
+    const named = evaluateOriginalFilename(file.originalname);
+    if (!named.ok) return cb(new Error(named.message));
     const folder = getUploadFolder(req);
-    const ext = path.extname(file.originalname || "").toLowerCase();
+    const ext = path.extname(named.basename).toLowerCase();
     const route = String(req.originalUrl || "").toLowerCase();
 
     if (folder === "profilePictures") {
       if (PROFILE_EXTENSIONS.includes(ext)) return cb(null, true);
-      return cb(new Error(`File type ${ext || "unknown"} is not supported for profile pictures.`));
+      return cb(new Error("File type is not supported."));
     }
 
     if (folder === "messages" || route.includes("/voice")) {
       if (MESSAGE_EXTENSIONS.includes(ext)) return cb(null, true);
-      return cb(new Error(`File type ${ext || "unknown"} is not supported for messages.`));
+      return cb(new Error("File type is not supported."));
     }
 
     // Academic + AI ephemeral: shared allowlist without the nine video containers.
     if (isVideoExtension(ext)) {
-      return cb(
-        new Error(
-          `Video file type ${ext} is not supported for Teacher/Student uploads.`
-        )
-      );
+      return cb(new Error("File type is not supported."));
     }
 
     if (ACADEMIC_EXTENSIONS.includes(ext) || MESSAGE_EXTENSIONS.includes(ext)) {
       return cb(null, true);
     }
 
-    return cb(new Error(`File type ${ext || "unknown"} is not supported.`));
+    return cb(new Error("File type is not supported."));
   },
 });
 

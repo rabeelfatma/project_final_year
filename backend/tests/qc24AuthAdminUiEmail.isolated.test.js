@@ -75,7 +75,7 @@ describe("QC-24 auth form layout + validation UI contracts", () => {
 
     assert.match(
       signup,
-      /Minimum 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character\./
+      /PASSWORD_HINT/
     );
     assert.match(
       read("frontend/src/pages/dashboards/AdminDashboard.jsx"),

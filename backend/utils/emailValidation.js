@@ -11,7 +11,7 @@ const MAX_LOCAL_LENGTH = 64;
  */
 function normalizeEmail(email) {
   if (typeof email !== "string") return "";
-  return email.trim().toLowerCase().slice(0, MAX_EMAIL_LENGTH);
+  return email.trim().toLowerCase();
 }
 
 /**
@@ -53,12 +53,19 @@ function isValidEmailFormat(email) {
  * @returns {{ ok: true, email: string } | { ok: false, message: string }}
  */
 function validateEmailInput(email) {
-  if (email == null || typeof email !== "string" || !String(email).trim()) {
-    return { ok: false, message: "Email is required" };
+  if (email == null || typeof email !== "string" || !email.trim()) {
+    return { ok: false, message: "Email is required." };
   }
-  const normalized = normalizeEmail(email);
+  const trimmed = email.trim();
+  if (trimmed.length > MAX_EMAIL_LENGTH) {
+    return { ok: false, message: "Email is too long." };
+  }
+  if (/\s/.test(trimmed)) {
+    return { ok: false, message: "Email cannot contain spaces." };
+  }
+  const normalized = trimmed.toLowerCase();
   if (!isValidEmailFormat(normalized)) {
-    return { ok: false, message: "Invalid email format" };
+    return { ok: false, message: "Enter a valid email." };
   }
   return { ok: true, email: normalized };
 }

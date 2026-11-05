@@ -148,14 +148,14 @@ router.get("/my-submissions", protect, async (req, res) => {
 // Policy: students cannot delete their own submissions (preserve academic history).
 router.delete("/submissions/:id", protect, async (req, res) => {
   return res.status(403).json({
-    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+    message: "Students cannot delete submissions.",
   });
 });
 
 // Bulk delete blocked for students (legacy route kept for clear 403).
 router.post("/submissions/bulk-delete", protect, async (req, res) => {
   return res.status(403).json({
-    message: "Students cannot delete submissions. Contact your teacher if a correction is needed.",
+    message: "Students cannot delete submissions.",
   });
 });
 

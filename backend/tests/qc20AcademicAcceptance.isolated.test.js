@@ -81,7 +81,7 @@ describe("QC-20 publish and unpublished-grade gates", () => {
     assert.match(src, /const PUBLISHED = \["PUBLISHED"\]/);
     assert.match(src, /studentStatus/);
     assert.match(src, /canSubmit/);
-    assert.match(src, /Upload a supported file or provide a short text answer/);
+    assert.match(src, /Upload a file or enter an answer/);
   });
 
   it("student dashboard only surfaces PUBLISHED checked results", () => {

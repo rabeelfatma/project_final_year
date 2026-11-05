@@ -76,7 +76,7 @@ exports.registerUser = async (req, res) => {
 
     const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
-      return res.status(400).json({ message: "Email already exists" });
+      return res.status(400).json({ message: "Email already registered." });
     }
 
     const hashedPassword = await hashPassword(passwordCheck.password);
@@ -152,16 +152,20 @@ exports.registerUser = async (req, res) => {
 exports.loginUser = async (req, res) => {
   try {
     const { email, password, role } = req.body;
+    const emailEmpty =
+      email == null || (typeof email === "string" && email.trim() === "");
+    const passwordEmpty =
+      password == null ||
+      typeof password !== "string" ||
+      password.length === 0 ||
+      password.trim() === "";
+    if (emailEmpty && passwordEmpty) {
+      return res.status(400).json({ message: "Complete all required fields." });
+    }
 
     const emailCheck = validateEmailInput(email);
     if (!emailCheck.ok) {
-      // Avoid leaking whether a malformed address could exist; still reject clearly.
-      return res.status(400).json({
-        message:
-          emailCheck.message === "Email is required"
-            ? "Email is required"
-            : "Invalid email or password",
-      });
+      return res.status(400).json({ message: emailCheck.message });
     }
 
     const passwordCheck = validateLoginPasswordInput(password);
@@ -170,10 +174,32 @@ exports.loginUser = async (req, res) => {
     }
 
     const normalizedEmail = emailCheck.email;
+    const ip = clientIp(req);
+    const noteFailure = async () => {
+      const ipLimit = await assertWithinRateLimit(
+        AuthRateLimit,
+        `login:fail:ip:${ip}`,
+        20,
+        DEFAULT_WINDOW_MS
+      );
+      const emailLimit = await assertWithinRateLimit(
+        AuthRateLimit,
+        `login:fail:email:${normalizedEmail}`,
+        10,
+        DEFAULT_WINDOW_MS
+      );
+      return ipLimit.ok && emailLimit.ok;
+    };
+
     const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      if (!(await noteFailure())) {
+        return res.status(429).json({
+          message: "Too many requests. Please try again later.",
+        });
+      }
+      return res.status(400).json({ message: "Invalid email or password." });
     }
 
     // Authorization role always comes from the stored user record.
@@ -181,9 +207,12 @@ exports.loginUser = async (req, res) => {
     if (role) {
       const requestedRole = normalizeRole(role);
       if (requestedRole !== user.role) {
-        return res.status(400).json({
-          message: `Invalid credentials for ${requestedRole} login`
-        });
+        if (!(await noteFailure())) {
+          return res.status(429).json({
+            message: "Too many requests. Please try again later.",
+          });
+        }
+        return res.status(400).json({ message: "Invalid email or password." });
       }
     }
 
@@ -204,11 +233,16 @@ exports.loginUser = async (req, res) => {
 
     const isMatch = await passwordsMatch(passwordCheck.password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      if (!(await noteFailure())) {
+        return res.status(429).json({
+          message: "Too many requests. Please try again later.",
+        });
+      }
+      return res.status(400).json({ message: "Invalid email or password." });
     }
 
     return res.json({
-      message: "Login Successful",
+      message: "Login successful.",
       token: generateToken(user._id, user.role, user.tokenVersion || 0),
       role: user.role,
       name: user.name,
@@ -219,8 +253,7 @@ exports.loginUser = async (req, res) => {
   } catch (error) {
     console.error("SERVER ERROR DURING LOGIN:", error.message);
     return res.status(500).json({
-      message: "Server internal error",
-      error: error.message
+      message: "Something went wrong. Please try again.",
     });
   }
 };
@@ -348,7 +381,7 @@ exports.requestPublicSignup = async (req, res) => {
       }
       return res.status(409).json({
         message:
-          "An account with this email already exists. Sign in or use Forgot Password if you need access.",
+          "Email already registered.",
         code: "ALREADY_REGISTERED",
       });
     }
@@ -416,8 +449,7 @@ exports.requestPublicSignup = async (req, res) => {
     }
 
     return res.status(201).json({
-      message:
-        "Your registration request has been submitted. Please verify your email, then wait for Admin approval before logging in.",
+      message: "Account created successfully.",
       status: "pending_verification",
       verificationEmailSent: true,
     });
@@ -507,7 +539,7 @@ exports.reapplyPublicSignup = async (req, res) => {
     }
     if (confirmPassword !== passwordCheck.password) {
       return res.status(400).json({
-        message: "Password confirmation does not match.",
+        message: "Passwords do not match.",
         code: "PASSWORD_MISMATCH",
       });
     }
@@ -604,7 +636,7 @@ exports.reapplyPublicSignup = async (req, res) => {
     if (approval === "approved") {
       return res.status(409).json({
         message:
-          "An account with this email already exists. Sign in or use Forgot Password if you need access.",
+          "Email already registered.",
         code: "ALREADY_REGISTERED",
       });
     }
@@ -646,7 +678,7 @@ exports.reapplyPublicSignup = async (req, res) => {
       if (emailConflict) {
         return res.status(409).json({
           message:
-            "That email address is already associated with another account.",
+            "Email already registered.",
           code: "EMAIL_IN_USE",
         });
       }
@@ -708,7 +740,7 @@ exports.reapplyPublicSignup = async (req, res) => {
       if (err && err.code === 11000) {
         return res.status(409).json({
           message:
-            "That email address is already associated with another account.",
+            "Email already registered.",
           code: "EMAIL_IN_USE",
         });
       }
@@ -763,7 +795,7 @@ exports.reapplyPublicSignup = async (req, res) => {
     if (error && error.code === 11000) {
       return res.status(409).json({
         message:
-          "That email address is already associated with another account.",
+          "Email already registered.",
         code: "EMAIL_IN_USE",
       });
     }

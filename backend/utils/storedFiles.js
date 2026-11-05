@@ -304,7 +304,7 @@ async function assertUploadedObject(stored, { expectedSize, maxBytes } = {}) {
     Number.isFinite(Number(expectedSize)) &&
     size !== Number(expectedSize)
   ) {
-    const err = new Error("Uploaded file size does not match the declared size.");
+    const err = new Error("File size is not valid.");
     err.code = "UPLOAD_SIZE_MISMATCH";
     err.statusCode = 400;
     throw err;

@@ -392,7 +392,7 @@ describe("confirmPasswordReset", () => {
 
     let updated = null;
     const result = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: {
           findOne: async () => null,
@@ -430,7 +430,7 @@ describe("confirmPasswordReset", () => {
       usedAt: null,
     });
     const failed = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: { findOneAndUpdate: async () => null },
         PasswordResetToken: tokenStore,
@@ -443,10 +443,10 @@ describe("confirmPasswordReset", () => {
     );
     assert.equal(failed.ok, false);
     assert.ok(tokenStore.tokens[0].usedAt);
-    assert.match(failed.message, /new reset link/i);
+    assert.match(failed.message, /invalid or expired/i);
 
     const retrySame = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: {
           findOneAndUpdate: async () => {
@@ -486,7 +486,7 @@ describe("confirmPasswordReset", () => {
     });
 
     const reviveAttempt = await confirmPasswordReset(
-      { token: olderRaw, newPassword: "NewPass12!" },
+      { token: olderRaw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: {
           findOneAndUpdate: async () => {
@@ -530,13 +530,13 @@ describe("confirmPasswordReset", () => {
     };
     for (let i = 0; i < CONFIRM_IP_RATE_LIMIT; i++) {
       const r = await confirmPasswordReset(
-        { token: "z".repeat(64), newPassword: "NewPass12!", ip: "198.51.100.7" },
+        { token: "z".repeat(64), newPassword: "NewPass12!", confirmPassword: "NewPass12!", ip: "198.51.100.7" },
         deps
       );
       assert.equal(r.status, 400);
     }
     const blocked = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!", ip: "198.51.100.7" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!", ip: "198.51.100.7" },
       deps
     );
     assert.equal(blocked.ok, false);
@@ -544,7 +544,7 @@ describe("confirmPasswordReset", () => {
     assert.equal(tokenStore.tokens[0].usedAt, null);
 
     const otherIp = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!", ip: "198.51.100.8" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!", ip: "198.51.100.8" },
       {
         ...deps,
         User: {
@@ -562,7 +562,7 @@ describe("confirmPasswordReset", () => {
   it("rejects invalid token", async () => {
     const tokenStore = createTokenStore();
     const result = await confirmPasswordReset(
-      { token: "z".repeat(64), newPassword: "NewPass12!" },
+      { token: "z".repeat(64), newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: { findOneAndUpdate: async () => ({ _id: "x" }) },
         PasswordResetToken: tokenStore,
@@ -588,7 +588,7 @@ describe("confirmPasswordReset", () => {
       usedAt: null,
     });
     const result = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: {
           findOneAndUpdate: async () => {
@@ -631,12 +631,12 @@ describe("confirmPasswordReset", () => {
       now: () => new Date(),
     };
     const first = await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       deps
     );
     assert.equal(first.ok, true);
     const second = await confirmPasswordReset(
-      { token: raw, newPassword: "OtherPass99!" },
+      { token: raw, newPassword: "OtherPass99!", confirmPassword: "OtherPass99!" },
       deps
     );
     assert.equal(second.ok, false);
@@ -672,8 +672,8 @@ describe("confirmPasswordReset", () => {
     };
 
     const [a, b] = await Promise.all([
-      confirmPasswordReset({ token: raw, newPassword: "NewPass12!" }, deps),
-      confirmPasswordReset({ token: raw, newPassword: "NewPass12!" }, deps),
+      confirmPasswordReset({ token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" }, deps),
+      confirmPasswordReset({ token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" }, deps),
     ]);
     const successes = [a, b].filter((r) => r.ok).length;
     assert.equal(successes, 1);
@@ -692,7 +692,7 @@ describe("confirmPasswordReset", () => {
     });
     let targetId = null;
     await confirmPasswordReset(
-      { token: raw, newPassword: "NewPass12!" },
+      { token: raw, newPassword: "NewPass12!", confirmPassword: "NewPass12!" },
       {
         User: {
           findOneAndUpdate: async (filter) => {

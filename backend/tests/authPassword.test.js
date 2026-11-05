@@ -21,7 +21,7 @@ describe("authPassword helpers", () => {
   it("rejects short passwords", () => {
     const result = validatePasswordInput("Ab1!");
     assert.equal(result.ok, false);
-    assert.match(result.message, /at least 8/i);
+    assert.match(result.message, /too short/i);
   });
 
   it("rejects passwords missing complexity rules", () => {
