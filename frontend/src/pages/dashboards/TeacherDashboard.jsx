@@ -908,19 +908,19 @@ export default function TeacherDashboard() {
               </div>
             </div>
             <form onSubmit={handleCreateOrUpdate} className="qc-card qc-create-form__body">
-              <div>
+              <div className="qc-create-form__field">
                 <label className="qc-label">Assignment Title <span className="text-red-400" aria-hidden="true">*</span></label>
                 <input type="text" className="qc-input" value={form.title} onChange={e => { setForm({...form, title:e.target.value}); setFormErrors((prev) => ({ ...prev, title: undefined })); }} placeholder="e.g. System Design Analysis" maxLength={100} aria-required="true" aria-invalid={Boolean(formErrors.title)}/>
                 {formErrors.title ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.title}</p> : null}
               </div>
-              <div>
-                <label className="qc-label">Total Marks <span className="text-red-400" aria-hidden="true">*</span></label>
-                <input type="number" min="1" max="100" step="1" className="qc-input" value={form.points} onChange={e => { setForm({...form, points:e.target.value}); setFormErrors((prev) => ({ ...prev, points: undefined })); }} placeholder="e.g. 30" aria-required="true" aria-invalid={Boolean(formErrors.points)}/>
-                {formErrors.points ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.points}</p> : null}
-                <p className="qc-create-form__hint">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
+
+              <div className="qc-create-form__meta">
+                <div className="qc-create-form__field">
+                  <label className="qc-label">Total Marks <span className="text-red-400" aria-hidden="true">*</span></label>
+                  <input type="number" min="1" max="100" step="1" className="qc-input" value={form.points} onChange={e => { setForm({...form, points:e.target.value}); setFormErrors((prev) => ({ ...prev, points: undefined })); }} placeholder="e.g. 30" aria-required="true" aria-invalid={Boolean(formErrors.points)}/>
+                  {formErrors.points ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.points}</p> : null}
+                </div>
+                <div className="qc-create-form__field">
                   <label className="qc-label">Start date and time <span className="text-red-400" aria-hidden="true">*</span></label>
                   <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => { setForm({...form, startDate:e.target.value}); setFormErrors((prev) => ({ ...prev, startDate: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.startDate)}/>
                   {formErrors.startDate ? (
@@ -942,50 +942,59 @@ export default function TeacherDashboard() {
                     </div>
                   ) : null}
                 </div>
-                <div>
+                <div className="qc-create-form__field">
                   <label className="qc-label">Due date and time <span className="text-red-400" aria-hidden="true">*</span></label>
                   <input type="datetime-local" className="qc-input" value={form.deadline} onChange={e => { setForm({...form, deadline:e.target.value}); setFormErrors((prev) => ({ ...prev, deadline: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.deadline)}/>
                   {formErrors.deadline ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.deadline}</p> : null}
                 </div>
               </div>
-              <div>
+              <p className="qc-create-form__hint">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
+
+              <div className="qc-create-form__field">
                 <label className="qc-label">Description <span className="text-red-400" aria-hidden="true">*</span></label>
                 <textarea className="qc-input qc-create-form__description" value={form.description} onChange={e => { setForm({...form, description:e.target.value}); setFormErrors((prev) => ({ ...prev, description: undefined })); }} placeholder="Instructions..." maxLength={2000} aria-required="true" aria-invalid={Boolean(formErrors.description)}/>
                 {formErrors.description ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.description}</p> : null}
               </div>
-              <div>
+
+              <div className="qc-create-form__field">
                 <label className="qc-label">Reference File <span className="text-red-400" aria-hidden="true">*</span></label>
                 <div className={`qc-create-form__file ${formErrors.file ? 'is-invalid' : ''}`} onClick={() => fileInputRef.current.click()} role="button" tabIndex={0} aria-invalid={Boolean(formErrors.file)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}>
                   <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
                   {form.file ? (
-                    <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
-                      <CheckCircle size={24}/> {form.file.name}
-                      <X className="text-slate-500 hover:text-white" onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
+                    <div className="qc-create-form__file-row">
+                      <CheckCircle size={18} className="accent-text shrink-0"/>
+                      <span className="qc-create-form__file-name">{form.file.name}</span>
+                      <X className="text-slate-500 hover:text-white shrink-0" size={16} onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
                     </div>
                   ) : form.existingFileName ? (
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <CheckCircle size={18} className="accent-text"/>
-                      <p className="font-bold text-sm">Current file: {form.existingFileName}</p>
-                      <div className="flex gap-3 text-[10px] font-black uppercase">
+                    <div className="qc-create-form__file-stack">
+                      <div className="qc-create-form__file-row">
+                        <CheckCircle size={18} className="accent-text shrink-0"/>
+                        <span className="qc-create-form__file-name">Current file: {form.existingFileName}</span>
+                      </div>
+                      <div className="qc-create-form__file-actions">
                         <button type="button" className="accent-text" onClick={async (e) => { e.stopPropagation(); try { await openProtectedPreview(teacherService.previewAssignment(form.existingFileId), form.existingFileName); } catch (err) { alert(err.message); } }}>Preview current</button>
                         <span className="theme-muted">Click this box to replace it</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <FileUp size={18} className="text-slate-600"/>
-                      <p className="text-white font-bold text-sm">Upload Reference File</p>
-                      <p className="text-[10px] theme-muted">Required for new assignments</p>
+                    <div className="qc-create-form__file-stack">
+                      <div className="qc-create-form__file-row">
+                        <FileUp size={18} className="text-slate-500 shrink-0"/>
+                        <span className="qc-create-form__file-title">Upload Reference File</span>
+                      </div>
+                      <p className="qc-create-form__file-hint">Required for new assignments</p>
                     </div>
                   )}
                 </div>
                 {formErrors.file ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.file}</p> : null}
               </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button type="button" className="qc-btn qc-btn-secondary qc-btn-block" onClick={handleCancelCreate} disabled={savingAssignment}>
+
+              <div className="qc-create-form__actions">
+                <button type="button" className="qc-btn qc-btn-secondary" onClick={handleCancelCreate} disabled={savingAssignment}>
                   Cancel
                 </button>
-                <button type="submit" className="qc-btn qc-btn-primary qc-btn-block" disabled={savingAssignment} aria-busy={savingAssignment}>
+                <button type="submit" className="qc-btn qc-btn-primary" disabled={savingAssignment} aria-busy={savingAssignment}>
                   {savingAssignment ? (editingId ? 'Updating…' : 'Uploading…') : (editingId ? 'Update Assignment' : 'Upload Assignment')}
                 </button>
               </div>
