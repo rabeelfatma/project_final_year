@@ -84,11 +84,11 @@ export default function DashboardNavShell({
 
   const desktopPositionClass =
     desktopMode === "fixed"
-      ? "md:translate-x-0 md:fixed md:inset-y-0 md:left-0 md:h-screen md:z-20"
-      : "md:translate-x-0 md:static md:h-auto md:shrink-0 md:z-0";
+      ? "md:translate-x-0 md:fixed md:inset-y-0 md:left-0 md:h-dvh md:z-20"
+      : "md:translate-x-0 md:static md:h-full md:max-h-full md:self-stretch md:shrink-0 md:z-0";
 
   return (
-    <div className="flex min-h-screen h-screen theme-page font-sans overflow-hidden">
+    <div className="qc-dashboard-frame flex theme-page font-sans">
       <button
         type="button"
         aria-label="Close navigation menu"
@@ -105,7 +105,7 @@ export default function DashboardNavShell({
         inert={!navVisible ? true : undefined}
         className={[
           widthClass,
-          "qc-dashboard-sidebar theme-card border-r flex flex-col overflow-y-auto custom-scrollbar",
+          "qc-dashboard-sidebar theme-card border-r flex flex-col overflow-hidden",
           "fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 ease-out",
           open
             ? "translate-x-0 pointer-events-auto"
@@ -143,7 +143,7 @@ export default function DashboardNavShell({
         </div>
       </aside>
 
-      <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${desktopOffsetClass}`}>
+      <div className={`flex flex-1 flex-col min-w-0 min-h-0 h-full ${desktopOffsetClass}`}>
         <header
           className="sticky top-0 z-30 flex items-center gap-3 px-4 sm:px-6 border-b theme-card shrink-0"
           style={{ borderColor: "var(--border)", minHeight: "var(--header-height)" }}
@@ -178,8 +178,8 @@ export default function DashboardNavShell({
           ) : null}
         </header>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden theme-page relative min-w-0">
-          <div className="qc-content px-4 sm:px-6 lg:px-8 py-5 sm:py-6 md:py-8">
+        <main className="qc-dashboard-main flex-1 min-h-0 overflow-y-auto overflow-x-hidden theme-page relative min-w-0">
+          <div className="qc-content qc-dashboard-content">
             {children}
           </div>
         </main>

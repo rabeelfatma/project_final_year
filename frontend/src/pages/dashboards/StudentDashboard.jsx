@@ -509,7 +509,7 @@ export default function StudentDashboard() {
             </div>
           </div>
 
-          <nav className="space-y-2 flex-1">
+          <nav className="qc-sidebar-nav space-y-1" aria-label="Student navigation">
 
             <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab === 'Overview'} onClick={() => { setShellView('main'); setActiveTab('Overview'); }} />
 
@@ -536,7 +536,7 @@ export default function StudentDashboard() {
           <SettingsPage role="student" onBack={() => setShellView('main')} />
         ) : (
         <>
-        <header className="mb-6 md:mb-10 flex flex-wrap items-end justify-between gap-4">
+        <header className="qc-page-header qc-student-heading">
             <div>
               <h1 className="qc-page-title">Dashboard</h1>
               <p className="qc-page-subtitle">Track assignments, submissions, and published results.</p>
@@ -551,9 +551,9 @@ export default function StudentDashboard() {
 
         {activeTab === 'Overview' && (
 
-          <div className="space-y-8 animate-in fade-in duration-700">
+          <div className="qc-overview">
 
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
+             <div className="qc-overview__stats qc-student-stats">
 
                 <StatCard label="Assignments" value={totalCount} color="text-sky-400" icon={<FileText size={16}/>} sub="Assigned to you" />
 
@@ -569,11 +569,11 @@ export default function StudentDashboard() {
 
 
 
-             <div className="qc-card">
+             <div className="qc-card qc-overview__panel qc-student-recent min-h-0">
 
-                <h2 className="text-lg font-black uppercase italic text-white flex items-center gap-2 mb-6"><FileUp size={18} className="text-sky-500"/> Recent Assignments</h2>
+                <h2 className="text-base font-semibold flex items-center gap-2 mb-3 shrink-0"><FileUp size={18} className="accent-text"/> Recent Assignments</h2>
 
-                <div className="space-y-4">
+                <div className="qc-overview__list space-y-3">
 
                   {assignments.length > 0 ? (
 

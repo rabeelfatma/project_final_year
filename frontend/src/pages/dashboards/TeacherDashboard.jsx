@@ -814,7 +814,7 @@ export default function TeacherDashboard() {
               <span className="qc-sidebar-brand__role">Teacher</span>
             </div>
           </div>
-          <nav className="space-y-1" aria-label="Teacher navigation">
+          <nav className="qc-sidebar-nav space-y-1" aria-label="Teacher navigation">
             <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab==='dashboard'} onClick={() => openMainTab('dashboard')} />
             <DashboardNavItem icon={<PlusCircle size={18}/>} label={editingId ? 'Edit Assignment' : 'Create Assignment'} active={shellView === 'main' && activeTab==='create'} onClick={() => { setShellView('main'); setActiveTab('create'); }} />
             <DashboardNavItem icon={<BookOpen size={18}/>} label="My Assignments" active={shellView === 'main' && activeTab==='assignments'} onClick={() => openMainTab('assignments')} />
@@ -833,23 +833,23 @@ export default function TeacherDashboard() {
         ) : (
         <>
         {activeTab === 'dashboard' && (
-          <div>
+          <div className="qc-overview">
             <div className="qc-page-header">
               <div>
                 <h2 className="qc-page-title">Teacher Dashboard</h2>
                 <p className="qc-page-subtitle">Live analytics and classroom performance.</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="qc-overview__stats grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard label="Total Assignments" value={stats.totalCreated} icon={<BookOpen size={16}/>}/>
               <StatCard label="Total Students" value={stats.totalStudents} icon={<Users size={16}/>}/>
               <StatCard label="Pending Graded" value={stats.pendingCount} icon={<Clock size={16}/>}/>
               <StatCard label="Successful Graded" value={stats.completedCount} icon={<CheckCircle size={16}/>}/>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
-              <div className="lg:col-span-2 qc-card">
-                <h3 className="font-semibold mb-5 flex items-center gap-2"><TrendingUp className="accent-text" size={18}/> Activity Insights</h3>
-                <div style={{ width:'100%', height:300 }}>
+            <div className="qc-overview__charts qc-overview__charts--split">
+              <div className="lg:col-span-1 qc-card qc-overview__panel">
+                <h3 className="font-semibold mb-2 flex items-center gap-2"><TrendingUp className="accent-text" size={18}/> Activity Insights</h3>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -862,9 +862,9 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              <div className="qc-card flex flex-col items-center justify-center">
+              <div className="qc-card qc-overview__panel items-center">
                 <h3 className="font-semibold mb-1">Grading Progress</h3>
-                <p className="theme-muted text-xs mb-4">Click a slice for details</p>
+                <p className="theme-muted text-xs mb-2 shrink-0">Click a slice for details</p>
 
                 {activePieIndex !== null && (
                   <div className={`mb-4 px-6 py-3 rounded-2xl border text-center ${activePieIndex === 0 ? 'accent-soft' : 'accent-soft'}`}>
@@ -873,12 +873,12 @@ export default function TeacherDashboard() {
                   </div>
                 )}
 
-                <div style={{ width:'100%', minWidth:0, height:220, minHeight:220 }}>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={pieData}
-                        innerRadius={55} outerRadius={75} paddingAngle={8} dataKey="value"
+                        innerRadius="46%" outerRadius="68%" paddingAngle={6} dataKey="value"
                         onClick={(_, index) => setActivePieIndex(activePieIndex === index ? null : index)}
                         style={{ cursor: 'pointer' }}
                       >
@@ -889,7 +889,7 @@ export default function TeacherDashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex gap-4 mt-4">
+                <div className="flex gap-4 mt-2 shrink-0">
                   <LegendItem color="bg-slate-500"   label="Pending"/>
                   <LegendItem color="bg-emerald-500" label="Graded"/>
                 </div>
@@ -900,14 +900,14 @@ export default function TeacherDashboard() {
 
         {/* ══ CREATE TAB ══ */}
         {activeTab === 'create' && (
-          <div className="max-w-3xl">
+          <div className="qc-create-form">
             <div className="qc-page-header">
               <div>
                 <h2 className="qc-page-title">{editingId ? 'Update Assignment' : 'New Assignment'}</h2>
                 <p className="qc-page-subtitle">Define the task, deadline, and supporting materials.</p>
               </div>
             </div>
-            <form onSubmit={handleCreateOrUpdate} className="qc-card space-y-5 sm:space-y-6">
+            <form onSubmit={handleCreateOrUpdate} className="qc-card qc-create-form__body">
               <div>
                 <label className="qc-label">Assignment Title <span className="text-red-400" aria-hidden="true">*</span></label>
                 <input type="text" className="qc-input" value={form.title} onChange={e => { setForm({...form, title:e.target.value}); setFormErrors((prev) => ({ ...prev, title: undefined })); }} placeholder="e.g. System Design Analysis" maxLength={100} aria-required="true" aria-invalid={Boolean(formErrors.title)}/>
@@ -917,9 +917,9 @@ export default function TeacherDashboard() {
                 <label className="qc-label">Total Marks <span className="text-red-400" aria-hidden="true">*</span></label>
                 <input type="number" min="1" max="100" step="1" className="qc-input" value={form.points} onChange={e => { setForm({...form, points:e.target.value}); setFormErrors((prev) => ({ ...prev, points: undefined })); }} placeholder="e.g. 30" aria-required="true" aria-invalid={Boolean(formErrors.points)}/>
                 {formErrors.points ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.points}</p> : null}
-                <p className="text-[9px] text-slate-500 mt-2">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
+                <p className="qc-create-form__hint">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="qc-label">Start date and time <span className="text-red-400" aria-hidden="true">*</span></label>
                   <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => { setForm({...form, startDate:e.target.value}); setFormErrors((prev) => ({ ...prev, startDate: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.startDate)}/>
@@ -950,12 +950,12 @@ export default function TeacherDashboard() {
               </div>
               <div>
                 <label className="qc-label">Description <span className="text-red-400" aria-hidden="true">*</span></label>
-                <textarea className="qc-input !h-36 resize-none" value={form.description} onChange={e => { setForm({...form, description:e.target.value}); setFormErrors((prev) => ({ ...prev, description: undefined })); }} placeholder="Instructions..." maxLength={2000} aria-required="true" aria-invalid={Boolean(formErrors.description)}/>
+                <textarea className="qc-input qc-create-form__description" value={form.description} onChange={e => { setForm({...form, description:e.target.value}); setFormErrors((prev) => ({ ...prev, description: undefined })); }} placeholder="Instructions..." maxLength={2000} aria-required="true" aria-invalid={Boolean(formErrors.description)}/>
                 {formErrors.description ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.description}</p> : null}
               </div>
               <div>
                 <label className="qc-label">Reference File <span className="text-red-400" aria-hidden="true">*</span></label>
-                <div className={`border-2 border-dashed rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all ${formErrors.file ? 'border-red-500/60' : 'border-slate-800'}`} onClick={() => fileInputRef.current.click()} role="button" tabIndex={0} aria-invalid={Boolean(formErrors.file)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}>
+                <div className={`qc-create-form__file ${formErrors.file ? 'is-invalid' : ''}`} onClick={() => fileInputRef.current.click()} role="button" tabIndex={0} aria-invalid={Boolean(formErrors.file)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}>
                   <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
                   {form.file ? (
                     <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
@@ -963,8 +963,8 @@ export default function TeacherDashboard() {
                       <X className="text-slate-500 hover:text-white" onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
                     </div>
                   ) : form.existingFileName ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <CheckCircle size={28} className="accent-text"/>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <CheckCircle size={18} className="accent-text"/>
                       <p className="font-bold text-sm">Current file: {form.existingFileName}</p>
                       <div className="flex gap-3 text-[10px] font-black uppercase">
                         <button type="button" className="accent-text" onClick={async (e) => { e.stopPropagation(); try { await openProtectedPreview(teacherService.previewAssignment(form.existingFileId), form.existingFileName); } catch (err) { alert(err.message); } }}>Preview current</button>
@@ -972,8 +972,8 @@ export default function TeacherDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center gap-2">
-                      <FileUp size={32} className="text-slate-600"/>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <FileUp size={18} className="text-slate-600"/>
                       <p className="text-white font-bold text-sm">Upload Reference File</p>
                       <p className="text-[10px] theme-muted">Required for new assignments</p>
                     </div>
@@ -982,10 +982,10 @@ export default function TeacherDashboard() {
                 {formErrors.file ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.file}</p> : null}
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
-                <button type="button" className="qc-btn qc-btn-secondary qc-btn-block !py-3.5" onClick={handleCancelCreate} disabled={savingAssignment}>
+                <button type="button" className="qc-btn qc-btn-secondary qc-btn-block" onClick={handleCancelCreate} disabled={savingAssignment}>
                   Cancel
                 </button>
-                <button type="submit" className="qc-btn qc-btn-primary qc-btn-block !py-3.5" disabled={savingAssignment} aria-busy={savingAssignment}>
+                <button type="submit" className="qc-btn qc-btn-primary qc-btn-block" disabled={savingAssignment} aria-busy={savingAssignment}>
                   {savingAssignment ? (editingId ? 'Updating…' : 'Uploading…') : (editingId ? 'Update Assignment' : 'Upload Assignment')}
                 </button>
               </div>
@@ -1184,8 +1184,8 @@ export default function TeacherDashboard() {
 
         {/* ══ SUBMISSIONS TAB ══ */}
         {activeTab === 'submissions' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col gap-6 mb-8">
+          <div className="qc-fill-page">
+            <div className="flex flex-col gap-4 shrink-0">
               <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4">
                 <div>
                   <h1 className="qc-page-title">Submissions</h1>
@@ -1251,8 +1251,7 @@ export default function TeacherDashboard() {
             </div>
 
             {/* Submissions Table */}
-            <div className="qc-table-wrap">
-              <div className="max-h-[600px] overflow-auto">
+            <div className="qc-table-wrap qc-fill-scroll">
                 <table className="w-full min-w-[900px] text-left border-collapse">
                   <thead className="theme-page sticky top-0 z-10 text-[10px] font-black uppercase text-slate-500 tracking-widest border-b border-slate-800">
                     <tr>
@@ -1376,7 +1375,6 @@ export default function TeacherDashboard() {
                     ))}
                   </tbody>
                 </table>
-              </div>
               {submissions.length === 0 && <NoDataMessage icon={<ClipboardCheck size={40}/>} message="No student submissions yet."/>}
             </div>
           </div>

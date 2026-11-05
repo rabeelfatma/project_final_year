@@ -246,7 +246,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <nav className="space-y-1" aria-label="Admin navigation">
+          <nav className="qc-sidebar-nav space-y-1" aria-label="Admin navigation">
             <DashboardNavItem icon={<Layout size={18}/>} label="Dashboard" active={shellView === 'main' && activeTab === 'Dashboard'} onClick={() => openMainTab('Dashboard')} />
             <DashboardNavItem icon={<Users size={18}/>} label="Students" active={shellView === 'main' && activeTab === 'Students'} onClick={() => openMainTab('Students')} />
             <DashboardNavItem icon={<GraduationCap size={18}/>} label="Teachers" active={shellView === 'main' && activeTab === 'Teachers'} onClick={() => openMainTab('Teachers')} />
@@ -280,8 +280,8 @@ export default function AdminDashboard() {
         {loading ? (
           <div className="h-56 flex items-center justify-center text-sm font-semibold accent-text">Loading system data…</div>
         ) : activeTab === 'Dashboard' ? (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="qc-overview">
+            <div className="qc-overview__stats grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <StatBox label="Total Users" value={systemStats.totalUsers} icon={<UsersRound size={18}/>} />
               <StatBox label="Teachers" value={systemStats.totalTeachers} icon={<GraduationCap size={18}/>} />
               <StatBox label="Students" value={systemStats.totalStudents} icon={<UserRound size={18}/>} />
@@ -306,11 +306,11 @@ export default function AdminDashboard() {
               </button>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-              <div className="qc-card">
+            <div className="qc-overview__charts qc-overview__charts--thirds">
+              <div className="qc-card qc-overview__panel">
                 <h3 className="qc-section-title">Total Users</h3>
-                <p className="text-xs theme-muted mb-4">User growth over the latest six months</p>
-                <div style={{ width: '100%', height: 280 }}>
+                <p className="text-xs theme-muted mb-2">User growth over the latest six months</p>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={systemStats.chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -323,10 +323,10 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="qc-card">
+              <div className="qc-card qc-overview__panel">
                 <h3 className="qc-section-title">Total Assignments</h3>
-                <p className="text-xs theme-muted mb-4">Assignments created over the latest six months</p>
-                <div style={{ width: '100%', height: 280 }}>
+                <p className="text-xs theme-muted mb-2">Assignments created over the latest six months</p>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={systemStats.assignmentBarData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -339,12 +339,12 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="qc-card lg:col-span-2">
-                <h3 className="qc-section-title mb-4">Department Distribution</h3>
-                <div style={{ width: '100%', height: 280 }}>
+              <div className="qc-card qc-overview__panel">
+                <h3 className="qc-section-title mb-2">Department Distribution</h3>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={systemStats.pieData} innerRadius={70} outerRadius={100} dataKey="value" paddingAngle={8}>
+                      <Pie data={systemStats.pieData} innerRadius="42%" outerRadius="66%" dataKey="value" paddingAngle={6}>
                         {systemStats.pieData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
                       </Pie>
                       <Tooltip />
