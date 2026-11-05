@@ -48,6 +48,7 @@ import SearchField from '../../components/ui/SearchField';
 import { sortAssignmentsByDueDate } from '../../utils/assignmentSort';
 
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
+import FileLink from '../../components/files/FileLink';
 
 
 
@@ -994,12 +995,23 @@ export default function StudentDashboard() {
                     Not open yet.
                   </p>
                 ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.originalFileName || 'assignment'}><Eye size={16}/> Open Instructions</button>
-
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
-
+                <div className="flex flex-col gap-2">
+                  <FileLink
+                    fileName={selectedAsgn.originalFileName || 'assignment'}
+                    subtitle="Reference"
+                    onOpen={async () => {
+                      try {
+                        await openProtectedPreview(
+                          studentService.previewAssignment(selectedAsgn._id),
+                          selectedAsgn.originalFileName || 'assignment',
+                          { downloadUrl: studentService.downloadAssignment(selectedAsgn._id) }
+                        );
+                      } catch (error) {
+                        alert(error.message);
+                      }
+                    }}
+                  />
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="qc-btn qc-btn-secondary"><Download size={16}/> Download {selectedAsgn.originalFileName || 'instructions'}</button>
                 </div>
                 )}
 
@@ -1015,12 +1027,23 @@ export default function StudentDashboard() {
                   </p>
                 )}
 
-                {selectedAsgn.submissionId && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || 'my-submission'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.submissionOriginalFileName || 'my-submission'}><Eye size={16}/> Open my file</button>
-
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2" title={selectedAsgn.submissionOriginalFileName || 'my-submission'}><Download size={16}/> Download my file</button>
-
+                {selectedAsgn.submissionId && <div className="flex flex-col gap-2 mt-3">
+                  <FileLink
+                    fileName={selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || 'my-submission'}
+                    subtitle="My submission"
+                    onOpen={async () => {
+                      try {
+                        await openProtectedPreview(
+                          studentService.previewSubmission(selectedAsgn.submissionId),
+                          selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || 'my-submission',
+                          { downloadUrl: studentService.downloadSubmission(selectedAsgn.submissionId) }
+                        );
+                      } catch (error) {
+                        alert(error.message);
+                      }
+                    }}
+                  />
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="qc-btn qc-btn-secondary"><Download size={16}/> Download my file</button>
                 </div>}
 
              </div>
@@ -1159,7 +1182,7 @@ function AssignmentRow({
 
   return (
 
-    <div className="qc-assignment-card flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
+    <div className="qc-assignment-card qc-card">
 
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
 
@@ -1181,7 +1204,7 @@ function AssignmentRow({
 
         <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
 
-          <button type="button" onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all" aria-label="View assignment"><Eye size={16}/></button>
+          <button type="button" onClick={() => onSelect(asgn)} className="qc-icon-btn" title="View assignment" aria-label="View assignment"><Eye size={16} aria-hidden="true"/></button>
 
           {canUpload ? (
             <label className="px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all qc-btn-primary">

@@ -190,6 +190,18 @@ const teacherService = {
     const response = await api.post('/teacher/assignments/bulk-archive', { scope: 'all' });
     return response.data;
   },
+
+  /** Unarchive selected owned assignments (status → active; dates unchanged). */
+  unarchiveAssignmentsBulk: async (ids) => {
+    const response = await api.post('/teacher/assignments/bulk-unarchive', { ids });
+    return response.data;
+  },
+
+  /** Unarchive every archived assignment owned by the logged-in teacher. */
+  unarchiveAllAssignments: async () => {
+    const response = await api.post('/teacher/assignments/bulk-unarchive', { scope: 'all' });
+    return response.data;
+  },
   resetSubmissionGradesBulk: async (ids) => {
     if (!Array.isArray(ids) || !ids.length) throw new Error('Select at least one submission');
     const response = await api.post('/teacher/submissions/bulk-reset-grades', { ids });

@@ -9,6 +9,7 @@ import { MoreVertical } from "lucide-react";
  */
 export default function OverflowMenu({
   label = "More actions",
+  buttonLabel = null,
   align = "right",
   items = [],
   disabled = false,
@@ -80,7 +81,7 @@ export default function OverflowMenu({
     <div className={`qc-overflow-menu ${className}`.trim()} ref={rootRef}>
       <button
         type="button"
-        className="qc-overflow-trigger"
+        className={`qc-overflow-trigger${buttonLabel ? " qc-overflow-trigger--labelled" : ""}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
@@ -92,6 +93,7 @@ export default function OverflowMenu({
           setOpen((value) => !value);
         }}
       >
+        {buttonLabel ? <span className="qc-overflow-trigger__text">{buttonLabel}</span> : null}
         <MoreVertical size={16} aria-hidden="true" />
       </button>
       {open &&

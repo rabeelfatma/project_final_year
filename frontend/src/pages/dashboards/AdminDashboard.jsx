@@ -443,9 +443,9 @@ export default function AdminDashboard() {
             <label className="flex items-start gap-2 text-sm mb-5 cursor-pointer">
               <input
                 type="checkbox"
+                className="qc-check mt-1"
                 checked={rejectPermanent}
                 onChange={(e) => setRejectPermanent(e.target.checked)}
-                className="mt-1"
               />
               <span>
                 Permanently reject — disable reapplication for this account

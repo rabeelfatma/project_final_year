@@ -33,6 +33,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define,
+    assetsInclude: ['**/*.wasm'],
+    optimizeDeps: {
+      exclude: ['pptx-wasm'],
+    },
     server: {
       host: lanEnabled ? true : 'localhost',
       port: 5173,

@@ -86,11 +86,14 @@ function NotificationsPanel({
           style={{ borderColor: "var(--border)" }}
         >
           <div>
-            <b className="text-sm">Notifications</b>
+            <p className="text-sm font-bold m-0">Notifications</p>
+            <p className="theme-muted text-[11px] m-0 mt-0.5">
+              Account updates and assignment alerts
+            </p>
           </div>
           <button
             type="button"
-            className="icon-btn !p-1.5"
+            className="qc-icon-btn"
             onClick={onClose}
             title="Close Notifications"
             aria-label="Close Notifications"
@@ -193,10 +196,10 @@ function NotificationsPanel({
                         "System"}
                     </span>
                   </div>
-                  <p className="theme-muted text-[11px] mt-1 leading-relaxed">
+                  <p className="theme-muted text-[11px] mt-1 leading-snug">
                     {item.message}
                   </p>
-                  <p className="theme-muted text-[9px] mt-2">
+                  <p className="qc-notification-card__time">
                     {item.createdAt
                       ? new Date(item.createdAt).toLocaleString()
                       : ""}

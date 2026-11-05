@@ -12,9 +12,14 @@ export function filterAssignmentsByShelf(assignments, shelf) {
   return rows.filter((asgn) => asgn?.status !== "archived");
 }
 
-/** After a successful restore, always show the Active shelf so the row stays visible. */
-export function shelfAfterRestore() {
+/** After a successful unarchive/restore, always show the Active shelf so the row stays visible. */
+export function shelfAfterUnarchive() {
   return "active";
+}
+
+/** @deprecated Prefer shelfAfterUnarchive — kept for existing tests. */
+export function shelfAfterRestore() {
+  return shelfAfterUnarchive();
 }
 
 /** After a successful archive, show the Archived shelf so the row stays visible. */

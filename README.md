@@ -73,6 +73,8 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Full Admin → Teacher → Student academic demo walkthrough.
 - Confirm live Resend delivery using operator-approved unused mailbox after reviewing sanitized `TRANSACTIONAL_EMAIL_FAILED` logs (no credential changes in-repo).
 - Visual confirm Admin Registration Approved/Rejected tabs at 1366×768 after UI layout correction.
+- QC-77 LMS viewers: **CODE COMPLETE** for visual PPTX (`pptx-wasm`), XLSX (`exceljs`), DOCX (`mammoth`), PDF/code/image/audio/structured/archive matrix — browser live verification of real sample files still pending (`NOT TESTED` / partial).
+- Teacher assignment Archive/Unarchive (Active/Archived shelves, bulk, ConfirmDialog): **CODE COMPLETE** + isolated tests; Teacher click-through **LIVE VERIFIED** pending.
 
 ### BLOCKED
 - Preview Mongo isolation vs Production DB `quickcheck_rabeel_demo` — **UNVERIFIED**.
@@ -80,9 +82,10 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Production `PUBLIC_APP_URL` exact value vs FE origin — row present; reveal/`LIVE VERIFIED` pending operator Vercel verification (do not change env).
 - Changing Production `PASSWORD_RESET_FROM_EMAIL` (historically duke-associated) — needs separate approval.
 - Orphan Vercel project `frontend` CI noise — do not modify that project in-repo.
+- True visual preview for legacy `.ppt` / `.doc` / `.xls` and OpenDocument `.odp` / `.ods` — no safe in-browser engine; Download Original only.
 
 ### NEXT
-1. With local backend running, trigger one mocked-config or staging resend and read sanitized `TRANSACTIONAL_EMAIL_FAILED` / success logs to confirm whether Resend rejects the From domain or API auth — without changing credentials.
+1. As Teacher, archive one Active assignment, refresh, confirm it only appears under Archived, then Unarchive and confirm students still cannot submit if the due date has passed.
 
 ### FUTURE
 - Replace non-desired Resend From domain after a verified sender is ready.

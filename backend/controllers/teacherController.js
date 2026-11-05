@@ -603,7 +603,8 @@ exports.updateAssignmentStatus = async (req, res) => {
       });
     }
 
-    // Ownership enforced in the filter. Archive/restore never deletes files or submissions.
+    // Ownership enforced in the filter. Archive/unarchive only flips `status`.
+    // Never mutate startDate, deadline, points, files, or submission/grade data.
     const updated = await Assignment.findOneAndUpdate(
 
       { _id: req.params.id, teacher: req.user._id },
@@ -624,6 +625,7 @@ exports.updateAssignmentStatus = async (req, res) => {
 
 
 
+    // Idempotent: repeating archive/unarchive returns the same owned record.
     res.json(updated);
 
   } catch (error) {
@@ -751,7 +753,116 @@ exports.archiveAssignmentsBulk = async (req, res) => {
   }
 };
 
+/**
+ * Unarchive many assignments owned by the caller.
+ * - body.scope === "all": unarchive every archived assignment for this teacher
+ * - body.ids: unarchive only those owned archived IDs
+ * Restores status to "active" only — never changes startDate/deadline or academic records.
+ */
+exports.unarchiveAssignmentsBulk = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const scopeAll = String(req.body?.scope || "").toLowerCase() === "all";
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : null;
 
+    if (!scopeAll && (!rawIds || !rawIds.length)) {
+      return res.status(400).json({
+        message: "Select at least one assignment, or use scope=all.",
+      });
+    }
+
+    if (scopeAll) {
+      const owned = await Assignment.find({
+        teacher: teacherId,
+        status: "archived",
+      }).select("_id status startDate deadline");
+
+      if (!owned.length) {
+        return res.json({
+          success: true,
+          unarchived: 0,
+          unarchivedIds: [],
+          failed: [],
+          skipped: [],
+          requested: 0,
+        });
+      }
+
+      const ids = owned.map((row) => row._id);
+      const result = await Assignment.updateMany(
+        { _id: { $in: ids }, teacher: teacherId, status: "archived" },
+        { $set: { status: "active" } }
+      );
+
+      return res.json({
+        success: true,
+        unarchived: result.modifiedCount || 0,
+        unarchivedIds: ids.map(String),
+        failed: [],
+        skipped: [],
+        requested: ids.length,
+      });
+    }
+
+    const requestedIds = [
+      ...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    ].slice(0, 200);
+
+    const owned = await Assignment.find({
+      _id: { $in: requestedIds },
+      teacher: teacherId,
+    }).select("_id status startDate deadline");
+
+    const ownedById = new Map(owned.map((row) => [String(row._id), row]));
+    const failed = [];
+    const skipped = [];
+    const toUnarchive = [];
+
+    for (const id of requestedIds) {
+      const row = ownedById.get(id);
+      if (!row) {
+        failed.push({ id, reason: "not found or not owned" });
+        continue;
+      }
+      if (row.status !== "archived") {
+        skipped.push({ id, reason: "not archived" });
+        continue;
+      }
+      toUnarchive.push(row._id);
+    }
+
+    let modified = 0;
+    if (toUnarchive.length) {
+      const result = await Assignment.updateMany(
+        {
+          _id: { $in: toUnarchive },
+          teacher: teacherId,
+          status: "archived",
+        },
+        { $set: { status: "active" } }
+      );
+      modified = result.modifiedCount || 0;
+    }
+
+    return res.json({
+      success: failed.length === 0,
+      unarchived: modified,
+      unarchivedIds: toUnarchive.map(String),
+      failed,
+      skipped,
+      requested: requestedIds.length,
+      message:
+        failed.length > 0
+          ? `Unarchived ${modified} of ${requestedIds.length}. ${failed.length} could not be unarchived.`
+          : undefined,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to unarchive assignments",
+      error: error.message,
+    });
+  }
+};
 
 exports.getRecentSubmissions = async (req, res) => {
 

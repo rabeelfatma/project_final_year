@@ -126,30 +126,34 @@ describe("Phase 1 assignment archive / restore", () => {
     assert.match(src, /enum:\s*\[\s*"active"\s*,\s*"deactive"\s*,\s*"archived"\s*\]/);
   });
 
-  it("Teacher dashboard: menu-only Archive/Restore, Archive All/Selected, Delete unchanged", () => {
+  it("Teacher dashboard: menu-only Archive/Unarchive, Archive All/Selected, Delete unchanged", () => {
     const src = fs.readFileSync(teacherDashPath, "utf8");
     assert.match(src, /assignmentShelf/);
     assert.match(src, /handleArchiveAssignment/);
-    assert.match(src, /handleRestoreAssignment/);
+    assert.match(src, /handleUnarchiveAssignment/);
     assert.match(src, /handleArchiveAllAssignments/);
     assert.match(src, /handleArchiveSelectedAssignments/);
-    assert.match(src, /label:\s*['"]Archive Assignment['"]/);
-    assert.match(src, /label:\s*['"]Restore Assignment['"]/);
-    assert.match(src, /label:\s*['"]Delete Assignment['"]/);
+    assert.match(src, /handleUnarchiveSelectedAssignments/);
+    assert.match(src, /handleUnarchiveAllAssignments/);
+    assert.match(src, /label:\s*['"]Archive['"]/);
+    assert.match(src, /label:\s*['"]Unarchive['"]/);
+    assert.match(src, /label:\s*['"]Delete['"]/);
     assert.match(src, /Archive All/);
     assert.match(src, /Archive Selected/);
+    assert.match(src, /Unarchive Selected/);
     assert.match(src, /handleDeleteAssignment/);
-    assert.match(src, /shelfAfterRestore/);
+    assert.match(src, /shelfAfterUnarchive/);
     assert.match(src, /shelfAfterArchive/);
+    assert.match(src, /ConfirmDialog/);
     assert.match(src, /fetchAllData\(\{\s*silent:\s*true\s*\}\)/);
-    // No separate visible Archive/Restore card buttons (menu-only).
+    // No separate visible Archive/Unarchive card buttons (menu-only).
     assert.doesNotMatch(
       src,
       /onClick=\{\(\) => handleArchiveAssignment[\s\S]{0,120}Archive\s*<\/button>/
     );
     assert.doesNotMatch(
       src,
-      /onClick=\{\(\) => handleRestoreAssignment[\s\S]{0,120}Restore\s*<\/button>/
+      /onClick=\{\(\) => handleUnarchiveAssignment[\s\S]{0,120}Unarchive\s*<\/button>/
     );
     // Overdue must not auto-archive.
     assert.match(src, /Never auto-archive|never auto-archive/i);
@@ -986,6 +990,7 @@ describe("bulk archive ownership + student delete policy", () => {
         for (const row of rows) {
           if (q.teacher && String(row.teacher) !== String(q.teacher)) continue;
           if (q.status?.$ne && row.status === q.status.$ne) continue;
+          if (typeof q.status === "string" && row.status !== q.status) continue;
           if (q._id?.$in && !q._id.$in.map(String).includes(String(row._id))) continue;
           Object.assign(row, patch);
           modified += 1;
@@ -1279,10 +1284,87 @@ describe("bulk archive ownership + student delete policy", () => {
   it("teacher permanent delete route remains available and distinct from archive", () => {
     const routes = fs.readFileSync(teacherRoutesPath, "utf8");
     assert.match(routes, /bulk-archive/);
+    assert.match(routes, /bulk-unarchive/);
     assert.match(routes, /bulk-delete/);
     assert.match(routes, /deleteAssignment/);
     const dash = fs.readFileSync(teacherDashPath, "utf8");
     assert.match(dash, /handleDeleteAssignment/);
-    assert.match(dash, /Delete Assignment/);
+    assert.match(dash, /handleUnarchiveAssignment/);
+    assert.match(dash, /Unarchive Selected|Unarchive/);
+  });
+
+  it("bulk unarchive restores owned archived rows without changing dates or deleting files", async () => {
+    const start = new Date("2026-01-10T09:00:00.000Z");
+    const due = new Date("2026-01-20T09:00:00.000Z");
+    const rows = [
+      {
+        _id: "arch-1",
+        teacher: teacherId,
+        status: "archived",
+        file: "uploads/assignments/a.pdf",
+        originalFileName: "a.pdf",
+        startDate: start,
+        deadline: due,
+        title: "Archived Lab",
+        points: 20,
+      },
+      {
+        _id: "active-1",
+        teacher: teacherId,
+        status: "active",
+        file: "uploads/assignments/b.pdf",
+        originalFileName: "b.pdf",
+        startDate: start,
+        deadline: due,
+      },
+      {
+        _id: "theirs-arch",
+        teacher: otherTeacherId,
+        status: "archived",
+        file: "uploads/assignments/c.pdf",
+        originalFileName: "c.pdf",
+        startDate: start,
+        deadline: due,
+      },
+    ];
+    const removeCalls = [];
+    const Assignment = buildAssignmentStore(rows);
+    const router = loadTeacherWithAssignments(
+      { _id: teacherId, role: "teacher" },
+      Assignment,
+      removeCalls
+    );
+    await withServer(
+      (app) => app.use("/api/teacher", router),
+      async (port) => {
+        const r = await request(port, "POST", "/api/teacher/assignments/bulk-unarchive", {
+          body: { ids: ["arch-1", "active-1", "theirs-arch", "missing"] },
+        });
+        assert.equal(r.status, 200);
+        assert.equal(r.json.unarchived, 1);
+        assert.deepEqual(r.json.unarchivedIds, ["arch-1"]);
+        assert.ok(r.json.skipped.some((s) => s.id === "active-1"));
+        assert.ok(r.json.failed.some((f) => f.id === "theirs-arch"));
+        assert.ok(r.json.failed.some((f) => f.id === "missing"));
+      }
+    );
+    const restored = rows.find((r) => r._id === "arch-1");
+    assert.equal(restored.status, "active");
+    assert.equal(new Date(restored.startDate).getTime(), start.getTime());
+    assert.equal(new Date(restored.deadline).getTime(), due.getTime());
+    assert.equal(rows.find((r) => r._id === "theirs-arch").status, "archived");
+    assert.equal(removeCalls.length, 0);
+  });
+
+  it("UI uses ConfirmDialog for archive/unarchive and has Active/Archived shelves", () => {
+    const dash = fs.readFileSync(teacherDashPath, "utf8");
+    assert.match(dash, /ConfirmDialog/);
+    assert.match(dash, /handleArchiveAssignment/);
+    assert.match(dash, /handleUnarchiveAssignment/);
+    assert.match(dash, /handleUnarchiveSelectedAssignments/);
+    assert.match(dash, /assignmentShelf === 'archived'/);
+    assert.match(dash, /label: 'Unarchive'/);
+    assert.match(dash, /label: 'Archive'/);
+    assert.doesNotMatch(dash, /window\.confirm/);
   });
 });
