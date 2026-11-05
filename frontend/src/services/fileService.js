@@ -1,11 +1,11 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import FilePreviewModal from "../components/files/FilePreviewModal";
+import { getAuthHeader } from "../utils/authToken";
 
 /** Authenticated binary fetch for in-browser visual Office viewers. */
 export async function fetchProtectedArrayBuffer(url) {
-  const token = localStorage.getItem("token");
-  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const response = await fetch(url, { headers: { ...getAuthHeader() } });
   if (!response.ok) {
     let message = "File load failed.";
     try { const data = await response.json(); message = data.message || message; } catch (_) {}
@@ -15,8 +15,7 @@ export async function fetchProtectedArrayBuffer(url) {
 }
 
 export async function downloadProtectedFile(url, fallbackName = "download") {
-  const token = localStorage.getItem("token");
-  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const response = await fetch(url, { headers: { ...getAuthHeader() } });
   if (!response.ok) {
     let message = "File download failed.";
     try { const data = await response.json(); message = data.message || message; } catch (_) {}
@@ -24,8 +23,14 @@ export async function downloadProtectedFile(url, fallbackName = "download") {
   }
   const blob = await response.blob();
   const disposition = response.headers.get("content-disposition") || "";
-  const match = disposition.match(/filename="([^"]+)"/i);
-  const name = match?.[1] || fallbackName;
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const plainMatch = disposition.match(/filename="([^"]+)"/i) || disposition.match(/filename=([^;]+)/i);
+  let name = fallbackName;
+  if (utfMatch?.[1]) {
+    try { name = decodeURIComponent(utfMatch[1].trim()); } catch { name = utfMatch[1].trim(); }
+  } else if (plainMatch?.[1]) {
+    name = plainMatch[1].trim().replace(/^["']|["']$/g, "");
+  }
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl; a.download = name;

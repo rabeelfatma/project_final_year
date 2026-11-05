@@ -6,6 +6,7 @@ import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
 import { emailValidationMessage } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
+import { setAuthToken } from "../../utils/authToken";
 
 const ROLES = [
   {
@@ -133,7 +134,12 @@ export default function Login() {
         return setMsg("Use the Administration Portal for administrator access.");
       }
 
-      localStorage.setItem("token", data.token);
+      try {
+        setAuthToken(data.token);
+      } catch {
+        localStorage.clear();
+        return setMsg("Login succeeded but the session token was invalid. Please try again.");
+      }
       localStorage.setItem("role", authenticatedRole);
       localStorage.setItem("userName", data.name || "");
       localStorage.setItem("userRegNo", data.regNo || "");

@@ -113,7 +113,11 @@ router.get("/assignments", protect, async (req, res) => {
             : null,
           resultStatus: canShowResult ? submission.status : "PENDING",
           submissionId: submission?._id || null,
-          originalFileName: submission?.originalFileName || "",
+          // Keep assignment question filename distinct from the student's uploaded file name.
+          assignmentOriginalFileName: assignment.originalFileName || "",
+          originalFileName:
+            assignment.originalFileName || submission?.originalFileName || "",
+          submissionOriginalFileName: submission?.originalFileName || "",
           isSubmitted: Boolean(submission),
         };
       })

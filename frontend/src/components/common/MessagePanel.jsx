@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import { getApiOrigin } from "../../utils/apiBase";
+import { getAuthHeader, getAuthToken } from "../../utils/authToken";
 import OverflowMenu from "../ui/OverflowMenu";
 import SearchField from "../ui/SearchField";
 
@@ -54,8 +55,9 @@ function VoiceMessage({ id }) {
     let cancelled = false;
     const load = async () => {
       try {
+        if (!getAuthToken()) throw new Error("Not authenticated");
         const response = await fetch(`${API_ORIGIN}/api/files/message/${id}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+          headers: { ...getAuthHeader() },
         });
         if (!response.ok) throw new Error("Unable to load voice message.");
         const buffer = await response.arrayBuffer();

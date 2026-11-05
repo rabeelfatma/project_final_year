@@ -6,6 +6,7 @@ import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
 import { emailValidationMessage } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
+import { getAuthToken, setAuthToken } from "../../utils/authToken";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function AdminLogin() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
     const role = String(localStorage.getItem("role") || "").toLowerCase();
     if (token && role === "admin") {
       navigate("/dashboard/admin", { replace: true });
@@ -70,7 +71,12 @@ export default function AdminLogin() {
         return setMsg("Admin access denied for this account.");
       }
 
-      localStorage.setItem("token", data.token);
+      try {
+        setAuthToken(data.token);
+      } catch {
+        localStorage.clear();
+        return setMsg("Login succeeded but the session token was invalid. Please try again.");
+      }
       localStorage.setItem("role", "admin");
       localStorage.setItem("userName", data.name || "");
       localStorage.setItem("userRegNo", data.regNo || "");

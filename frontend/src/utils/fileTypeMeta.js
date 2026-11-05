@@ -116,6 +116,15 @@ export function getFileExtension(fileName = "") {
   return base.slice(dot + 1).toLowerCase();
 }
 
+/** Visible label without extension (e.g. report.pdf → report). Keeps full `name` for downloads. */
+export function displayNameWithoutExtension(fileName = "file") {
+  const name = String(fileName).split(/[\\/]/).pop() || "file";
+  const ext = getFileExtension(name);
+  if (!ext) return name;
+  const stem = name.slice(0, -(ext.length + 1));
+  return stem || name;
+}
+
 export function describeFile(fileName = "file") {
   const name = String(fileName).split(/[\\/]/).pop() || "file";
   const ext = getFileExtension(name);
@@ -127,6 +136,7 @@ export function describeFile(fileName = "file") {
   };
   return {
     name,
+    displayName: displayNameWithoutExtension(name),
     ext,
     label: meta.label,
     kind: meta.kind,

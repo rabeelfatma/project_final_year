@@ -11,6 +11,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { describeFile } from "../../utils/fileTypeMeta";
+import { getAuthHeader } from "../../utils/authToken";
 import {
   downloadProtectedFile,
   fetchProtectedArrayBuffer,
@@ -110,9 +111,8 @@ export default function FilePreviewModal({
 
         if (LEGACY_OFFICE.has(ext)) {
           // Honest fallbacks: attempt backend HTML preview when available.
-          const token = localStorage.getItem("token");
           const response = await fetch(previewUrl, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            headers: { ...getAuthHeader() },
           });
           const type = (response.headers.get("content-type") || "").toLowerCase();
           if (response.ok && type.includes("text/html")) {
@@ -143,9 +143,8 @@ export default function FilePreviewModal({
           return;
         }
 
-        const token = localStorage.getItem("token");
         const response = await fetch(previewUrl, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { ...getAuthHeader() },
         });
         const type = (response.headers.get("content-type") || "").toLowerCase();
 
