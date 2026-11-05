@@ -75,6 +75,9 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Visual confirm Admin Registration Approved/Rejected tabs at 1366×768 after UI layout correction.
 - QC-77 LMS viewers: **CODE COMPLETE** for visual PPTX (`pptx-wasm`), XLSX (`exceljs`), DOCX (`mammoth`), PDF/code/image/audio/structured/archive matrix — browser live verification of real sample files still pending (`NOT TESTED` / partial).
 - Teacher assignment Archive/Unarchive (Active/Archived shelves, bulk, ConfirmDialog): **CODE COMPLETE** + isolated tests; Teacher click-through **LIVE VERIFIED** pending.
+- Unarchive Rule 2 (block when Active title already exists for same Teacher): **CODE COMPLETE** + **MOCK TESTED** (isolated suite); **ISOLATED INTEGRATION VERIFIED** via mocked HTTP API; live Teacher rename→retry **NOT TESTED** / **LIVE VERIFIED** pending. No global title unique index added.
+- LMS dashboard redesign (selection mode + AI question-file dialog, Review Publish buttons, Student My Assignments, directory avatar): **CODE COMPLETE** + isolated UI/auth tests; live click-through **NOT TESTED** / **LIVE VERIFIED** pending.
+- JWT malformed console spam: **CODE COMPLETE** (token normalize + Bearer extract before verify + 401 session clear); live three-role login **NOT TESTED**.
 
 ### BLOCKED
 - Preview Mongo isolation vs Production DB `quickcheck_rabeel_demo` — **UNVERIFIED**.
@@ -85,7 +88,7 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - True visual preview for legacy `.ppt` / `.doc` / `.xls` and OpenDocument `.odp` / `.ods` — no safe in-browser engine; Download Original only.
 
 ### NEXT
-1. As Teacher, archive one Active assignment, refresh, confirm it only appears under Archived, then Unarchive and confirm students still cannot submit if the due date has passed.
+1. Log in as Teacher, Student, and Admin; confirm dashboards load without repeated “jwt malformed” backend logs, then exercise Submissions double-click selection → AI Evaluate Yes/No and the Review modal Publish actions.
 
 ### FUTURE
 - Replace non-desired Resend From domain after a verified sender is ready.

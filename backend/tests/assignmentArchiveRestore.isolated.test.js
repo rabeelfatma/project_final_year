@@ -30,6 +30,7 @@ const notifyPath = path.resolve(
 );
 const uploadsPathUtil = path.resolve(__dirname, "../utils/uploadsPath.js");
 const storedFilesPath = path.resolve(__dirname, "../utils/storedFiles.js");
+const duplicateUtilPath = path.resolve(__dirname, "../utils/assignmentDuplicate.js");
 const assignmentSrcPath = path.resolve(__dirname, "../models/Assignment.js");
 const teacherDashPath = path.resolve(
   __dirname,
@@ -252,6 +253,7 @@ describe("Phase 1 assignment archive / restore", () => {
         notifyPath,
         uploadsPathUtil,
         storedFilesPath,
+        duplicateUtilPath,
       ].forEach((p) => delete require.cache[p]);
     };
 
@@ -259,7 +261,16 @@ describe("Phase 1 assignment archive / restore", () => {
       find: (q = {}) => {
         let rows = assignments.slice();
         if (q.teacher) rows = rows.filter((a) => String(a.teacher) === String(q.teacher));
-        if (q.status) rows = rows.filter((a) => a.status === q.status);
+        if (typeof q.status === "string") rows = rows.filter((a) => a.status === q.status);
+        if (q.status?.$ne) rows = rows.filter((a) => a.status !== q.status.$ne);
+        if (q._id != null && typeof q._id !== "object") {
+          rows = rows.filter((a) => String(a._id) === String(q._id));
+        }
+        if (q._id?.$ne) rows = rows.filter((a) => String(a._id) !== String(q._id.$ne));
+        if (q._id?.$in) {
+          const set = new Set(q._id.$in.map(String));
+          rows = rows.filter((a) => set.has(String(a._id)));
+        }
         const api = {
           select() { return api; },
           sort() { return api; },
@@ -274,11 +285,23 @@ describe("Phase 1 assignment archive / restore", () => {
         const row = assignments.find((a) => {
           if (q._id && String(a._id) !== String(q._id)) return false;
           if (q.teacher && String(a.teacher) !== String(q.teacher)) return false;
+          if (typeof q.status === "string" && a.status !== q.status) return false;
           return true;
         });
         if (!row) return null;
         Object.assign(row, update.$set || update);
         return { ...row };
+      },
+      updateOne: async (q, update) => {
+        const row = assignments.find((a) => {
+          if (q._id && String(a._id) !== String(q._id)) return false;
+          if (q.teacher && String(a.teacher) !== String(q.teacher)) return false;
+          if (typeof q.status === "string" && a.status !== q.status) return false;
+          return true;
+        });
+        if (!row) return { modifiedCount: 0 };
+        Object.assign(row, update.$set || update);
+        return { modifiedCount: 1 };
       },
     };
 
@@ -578,6 +601,7 @@ describe("Phase 1 assignment archive / restore", () => {
         notifyPath,
         uploadsPathUtil,
         storedFilesPath,
+        duplicateUtilPath,
       ].forEach((p) => delete require.cache[p]);
     };
 
@@ -587,8 +611,21 @@ describe("Phase 1 assignment archive / restore", () => {
         if (q.teacher) {
           rows = rows.filter((a) => String(a.teacher) === String(q.teacher));
         }
-        if (q.status) {
+        if (typeof q.status === "string") {
           rows = rows.filter((a) => a.status === q.status);
+        }
+        if (q.status?.$ne) {
+          rows = rows.filter((a) => a.status !== q.status.$ne);
+        }
+        if (q._id != null && typeof q._id !== "object") {
+          rows = rows.filter((a) => String(a._id) === String(q._id));
+        }
+        if (q._id?.$ne) {
+          rows = rows.filter((a) => String(a._id) !== String(q._id.$ne));
+        }
+        if (q._id?.$in) {
+          const set = new Set(q._id.$in.map(String));
+          rows = rows.filter((a) => set.has(String(a._id)));
         }
         const api = {
           select() {
@@ -610,11 +647,23 @@ describe("Phase 1 assignment archive / restore", () => {
         const row = assignments.find((a) => {
           if (q._id && String(a._id) !== String(q._id)) return false;
           if (q.teacher && String(a.teacher) !== String(q.teacher)) return false;
+          if (typeof q.status === "string" && a.status !== q.status) return false;
           return true;
         });
         if (!row) return null;
         Object.assign(row, update.$set || update);
         return { ...row };
+      },
+      updateOne: async (q, update) => {
+        const row = assignments.find((a) => {
+          if (q._id && String(a._id) !== String(q._id)) return false;
+          if (q.teacher && String(a.teacher) !== String(q.teacher)) return false;
+          if (typeof q.status === "string" && a.status !== q.status) return false;
+          return true;
+        });
+        if (!row) return { modifiedCount: 0 };
+        Object.assign(row, update.$set || update);
+        return { modifiedCount: 1 };
       },
     };
 
@@ -959,7 +1008,11 @@ describe("bulk archive ownership + student delete policy", () => {
         let list = rows.slice();
         if (q.teacher) list = list.filter((a) => String(a.teacher) === String(q.teacher));
         if (q.status?.$ne) list = list.filter((a) => a.status !== q.status.$ne);
-        if (q.status && !q.status.$ne) list = list.filter((a) => a.status === q.status);
+        if (typeof q.status === "string") list = list.filter((a) => a.status === q.status);
+        if (q._id != null && typeof q._id !== "object") {
+          list = list.filter((a) => String(a._id) === String(q._id));
+        }
+        if (q._id?.$ne) list = list.filter((a) => String(a._id) !== String(q._id.$ne));
         if (q._id?.$in) {
           const set = new Set(q._id.$in.map(String));
           list = list.filter((a) => set.has(String(a._id)));
@@ -977,12 +1030,24 @@ describe("bulk archive ownership + student delete policy", () => {
         const row = rows.find((a) => {
           if (q._id && String(a._id) !== String(q._id)) return false;
           if (q.teacher && String(a.teacher) !== String(q.teacher)) return false;
+          if (typeof q.status === "string" && a.status !== q.status) return false;
           return true;
         });
         if (!row) return null;
         const patch = update.$set || update;
         Object.assign(row, patch);
         return { ...row };
+      },
+      updateOne: async (q, update) => {
+        const row = rows.find((a) => {
+          if (q._id && String(a._id) !== String(q._id)) return false;
+          if (q.teacher && String(a.teacher) !== String(q.teacher)) return false;
+          if (typeof q.status === "string" && a.status !== q.status) return false;
+          return true;
+        });
+        if (!row) return { modifiedCount: 0 };
+        Object.assign(row, update.$set || update);
+        return { modifiedCount: 1 };
       },
       updateMany: async (q, update) => {
         const patch = update.$set || update;
@@ -1014,6 +1079,7 @@ describe("bulk archive ownership + student delete policy", () => {
       notifyPath,
       uploadsPathUtil,
       storedFilesPath,
+      duplicateUtilPath,
     ].forEach((p) => delete require.cache[p]);
 
     const originalLoad = Module._load;

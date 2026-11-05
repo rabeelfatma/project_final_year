@@ -91,11 +91,65 @@ async function findActiveDuplicateAssignment({
   );
 }
 
+/** Rule 2 — unarchive blocked when another Active row shares the normalized title. */
+const UNARCHIVE_TITLE_CONFLICT_CODE = "UNARCHIVE_TITLE_CONFLICT";
+const UNARCHIVE_TITLE_CONFLICT_MESSAGE =
+  "An active assignment with this title already exists. Please rename the active assignment or change its title before restoring this assignment.";
+
+function unarchiveTitleConflictPayload(extra = {}) {
+  return {
+    message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+    code: UNARCHIVE_TITLE_CONFLICT_CODE,
+    errors: {
+      title: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+    },
+    ...extra,
+  };
+}
+
+/**
+ * Find another Active assignment for the same teacher with the same normalized title.
+ * Subject is intentionally ignored for Rule 2 unarchive checks.
+ */
+async function findActiveDuplicateTitleForUnarchive({
+  AssignmentModel,
+  teacherId,
+  title,
+  excludeId = null,
+}) {
+  if (!teacherId) return null;
+
+  const titleKey = normalizeTitleForComparison(title);
+  if (!titleKey) return null;
+
+  const query = {
+    teacher: teacherId,
+    status: "active",
+  };
+  if (excludeId) {
+    query._id = { $ne: excludeId };
+  }
+
+  const candidates = await AssignmentModel.find(query)
+    .select("_id title status teacher")
+    .lean();
+
+  const rows = Array.isArray(candidates) ? candidates : [];
+  return (
+    rows.find((row) => normalizeTitleForComparison(row.title) === titleKey) ||
+    null
+  );
+}
+
 module.exports = {
   ASSIGNMENT_DUPLICATE_CODE,
   ASSIGNMENT_DUPLICATE_MESSAGE,
+  UNARCHIVE_TITLE_CONFLICT_CODE,
+  UNARCHIVE_TITLE_CONFLICT_MESSAGE,
   normalizeSubjectForComparison,
   isMongoDuplicateKeyError,
   duplicateConflictPayload,
+  unarchiveTitleConflictPayload,
   findActiveDuplicateAssignment,
+  findActiveDuplicateTitleForUnarchive,
 };

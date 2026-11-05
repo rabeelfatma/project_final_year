@@ -20,12 +20,16 @@ const { create: createNotification } = require("./notificationController");
 
 const {
   validateAssignmentFields,
+  normalizeTitleForComparison,
 } = require("../utils/assignmentFieldValidation");
 
 const {
   findActiveDuplicateAssignment,
+  findActiveDuplicateTitleForUnarchive,
   duplicateConflictPayload,
+  unarchiveTitleConflictPayload,
   isMongoDuplicateKeyError,
+  UNARCHIVE_TITLE_CONFLICT_MESSAGE,
 } = require("../utils/assignmentDuplicate");
 
 const {
@@ -603,27 +607,67 @@ exports.updateAssignmentStatus = async (req, res) => {
       });
     }
 
+    const teacherId = req.user._id;
+    const assignmentId = req.params.id;
+
+    // Load owned row first so we can enforce Rule 2 before any status write.
+    const ownedRows = await Assignment.find({
+      _id: assignmentId,
+      teacher: teacherId,
+    })
+      .select("_id title status teacher startDate deadline")
+      .lean();
+    const existing = Array.isArray(ownedRows) ? ownedRows[0] : null;
+
+    if (!existing) {
+      return res.status(404).json({ message: "Assignment not found" });
+    }
+
+    // Rule 2: unarchive / reactivate blocked when another Active title matches.
+    if (nextStatus === "active" && existing.status !== "active") {
+      const conflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: existing.title,
+        excludeId: existing._id,
+      });
+      if (conflict) {
+        return res.status(409).json(unarchiveTitleConflictPayload({
+          conflictingAssignmentId: String(conflict._id),
+        }));
+      }
+    }
+
     // Ownership enforced in the filter. Archive/unarchive only flips `status`.
     // Never mutate startDate, deadline, points, files, or submission/grade data.
     const updated = await Assignment.findOneAndUpdate(
-
-      { _id: req.params.id, teacher: req.user._id },
-
+      { _id: assignmentId, teacher: teacherId },
       { $set: { status: nextStatus } },
-
       { new: true, runValidators: true }
-
     );
 
-
-
     if (!updated) {
-
       return res.status(404).json({ message: "Assignment not found" });
-
     }
 
-
+    // Concurrent unarchive guard: if two restores raced, roll this one back.
+    if (nextStatus === "active" && existing.status !== "active") {
+      const stillConflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: updated.title,
+        excludeId: updated._id,
+      });
+      if (stillConflict) {
+        await Assignment.updateOne(
+          { _id: updated._id, teacher: teacherId, status: "active" },
+          { $set: { status: existing.status } }
+        );
+        return res.status(409).json(unarchiveTitleConflictPayload({
+          conflictingAssignmentId: String(stillConflict._id),
+        }));
+      }
+    }
 
     // Idempotent: repeating archive/unarchive returns the same owned record.
     res.json(updated);
@@ -758,6 +802,7 @@ exports.archiveAssignmentsBulk = async (req, res) => {
  * - body.scope === "all": unarchive every archived assignment for this teacher
  * - body.ids: unarchive only those owned archived IDs
  * Restores status to "active" only — never changes startDate/deadline or academic records.
+ * Rule 2: skip/fail rows whose normalized title already exists on another Active assignment.
  */
 exports.unarchiveAssignmentsBulk = async (req, res) => {
   try {
@@ -771,89 +816,136 @@ exports.unarchiveAssignmentsBulk = async (req, res) => {
       });
     }
 
+    let candidates = [];
+    const failed = [];
+    const skipped = [];
+
     if (scopeAll) {
-      const owned = await Assignment.find({
+      candidates = await Assignment.find({
         teacher: teacherId,
         status: "archived",
-      }).select("_id status startDate deadline");
+      }).select("_id title status startDate deadline");
+    } else {
+      const requestedIds = [
+        ...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)),
+      ].slice(0, 200);
 
-      if (!owned.length) {
-        return res.json({
-          success: true,
-          unarchived: 0,
-          unarchivedIds: [],
-          failed: [],
-          skipped: [],
-          requested: 0,
-        });
+      const owned = await Assignment.find({
+        _id: { $in: requestedIds },
+        teacher: teacherId,
+      }).select("_id title status startDate deadline");
+
+      const ownedById = new Map(owned.map((row) => [String(row._id), row]));
+      for (const id of requestedIds) {
+        const row = ownedById.get(id);
+        if (!row) {
+          failed.push({ id, reason: "not found or not owned" });
+          continue;
+        }
+        if (row.status !== "archived") {
+          skipped.push({ id, reason: "not archived" });
+          continue;
+        }
+        candidates.push(row);
       }
+    }
 
-      const ids = owned.map((row) => row._id);
-      const result = await Assignment.updateMany(
-        { _id: { $in: ids }, teacher: teacherId, status: "archived" },
-        { $set: { status: "active" } }
-      );
-
+    if (!candidates.length && failed.length === 0 && skipped.length === 0) {
       return res.json({
         success: true,
-        unarchived: result.modifiedCount || 0,
-        unarchivedIds: ids.map(String),
+        unarchived: 0,
+        unarchivedIds: [],
         failed: [],
         skipped: [],
-        requested: ids.length,
+        requested: 0,
       });
     }
 
-    const requestedIds = [
-      ...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)),
-    ].slice(0, 200);
+    // Titles accepted in this request — prevents two archived clones both becoming Active.
+    const acceptedTitleKeys = new Set();
+    const unarchivedIds = [];
 
-    const owned = await Assignment.find({
-      _id: { $in: requestedIds },
-      teacher: teacherId,
-    }).select("_id status startDate deadline");
+    for (const row of candidates) {
+      const id = String(row._id);
+      const titleKey = normalizeTitleForComparison(row.title);
 
-    const ownedById = new Map(owned.map((row) => [String(row._id), row]));
-    const failed = [];
-    const skipped = [];
-    const toUnarchive = [];
-
-    for (const id of requestedIds) {
-      const row = ownedById.get(id);
-      if (!row) {
-        failed.push({ id, reason: "not found or not owned" });
+      if (titleKey && acceptedTitleKeys.has(titleKey)) {
+        failed.push({
+          id,
+          reason: "title conflict",
+          message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+        });
         continue;
       }
-      if (row.status !== "archived") {
+
+      const conflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: row.title,
+        excludeId: row._id,
+      });
+      if (conflict) {
+        failed.push({
+          id,
+          reason: "title conflict",
+          message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+        });
+        continue;
+      }
+
+      const updated = await Assignment.findOneAndUpdate(
+        { _id: row._id, teacher: teacherId, status: "archived" },
+        { $set: { status: "active" } },
+        { new: true }
+      );
+
+      if (!updated) {
         skipped.push({ id, reason: "not archived" });
         continue;
       }
-      toUnarchive.push(row._id);
+
+      // Concurrent guard: roll back if another Active title appeared mid-flight.
+      const stillConflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: updated.title,
+        excludeId: updated._id,
+      });
+      if (stillConflict) {
+        await Assignment.updateOne(
+          { _id: updated._id, teacher: teacherId, status: "active" },
+          { $set: { status: "archived" } }
+        );
+        failed.push({
+          id,
+          reason: "title conflict",
+          message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+        });
+        continue;
+      }
+
+      if (titleKey) acceptedTitleKeys.add(titleKey);
+      unarchivedIds.push(id);
     }
 
-    let modified = 0;
-    if (toUnarchive.length) {
-      const result = await Assignment.updateMany(
-        {
-          _id: { $in: toUnarchive },
-          teacher: teacherId,
-          status: "archived",
-        },
-        { $set: { status: "active" } }
-      );
-      modified = result.modifiedCount || 0;
-    }
+    const requested = scopeAll
+      ? candidates.length
+      : [
+          ...new Set(
+            (rawIds || []).map((id) => String(id || "").trim()).filter(Boolean)
+          ),
+        ].length;
 
     return res.json({
       success: failed.length === 0,
-      unarchived: modified,
-      unarchivedIds: toUnarchive.map(String),
+      unarchived: unarchivedIds.length,
+      unarchivedIds,
       failed,
       skipped,
-      requested: requestedIds.length,
+      requested,
       message:
         failed.length > 0
-          ? `Unarchived ${modified} of ${requestedIds.length}. ${failed.length} could not be unarchived.`
+          ? `Unarchived ${unarchivedIds.length} of ${requested}. ${failed.length} could not be unarchived.`
           : undefined,
     });
   } catch (error) {

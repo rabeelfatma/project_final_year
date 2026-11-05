@@ -4870,6 +4870,9 @@ button,
 
 .qc-dashboard-sidebar .qc-nav-item {
   color: var(--sidebar-muted);
+  min-height: 2.35rem;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
 }
 
 .qc-dashboard-sidebar .qc-nav-item:hover {
@@ -4972,6 +4975,12 @@ button,
 .qc-assignment-card:hover {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   box-shadow: var(--shadow-md);
+}
+
+.qc-assignment-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), var(--shadow-md);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
 .qc-assignment-card__main {
@@ -5405,8 +5414,8 @@ input.qc-check[type="checkbox"]:disabled,
 }
 
 .qc-grade-modal {
-  width: min(40rem, 100%);
-  max-height: min(92dvh, 40rem);
+  width: min(36rem, 100%);
+  max-height: min(88dvh, 34rem);
   display: flex;
   flex-direction: column;
   border-radius: 1.25rem;
@@ -5447,17 +5456,26 @@ input.qc-check[type="checkbox"]:disabled,
 .qc-grade-modal__file-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
-  margin-top: 0.55rem;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.qc-grade-modal__file-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .qc-grade-modal__body {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  padding: 0.85rem 1rem;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   flex: 1;
 }
 
@@ -5466,6 +5484,15 @@ input.qc-check[type="checkbox"]:disabled,
   border: 1px solid var(--border);
   border-radius: 0.85rem;
   background: var(--page);
+  min-height: 0;
+}
+
+.qc-grade-modal__section--feedback {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: 11rem;
 }
 
 .qc-grade-modal__label {
@@ -5478,11 +5505,20 @@ input.qc-check[type="checkbox"]:disabled,
 }
 
 .qc-grade-modal__scroll {
-  max-height: 7.5rem;
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: 0.8125rem;
   line-height: 1.45;
   color: var(--text);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent;
+}
+
+.qc-grade-modal__section--feedback .qc-grade-modal__scroll {
+  max-height: 7rem;
 }
 
 .qc-grade-modal__scores {
@@ -5670,6 +5706,16 @@ input.qc-check[type="checkbox"]:disabled,
   cursor: pointer;
 }
 
+.qc-file-link--icon {
+  width: 1.85rem;
+  height: 1.85rem;
+  min-height: 1.85rem;
+  padding: 0;
+  justify-content: center;
+  border-radius: 0.55rem;
+  flex-shrink: 0;
+}
+
 .qc-file-link:hover:not(:disabled),
 .qc-file-link:focus-visible {
   border-color: var(--accent);
@@ -5685,6 +5731,107 @@ input.qc-check[type="checkbox"]:disabled,
 .qc-file-link__icon {
   flex-shrink: 0;
   color: var(--accent);
+}
+
+.qc-title-with-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.qc-title-with-file .qc-link-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qc-question-file-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.qc-optional-qfile {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.qc-lms-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.qc-lms-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 50%, transparent) transparent;
+}
+
+.qc-student-file-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.qc-student-file-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+
+.qc-student-file-action__label {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Subtle professional scrollbars (do not disable scrolling) */
+.qc-dashboard-main,
+.qc-fill-scroll,
+.qc-grade-modal__scroll,
+.qc-lms-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent;
+}
+
+.qc-dashboard-main::-webkit-scrollbar,
+.qc-fill-scroll::-webkit-scrollbar,
+.qc-grade-modal__scroll::-webkit-scrollbar,
+.qc-lms-table-wrap::-webkit-scrollbar {
+  width: 0.45rem;
+  height: 0.45rem;
+}
+
+.qc-dashboard-main::-webkit-scrollbar-thumb,
+.qc-fill-scroll::-webkit-scrollbar-thumb,
+.qc-grade-modal__scroll::-webkit-scrollbar-thumb,
+.qc-lms-table-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  border-radius: 999px;
+}
+
+.qc-dashboard-main::-webkit-scrollbar-track,
+.qc-fill-scroll::-webkit-scrollbar-track,
+.qc-grade-modal__scroll::-webkit-scrollbar-track,
+.qc-lms-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .qc-file-link__copy {
@@ -6269,4 +6416,481 @@ input.qc-check[type="checkbox"]:disabled,
 .qc-docx-viewer__page ul,
 .qc-docx-viewer__page ol {
   margin: 0.4rem 0 0.4rem 1.25rem;
+}
+
+/* —— Named file link (icon + filename) —— */
+.qc-file-named {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.qc-file-named__name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+}
+
+/* —— Submission selection bar —— */
+.qc-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.qc-selection-bar__count {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.qc-selection-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+/* —— Review Evaluation modal —— */
+.qc-review-modal {
+  width: min(42rem, 100%);
+  max-height: min(90dvh, 44rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.15rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.qc-review-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.qc-review-modal__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+.qc-review-modal__student {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.qc-review-modal__reg {
+  margin: 0.2rem 0 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.qc-review-modal__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.qc-review-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+}
+
+.qc-review-modal__block {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--page);
+}
+
+.qc-review-modal__block--ai {
+  min-height: 0;
+}
+
+.qc-review-modal__label {
+  margin: 0 0 0.55rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.qc-review-modal__file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.qc-review-modal__ai-scroll {
+  max-height: 12rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.qc-review-modal__ai-summary {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.qc-review-modal__ai-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .qc-review-modal__ai-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.qc-review-modal__sublabel {
+  margin: 0 0 0.35rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.qc-review-modal__sublabel.is-strength { color: #34d399; }
+.qc-review-modal__sublabel.is-improve { color: #fbbf24; }
+
+.qc-review-modal__bullets {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.qc-review-modal__bullets li + li { margin-top: 0.25rem; }
+
+.qc-review-modal__max {
+  margin: 0 0 0.65rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.qc-review-modal__marks {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+
+@media (min-width: 480px) {
+  .qc-review-modal__marks {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.qc-review-modal__mark-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.7rem 0.6rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.qc-review-modal__mark-card.is-ai {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.qc-review-modal__mark-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.qc-review-modal__mark-value {
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: var(--accent);
+  line-height: 1.1;
+}
+
+.qc-review-modal__mark-denom {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-left: 0.2rem;
+}
+
+.qc-review-modal__mark-input {
+  width: 5.5rem;
+  max-width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--accent);
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--accent);
+  outline: none;
+}
+
+.qc-review-modal__feedback {
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.qc-review-modal__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.qc-review-modal__footer .qc-btn {
+  flex: 1 1 9.5rem;
+  min-height: 2.5rem;
+}
+
+/* —— Student My Assignments —— */
+.qc-student-assignments {
+  width: 100%;
+  max-width: none;
+}
+
+.qc-student-assignments__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.qc-student-assignment-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+@media (min-width: 1100px) {
+  .qc-student-assignment-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.qc-student-assignment-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  min-height: 100%;
+}
+
+@media (min-width: 640px) {
+  .qc-student-assignment-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.qc-student-assignment-card__main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.qc-student-assignment-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .qc-review-modal {
+    width: 100%;
+    max-height: 94dvh;
+    border-radius: 1.15rem 1.15rem 0 0;
+  }
+}
+/* â€”â€” Auth / LMS polish addendum â€”â€” */
+.qc-selection-bar__left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.1rem;
+}
+
+.qc-selection-bar__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.qc-assignment-title-full {
+  white-space: normal;
+  word-break: break-word;
+  max-width: 22rem;
+  display: inline-block;
+  text-decoration: none;
+}
+
+.qc-file-named__name {
+  max-width: min(18rem, 42vw);
+  white-space: nowrap;
+}
+
+.qc-student-avatar {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-2) 88%, var(--border));
+  border: 1px solid var(--border);
+}
+
+.qc-student-dir-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.qc-review-modal {
+  width: min(44rem, calc(100vw - 1.5rem));
+  max-height: min(92dvh, 48rem);
+}
+
+.qc-review-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.qc-review-modal__block {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.qc-review-modal__block--ai {
+  flex: 0 0 auto;
+}
+
+.qc-review-modal__ai-scroll {
+  max-height: 14rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.35rem;
+}
+
+.qc-review-modal__ai-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  align-items: start;
+}
+
+@media (min-width: 720px) {
+  .qc-review-modal__ai-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.qc-review-modal__marks {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+@media (min-width: 520px) {
+  .qc-review-modal__marks {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.qc-review-modal__feedback {
+  min-height: 6rem;
+  max-height: 10rem;
+}
+
+.qc-review-modal__footer .qc-btn {
+  flex: 1 1 9rem;
+  min-height: 2.6rem;
+}
+
+.qc-student-assignment-card .qc-assignment-card__title.qc-link-title {
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+}
+
+.qc-student-assignment-card .qc-assignment-card__title.qc-link-title:hover,
+.qc-student-assignment-card .qc-assignment-card__title.qc-link-title:focus-visible {
+  color: var(--accent);
 }

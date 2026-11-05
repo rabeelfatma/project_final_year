@@ -44,6 +44,7 @@ import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
 
 import SearchField from '../../components/ui/SearchField';
+import OverflowMenu from '../../components/ui/OverflowMenu';
 
 import { sortAssignmentsByDueDate } from '../../utils/assignmentSort';
 
@@ -69,6 +70,9 @@ export default function StudentDashboard() {
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState("all");
 
   const [assignmentSort, setAssignmentSort] = useState("due-asc");
+
+  /** Student shelf: Active = open/in-progress; Archived = published / past closed work still listed. */
+  const [studentAssignmentShelf, setStudentAssignmentShelf] = useState("active");
 
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
@@ -403,8 +407,12 @@ export default function StudentDashboard() {
     assignments.filter((asgn) => {
       const titleOk = String(asgn.title || "").toLowerCase().includes(searchTerm.toLowerCase());
       if (!titleOk) return false;
-      if (assignmentStatusFilter === "all") return true;
       const status = String(asgn.status || "pending");
+      const isArchivedShelf = status === "PUBLISHED";
+      if (studentAssignmentShelf === "archived" ? !isArchivedShelf : isArchivedShelf) {
+        return false;
+      }
+      if (assignmentStatusFilter === "all") return true;
       if (assignmentStatusFilter === "pending") return status === "pending" || !asgn.status;
       if (assignmentStatusFilter === "submitted") return status === "submitted" || status === "Submitted";
       if (assignmentStatusFilter === "PUBLISHED") return status === "PUBLISHED";
@@ -412,6 +420,9 @@ export default function StudentDashboard() {
     }),
     assignmentSort
   );
+
+  const activeAssignmentCount = assignments.filter((a) => String(a.status || "") !== "PUBLISHED").length;
+  const archivedAssignmentCount = assignments.filter((a) => String(a.status || "") === "PUBLISHED").length;
 
   const totalVsPendingData = [
 
@@ -799,56 +810,98 @@ export default function StudentDashboard() {
 
         {activeTab === 'Assignments' && (
 
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="qc-student-assignments animate-in slide-in-from-bottom-4 duration-500">
 
-             <div className="qc-assignments-toolbar mb-6">
-
-               <SearchField
-
-                 value={searchTerm}
-
-                 onChange={setSearchTerm}
-
-                 placeholder="Search by title…"
-
-                 label="Filter assignments by title"
-
+             <div className="qc-student-assignments__header">
+               <div>
+                 <h1 className="qc-page-title">My Assignments</h1>
+                 <p className="qc-page-subtitle">Open question files, track due dates, and submit your work.</p>
+               </div>
+               <OverflowMenu
+                 label="Manage assignment list"
+                 buttonLabel="Manage"
+                 items={[
+                   {
+                     id: 'sort-due-asc',
+                     label: 'Sort: Earliest due',
+                     onSelect: () => setAssignmentSort('due-asc'),
+                   },
+                   {
+                     id: 'sort-due-desc',
+                     label: 'Sort: Latest due',
+                     onSelect: () => setAssignmentSort('due-desc'),
+                   },
+                   {
+                     id: 'filter-all',
+                     label: 'Filter: All statuses',
+                     onSelect: () => setAssignmentStatusFilter('all'),
+                   },
+                   {
+                     id: 'filter-pending',
+                     label: 'Filter: Pending',
+                     onSelect: () => setAssignmentStatusFilter('pending'),
+                   },
+                   {
+                     id: 'filter-submitted',
+                     label: 'Filter: Submitted',
+                     onSelect: () => setAssignmentStatusFilter('submitted'),
+                   },
+                 ]}
                />
-
-               <select className="qc-toolbar-select" value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value)} aria-label="Filter by submission status">
-
-                 <option value="all">All statuses</option>
-
-                 <option value="pending">Pending</option>
-
-                 <option value="submitted">Submitted</option>
-
-                 <option value="PUBLISHED">Published</option>
-
-               </select>
-
-               <select className="qc-toolbar-select" value={assignmentSort} onChange={(e) => setAssignmentSort(e.target.value)} aria-label="Sort by due date">
-
-                 <option value="due-asc">Due date: Earliest first</option>
-
-                 <option value="due-desc">Due date: Latest first</option>
-
-               </select>
              </div>
 
-             {filteredSortedAssignments.map(asgn => (
+             <div className="qc-segmented mb-4" role="tablist" aria-label="Assignment shelf">
+               <button
+                 type="button"
+                 role="tab"
+                 aria-selected={studentAssignmentShelf === 'active'}
+                 className={`qc-segmented__item ${studentAssignmentShelf === 'active' ? 'is-active' : ''}`}
+                 onClick={() => setStudentAssignmentShelf('active')}
+               >
+                 Active ({activeAssignmentCount})
+               </button>
+               <button
+                 type="button"
+                 role="tab"
+                 aria-selected={studentAssignmentShelf === 'archived'}
+                 className={`qc-segmented__item ${studentAssignmentShelf === 'archived' ? 'is-active' : ''}`}
+                 onClick={() => setStudentAssignmentShelf('archived')}
+               >
+                 Archived ({archivedAssignmentCount})
+               </button>
+             </div>
 
-               <div key={asgn._id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
+             <div className="qc-assignments-toolbar mb-4">
+               <SearchField
+                 value={searchTerm}
+                 onChange={setSearchTerm}
+                 placeholder="Search by title…"
+                 label="Filter assignments by title"
+               />
+             </div>
 
-                 <div className="flex items-start gap-3 min-w-0 flex-1">
-
-                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} onAlreadySubmitted={showAlreadySubmittedNotice} showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)} onDismissDuplicate={() => setDuplicateNoticeId(null)} uploadStatus={uploadStatus} /></div>
-
-                 </div>
-
-               </div>
-
-             ))}
+             <div className="qc-student-assignment-grid">
+               {filteredSortedAssignments.map((asgn) => (
+                 <AssignmentRow
+                   key={asgn._id}
+                   asgn={asgn}
+                   shelf={studentAssignmentShelf}
+                   onSelect={setSelectedAsgn}
+                   onUpload={handleFileUpload}
+                   onAlreadySubmitted={showAlreadySubmittedNotice}
+                   showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)}
+                   onDismissDuplicate={() => setDuplicateNoticeId(null)}
+                   uploadStatus={uploadStatus}
+                 />
+               ))}
+               {filteredSortedAssignments.length === 0 && (
+                 <p className="theme-muted text-sm py-10 text-center qc-card">
+                   {studentAssignmentShelf === 'archived'
+                     ? 'No archived (published) assignments yet.'
+                     : 'No active assignments found.'}
+                 </p>
+               )}
+             </div>
 
           </div>
 
@@ -995,23 +1048,26 @@ export default function StudentDashboard() {
                     Not open yet.
                   </p>
                 ) : (
-                <div className="flex flex-col gap-2">
-                  <FileLink
-                    fileName={selectedAsgn.originalFileName || 'assignment'}
-                    subtitle="Reference"
-                    onOpen={async () => {
-                      try {
-                        await openProtectedPreview(
-                          studentService.previewAssignment(selectedAsgn._id),
-                          selectedAsgn.originalFileName || 'assignment',
-                          { downloadUrl: studentService.downloadAssignment(selectedAsgn._id) }
-                        );
-                      } catch (error) {
-                        alert(error.message);
-                      }
-                    }}
-                  />
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="qc-btn qc-btn-secondary"><Download size={16}/> Download {selectedAsgn.originalFileName || 'instructions'}</button>
+                <div className="qc-student-file-actions">
+                  <div className="qc-student-file-action">
+                    <FileLink
+                      variant="named"
+                      fileName={selectedAsgn.assignmentOriginalFileName || selectedAsgn.originalFileName || 'assignment'}
+                      openLabel={selectedAsgn.assignmentOriginalFileName || selectedAsgn.originalFileName || 'Open question file'}
+                      onOpen={async () => {
+                        try {
+                          await openProtectedPreview(
+                            studentService.previewAssignment(selectedAsgn._id),
+                            selectedAsgn.assignmentOriginalFileName || selectedAsgn.originalFileName || 'assignment',
+                            { downloadUrl: studentService.downloadAssignment(selectedAsgn._id) }
+                          );
+                        } catch (error) {
+                          alert(error.message);
+                        }
+                      }}
+                    />
+                  </div>
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.assignmentOriginalFileName || selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="qc-btn qc-btn-secondary"><Download size={16}/> Download Original</button>
                 </div>
                 )}
 
@@ -1023,27 +1079,30 @@ export default function StudentDashboard() {
 
                 {selectedAsgn.canSubmit === true && !selectedAsgn.isSubmitted && !selectedAsgn.submissionId && (
                   <p className="mt-4 text-center text-xs theme-muted">
-                    Use <span className="font-semibold text-[var(--text)]">Upload</span> on the assignment card to submit your file.
+                    Use <span className="font-semibold text-[var(--text)]">Submit Assignment</span> on the assignment card to submit your file.
                   </p>
                 )}
 
-                {selectedAsgn.submissionId && <div className="flex flex-col gap-2 mt-3">
-                  <FileLink
-                    fileName={selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || 'my-submission'}
-                    subtitle="My submission"
-                    onOpen={async () => {
-                      try {
-                        await openProtectedPreview(
-                          studentService.previewSubmission(selectedAsgn.submissionId),
-                          selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || 'my-submission',
-                          { downloadUrl: studentService.downloadSubmission(selectedAsgn.submissionId) }
-                        );
-                      } catch (error) {
-                        alert(error.message);
-                      }
-                    }}
-                  />
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="qc-btn qc-btn-secondary"><Download size={16}/> Download my file</button>
+                {selectedAsgn.submissionId && <div className="qc-student-file-actions mt-3">
+                  <div className="qc-student-file-action">
+                    <FileLink
+                      variant="named"
+                      fileName={selectedAsgn.submissionOriginalFileName || 'my-submission'}
+                      openLabel={selectedAsgn.submissionOriginalFileName || 'View submission'}
+                      onOpen={async () => {
+                        try {
+                          await openProtectedPreview(
+                            studentService.previewSubmission(selectedAsgn.submissionId),
+                            selectedAsgn.submissionOriginalFileName || 'my-submission',
+                            { downloadUrl: studentService.downloadSubmission(selectedAsgn.submissionId) }
+                          );
+                        } catch (error) {
+                          alert(error.message);
+                        }
+                      }}
+                    />
+                  </div>
+                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.submissionOriginalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="qc-btn qc-btn-secondary"><Download size={16}/> Download Original</button>
                 </div>}
 
              </div>
@@ -1109,6 +1168,22 @@ function StatCard({ label, value, color, icon, sub }) {
 
 
 
+function formatDateTime(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+function meaningfulSubject(subject) {
+  const value = String(subject || "").trim();
+  if (!value) return "";
+  if (/^general$/i.test(value)) return "";
+  return value;
+}
+
 function AssignmentRow({
   asgn,
   onSelect,
@@ -1125,7 +1200,13 @@ function AssignmentRow({
   // Backend canSubmit is authoritative; resubmission is not supported while a submission exists.
   const canUpload = asgn.canSubmit === true && !isSubmitted;
   const availability = String(asgn.availabilityLabel || "").trim();
-  const dueLabel = asgn.deadline?.split?.("T")?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : "N/A");
+  const questionFileName =
+    asgn.assignmentOriginalFileName ||
+    asgn.originalFileName ||
+    "assignment";
+  const subjectLabel = meaningfulSubject(asgn.subject);
+  const hasAssignmentFile = Boolean(asgn.file || asgn.assignmentOriginalFileName || asgn.fileUrl);
+
   const statusMeta = (() => {
     if (isPublished) return "Published";
     if (isSubmitted) {
@@ -1136,24 +1217,46 @@ function AssignmentRow({
       return "Submitted — awaiting evaluation";
     }
     if (availability && !/^open$/i.test(availability)) return availability;
-    return null;
+    return "";
   })();
-  const metaLine = [
-    `Due: ${dueLabel}`,
-    statusMeta,
-    `Max ${asgn.points ?? asgn.totalMarks ?? "--"}`,
-  ].filter(Boolean).join(" · ");
 
   const actionLabel = (() => {
     if (uploadStatus.id === asgn._id) {
-      if (uploadStatus.loading) return "...";
+      if (uploadStatus.loading) return "Submitting…";
       if (uploadStatus.success) return "Submitted";
     }
-    if (canUpload) return "Upload";
-    if (isPublished) return "Published";
+    if (canUpload) return "Submit Assignment";
+    if (isPublished) return "View Result";
     if (isSubmitted) return "Submitted";
     return availability || "Closed";
   })();
+
+  const openAssignmentFile = async () => {
+    if (!hasAssignmentFile) {
+      onSelect?.(asgn);
+      return;
+    }
+    try {
+      await openProtectedPreview(
+        studentService.previewAssignment(asgn._id),
+        questionFileName,
+        { downloadUrl: studentService.downloadAssignment(asgn._id) }
+      );
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const downloadAssignmentFile = async () => {
+    try {
+      await downloadProtectedFile(
+        studentService.downloadAssignment(asgn._id),
+        questionFileName
+      );
+    } catch (error) {
+      alert(error.message);
+    }
+  };
 
   const duplicateNotice = showDuplicateNotice ? (
     <div
@@ -1181,63 +1284,99 @@ function AssignmentRow({
   ) : null;
 
   return (
-
-    <div className="qc-assignment-card qc-card">
-
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-
-          <div className={`p-3 rounded-xl shrink-0 ${isSubmitted ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>
-
-            <FileText size={18}/>
-
-          </div>
-
-          <div className="min-w-0">
-
-             <h4 className="font-semibold text-sm break-words">{asgn.title}</h4>
-
-             <p className="text-xs theme-muted mt-0.5">{metaLine}</p>
-
-          </div>
-
+    <article className="qc-card qc-student-assignment-card">
+      <div className="qc-student-assignment-card__main">
+        <div className="qc-assignment-card__title-row">
+          <button
+            type="button"
+            className="qc-assignment-card__title qc-link-title text-left"
+            onClick={openAssignmentFile}
+            title={hasAssignmentFile ? `Open ${questionFileName}` : "View assignment details"}
+          >
+            {asgn.title}
+          </button>
         </div>
+        <div className="qc-assignment-card__meta">
+          {subjectLabel ? (
+            <p className="qc-assignment-card__meta-item">Subject: {subjectLabel}</p>
+          ) : null}
+          <p className="qc-assignment-card__meta-item">
+            <Clock size={12} aria-hidden="true" /> Start: {formatDateTime(asgn.startDate)}
+          </p>
+          <p className="qc-assignment-card__meta-item">
+            <Clock size={12} aria-hidden="true" /> Due: {formatDateTime(asgn.deadline)}
+          </p>
+          {statusMeta ? (
+            <p className="qc-assignment-card__meta-item">{statusMeta}</p>
+          ) : null}
+        </div>
+      </div>
 
-        <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-
-          <button type="button" onClick={() => onSelect(asgn)} className="qc-icon-btn" title="View assignment" aria-label="View assignment"><Eye size={16} aria-hidden="true"/></button>
-
-          {canUpload ? (
-            <label className="px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all qc-btn-primary">
-              {actionLabel}
-              <input type="file" accept={ACADEMIC_ACCEPT} className="hidden" onChange={(e) => onUpload(e, asgn._id)} />
-            </label>
-          ) : isSubmitted ? (
-            <div className="qc-assignment-status-anchor">
-              {duplicateNotice}
-              <button
-                type="button"
-                className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted hover:border-[var(--accent)] border border-transparent transition-all"
-                aria-label="Submission status"
-                title="Submission already recorded"
-                onClick={() => onAlreadySubmitted?.(asgn)}
-              >
-                {actionLabel}
-              </button>
-            </div>
-          ) : (
-            <span
-              className="px-3 py-2 rounded-qc text-xs font-semibold bg-[var(--surface-2)] theme-muted"
-              aria-label={actionLabel}
+      <div className="qc-student-assignment-card__actions">
+        {canUpload ? (
+          <label className="qc-btn qc-btn-primary cursor-pointer">
+            {actionLabel}
+            <input
+              type="file"
+              accept={ACADEMIC_ACCEPT}
+              className="hidden"
+              onChange={(e) => onUpload(e, asgn._id)}
+            />
+          </label>
+        ) : isPublished ? (
+          <button type="button" onClick={() => onSelect(asgn)} className="qc-btn qc-btn-primary">
+            View Result
+          </button>
+        ) : isSubmitted ? (
+          <div className="qc-assignment-status-anchor">
+            {duplicateNotice}
+            <button
+              type="button"
+              className="qc-btn qc-btn-secondary"
+              aria-label="Submission status"
+              title="Submission already recorded"
+              onClick={() => onAlreadySubmitted?.(asgn)}
             >
               {actionLabel}
-            </span>
-          )}
+            </button>
+          </div>
+        ) : (
+          <span className="qc-btn qc-btn-secondary opacity-60 pointer-events-none">{actionLabel}</span>
+        )}
 
-        </div>
+        {hasAssignmentFile ? (
+          <button
+            type="button"
+            className="qc-icon-btn"
+            title={`Download ${questionFileName}`}
+            aria-label={`Download ${questionFileName}`}
+            onClick={downloadAssignmentFile}
+          >
+            <Download size={16} aria-hidden="true" />
+          </button>
+        ) : null}
 
-    </div>
-
+        <OverflowMenu
+          label={`Manage ${asgn.title || "assignment"}`}
+          items={[
+            {
+              id: `view-details-${asgn._id}`,
+              label: "View Details",
+              icon: <Eye size={14} />,
+              onSelect: () => onSelect(asgn),
+            },
+            ...(isPublished
+              ? [{
+                  id: `view-result-${asgn._id}`,
+                  label: "View Result",
+                  icon: <CheckCircle size={14} />,
+                  onSelect: () => onSelect(asgn),
+                }]
+              : []),
+          ]}
+        />
+      </div>
+    </article>
   );
-
 }
 
