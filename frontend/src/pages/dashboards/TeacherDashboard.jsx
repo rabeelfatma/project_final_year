@@ -55,7 +55,7 @@ function StatCard({ label, value, icon }) {
       type="button"
       onClick={() => setSelected((current) => !current)}
       aria-pressed={selected}
-      className="qc-stat-card relative overflow-hidden"
+      className="qc-stat-card relative"
     >
       <div className="flex justify-between items-start mb-3">
         <div className="p-2 rounded-qc border transition-colors" style={{borderColor: selected ? 'var(--accent)' : 'var(--border)', color: selected ? 'var(--accent)' : 'var(--muted)'}}>{icon}</div>
