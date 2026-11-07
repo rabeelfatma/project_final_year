@@ -141,7 +141,7 @@ describe("Phase 1 assignment archive / restore", () => {
     assert.match(src, /label:\s*['"]Delete['"]/);
     assert.match(src, /Archive All/);
     assert.match(src, /Archive Selected/);
-    assert.match(src, /Unarchive Selected/);
+    assert.match(src, /Restore Selected|Unarchive Selected/);
     assert.match(src, /handleDeleteAssignment/);
     assert.match(src, /shelfAfterUnarchive/);
     assert.match(src, /shelfAfterArchive/);

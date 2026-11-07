@@ -16,6 +16,13 @@ const submissionSchema = new mongoose.Schema({
   totalMarks: { type: Number, default: null },
   marks: { type: Number, default: null },
   feedback: { type: String, default: "" },
+  // Independent publication flags (legacy status===PUBLISHED with all false = fully published).
+  aiPublished: { type: Boolean, default: false },
+  aiPublishedAt: { type: Date, default: null },
+  teacherMarksPublished: { type: Boolean, default: false },
+  teacherMarksPublishedAt: { type: Date, default: null },
+  teacherFeedbackPublished: { type: Boolean, default: false },
+  teacherFeedbackPublishedAt: { type: Date, default: null },
   submittedAt: { type: Date, default: Date.now },
   gradedAt: { type: Date, default: null },
   status: {

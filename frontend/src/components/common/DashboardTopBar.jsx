@@ -458,8 +458,12 @@ export default function DashboardTopBar({
       >
         <Bell size={17} />
         {unread > 0 && (
-          <span className="notification-badge !right-0 !top-0 translate-x-1/4 -translate-y-1/4">
-            {unread > 9 ? "9+" : unread}
+          <span
+            className="notification-badge !right-0 !top-0 translate-x-1/4 -translate-y-1/4"
+            data-digits={String(unread).length}
+            aria-label={`${unread} unread notifications`}
+          >
+            {unread}
           </span>
         )}
       </button>

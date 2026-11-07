@@ -38,6 +38,7 @@ export default function FilePreviewModal({
   open,
   previewUrl,
   downloadUrl,
+  downloadLabel = "Download Original",
   fileName = "File preview",
   onClose,
 }) {
@@ -365,7 +366,7 @@ export default function FilePreviewModal({
             )}
             {downloadUrl ? (
               <button type="button" className="qc-btn qc-btn-secondary !min-h-8 !px-3" onClick={handleDownload}>
-                <Download size={14} /> Download Original
+                <Download size={14} /> {downloadLabel}
               </button>
             ) : null}
             <button type="button" className="qc-icon-btn" onClick={onClose} aria-label="Close preview"><X size={18} /></button>
@@ -493,11 +494,11 @@ export default function FilePreviewModal({
               <p className="qc-file-preview__title">Preview unavailable</p>
               <p className="qc-file-preview__subtitle mt-2">{meta.name} · {meta.label}</p>
               <p className="theme-muted text-sm mt-3 max-w-md text-center">
-                {error || "This format cannot be previewed in the browser. Use Download Original to keep the exact file."}
+                {error || `This format cannot be previewed in the browser. Use ${downloadLabel} to keep the exact file.`}
               </p>
               {downloadUrl ? (
                 <button type="button" className="qc-btn qc-btn-primary mt-4" onClick={handleDownload}>
-                  <Download size={14} /> Download Original
+                  <Download size={14} /> {downloadLabel}
                 </button>
               ) : null}
             </div>

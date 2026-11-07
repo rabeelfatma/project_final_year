@@ -99,13 +99,10 @@ router.get("/assignments", protect, async (req, res) => {
         return {
           ...assignment,
           status: studentStatus,
-          marks: canShowResult
-            ? submission.marks ?? submission.aiScore
-            : null,
+          // Never coalesce AI into Teacher marks (runtime uses studentRoutes; keep safe here too).
+          marks: canShowResult && submission.marks != null ? submission.marks : null,
           totalMarks: submission?.totalMarks || assignment.points || null,
-          feedback: canShowResult
-            ? submission.feedback || submission.aiFeedback || ""
-            : "",
+          feedback: canShowResult ? submission.feedback || "" : "",
           aiScore: canShowResult ? submission.aiScore : null,
           aiFeedback: canShowResult ? submission.aiFeedback || "" : "",
           checkedAt: canShowResult
@@ -137,7 +134,10 @@ router.get("/assignments", protect, async (req, res) => {
 router.get("/my-submissions", protect, async (req, res) => {
   try {
     const submissions = await Submission.find({ student: req.user._id })
-      .populate("assignment", "title points subject")
+      .populate(
+        "assignment",
+        "title points subject description startDate deadline originalFileName"
+      )
       .sort({ createdAt: -1 });
 
     res.json(submissions);

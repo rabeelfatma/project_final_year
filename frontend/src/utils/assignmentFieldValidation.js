@@ -189,12 +189,9 @@ export function validateAssignmentFormFields(input = {}, options = {}) {
   const titleError = titleValidationError(title);
   if (titleError) errors.title = titleError;
 
+  // Assignment instructions/description UI removed — field kept optional for backward compatibility.
   const description = String(input.description ?? '').trim();
-  if (!description) {
-    errors.description = 'Description is required.';
-  } else if (description.length < DESCRIPTION_MIN_LENGTH) {
-    errors.description = 'Description is too short.';
-  } else if (description.length > DESCRIPTION_MAX_LENGTH) {
+  if (description.length > DESCRIPTION_MAX_LENGTH) {
     errors.description = 'Description is too long.';
   }
 

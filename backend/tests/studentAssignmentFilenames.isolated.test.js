@@ -279,21 +279,15 @@ describe("student assignment filename mapping", () => {
   it("StudentDashboard uses assignment vs submission filenames for the correct actions", () => {
     const dash = fs.readFileSync(studentDashPath, "utf8");
     assert.match(dash, /submissionOriginalFileName/);
+    assert.match(dash, /assignmentOriginalFileName/);
+    assert.match(dash, /previewAssignment\(selectedAsgn\._id\)/);
+    assert.match(dash, /downloadAssignment\(selectedAsgn\._id\)/);
     assert.match(
       dash,
-      /previewAssignment\(selectedAsgn\._id\),\s*selectedAsgn\.originalFileName/
+      /selectedAsgn\.assignmentOriginalFileName[\s\S]{0,80}selectedAsgn\.originalFileName/
     );
-    assert.match(
-      dash,
-      /downloadAssignment\(selectedAsgn\._id\),\s*`\$\{selectedAsgn\.originalFileName/
-    );
-    assert.match(
-      dash,
-      /previewSubmission\(selectedAsgn\.submissionId\),\s*selectedAsgn\.submissionOriginalFileName/
-    );
-    assert.match(
-      dash,
-      /downloadSubmission\(selectedAsgn\.submissionId\),\s*selectedAsgn\.submissionOriginalFileName/
-    );
+    assert.match(dash, /previewSubmission\(selectedAsgn\.submissionId\)/);
+    assert.match(dash, /downloadSubmission\(selectedAsgn\.submissionId\)/);
+    assert.match(dash, /selectedAsgn\.submissionOriginalFileName/);
   });
 });

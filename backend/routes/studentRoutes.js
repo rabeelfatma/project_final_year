@@ -9,6 +9,17 @@ const upload = require("../middleware/multerMiddleware");
 const { create: createNotification } = require("../controllers/notificationController");
 const storedFiles = require("../utils/storedFiles");
 const path = require("path");
+const {
+  flushAssignmentAvailabilityNotifications,
+} = require("../utils/flushAssignmentAvailabilityNotifications");
+const {
+  hasAnyPublishedResult,
+  canShowAiResult,
+  canShowTeacherMarks,
+  hasValidAiScore,
+  hasValidTeacherMarks,
+  redactSubmissionForStudent,
+} = require("../utils/publicationVisibility");
 
 // Students only — marks/feedback shown after teacher publish.
 router.use(protect, authorize("student"));
@@ -27,12 +38,12 @@ router.get("/dashboard-stats", async (req, res) => {
     );
     const visibleIds = new Set(visibleAssignments.map((assignment) => String(assignment._id)));
     const submittedCount = submissions.length;
-    const graded = submissions.filter(
-      (s) =>
-        PUBLISHED.includes(s.status) &&
-        Number.isFinite(Number(s.marks ?? s.aiScore)) &&
-        Number(s.totalMarks) > 0
-    );
+    const graded = submissions.filter((s) => {
+      if (!hasAnyPublishedResult(s) || !(Number(s.totalMarks) > 0)) return false;
+      const teacherOk = canShowTeacherMarks(s) && hasValidTeacherMarks(s);
+      const aiOk = canShowAiResult(s) && hasValidAiScore(s);
+      return teacherOk || aiOk;
+    });
     const gradedCount = graded.length;
     const pendingCount = Math.max(
       visibleAssignments.length -
@@ -41,7 +52,11 @@ router.get("/dashboard-stats", async (req, res) => {
         ).length,
       0
     );
-    const score = (s) => Number(s.marks ?? s.aiScore);
+    const score = (s) => {
+      if (canShowTeacherMarks(s) && hasValidTeacherMarks(s)) return Number(s.marks);
+      if (canShowAiResult(s) && hasValidAiScore(s)) return Number(s.aiScore);
+      return 0;
+    };
     const performanceHistory = graded.slice(-12).map((s, i) => ({
       assignmentId: String(s.assignment?._id || ""),
       assignmentNumber: i + 1,
@@ -79,6 +94,8 @@ router.get("/dashboard-stats", async (req, res) => {
 
 router.get("/assignments", async (req, res) => {
   try {
+    // Catch up scheduled "available" notifications (idempotent; no setTimeout).
+    await flushAssignmentAvailabilityNotifications({ limit: 20 });
     const now = Date.now();
     // Active assignments only. Deactive = teacher-hidden drafts/closed items.
     const assignments = await Assignment.find({ status: "active" }).sort({ createdAt: -1 }).lean();
@@ -95,7 +112,7 @@ router.get("/assignments", async (req, res) => {
           assignment: assignment._id,
           student: req.user._id,
         }).lean();
-        const canShowResult = submission && PUBLISHED.includes(submission.status);
+        const canShowResult = Boolean(submission && hasAnyPublishedResult(submission));
         const notOpenYet = windowState.notOpenYet;
         const overdue = windowState.deadlineReached;
         const canSubmit = !submission && windowState.canSubmit;
@@ -122,21 +139,26 @@ router.get("/assignments", async (req, res) => {
           fileUrl: _omitFileUrl,
           ...assignmentPublic
         } = assignment;
+        const safeSubmission = submission ? redactSubmissionForStudent(submission) : null;
         return {
           ...assignmentPublic,
           file: undefined,
           fileUrl: undefined,
           hasFile: canAccessMaterials ? hasFile : false,
           status: studentStatus,
-          marks: canShowResult ? submission.marks ?? submission.aiScore : null,
+          // Independent fields from redaction helper — never coalesce AI into Teacher marks.
+          marks: safeSubmission ? safeSubmission.marks : null,
           totalMarks: submission?.totalMarks || assignment.points || null,
-          feedback: canShowResult ? submission.feedback || submission.aiFeedback || "" : "",
-          aiScore: canShowResult ? submission.aiScore : null,
-          aiFeedback: canShowResult ? submission.aiFeedback || "" : "",
-          aiStrengths: canShowResult ? submission.aiStrengths || [] : [],
-          aiImprovements: canShowResult ? submission.aiImprovements || [] : [],
+          feedback: safeSubmission ? safeSubmission.feedback : "",
+          aiScore: safeSubmission ? safeSubmission.aiScore : null,
+          aiFeedback: safeSubmission?.aiFeedback || "",
+          aiStrengths: safeSubmission?.aiStrengths || [],
+          aiImprovements: safeSubmission?.aiImprovements || [],
+          aiPublished: Boolean(safeSubmission?.aiPublished),
+          teacherMarksPublished: Boolean(safeSubmission?.teacherMarksPublished),
+          teacherFeedbackPublished: Boolean(safeSubmission?.teacherFeedbackPublished),
           checkedAt: canShowResult ? submission.updatedAt || submission.createdAt : null,
-          resultStatus: canShowResult ? submission.status : "PENDING",
+          resultStatus: canShowResult ? "PUBLISHED" : "PENDING",
           submissionId: submission?._id || null,
           originalFileName: canAccessMaterials
             ? assignment.originalFileName || ""
@@ -161,21 +183,43 @@ router.get("/assignments", async (req, res) => {
 router.get("/my-submissions", async (req, res) => {
   try {
     const submissions = await Submission.find({ student: req.user._id })
-      .populate("assignment", "title points subject")
+      .populate(
+        "assignment",
+        "title points subject startDate deadline originalFileName file fileUrl fileMimeType"
+      )
       .sort({ createdAt: -1 })
       .lean();
 
-    // Hide unpublished marks/feedback from the student payload.
+    // Hide unpublished marks/feedback; expose a student-safe assignment summary
+    // (dates + hasFile) without storage keys/URLs.
     const safe = submissions.map((s) => {
-      if (PUBLISHED.includes(s.status)) return s;
+      const redacted = redactSubmissionForStudent(s);
+      const assignment =
+        s.assignment && typeof s.assignment === "object" ? s.assignment : null;
+      const hasFile = Boolean(
+        assignment &&
+          (assignment.file || assignment.fileUrl || assignment.originalFileName)
+      );
+      const publicAssignment = assignment
+        ? {
+            _id: assignment._id,
+            title: assignment.title || "",
+            subject: assignment.subject || "",
+            points: assignment.points ?? null,
+            startDate: assignment.startDate || null,
+            deadline: assignment.deadline || null,
+            originalFileName: assignment.originalFileName || (hasFile ? "assignment" : ""),
+            hasFile,
+          }
+        : null;
       return {
-        ...s,
-        marks: null,
-        aiScore: null,
-        feedback: "",
-        aiFeedback: "",
-        aiStrengths: [],
-        aiImprovements: [],
+        ...redacted,
+        assignment: publicAssignment,
+        // Convenience mirrors used by the Student Checked Results mapper.
+        startDate: publicAssignment?.startDate || null,
+        deadline: publicAssignment?.deadline || null,
+        assignmentOriginalFileName: publicAssignment?.originalFileName || "",
+        hasFile: Boolean(publicAssignment?.hasFile),
       };
     });
     res.json(safe);

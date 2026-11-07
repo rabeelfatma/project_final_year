@@ -58,7 +58,7 @@ function unmountPreview() {
  *
  * @param {string} previewUrl authenticated preview route
  * @param {string} fileName original filename (used for type detection + labels)
- * @param {{ downloadUrl?: string }} [options]
+ * @param {{ downloadUrl?: string, downloadLabel?: string }} [options]
  */
 export async function openProtectedPreview(previewUrl, fileName = "File preview", options = {}) {
   if (!previewUrl) throw new Error("Missing preview URL.");
@@ -68,11 +68,13 @@ export async function openProtectedPreview(previewUrl, fileName = "File preview"
   document.body.appendChild(previewHost);
   previewRoot = createRoot(previewHost);
   const downloadUrl = options.downloadUrl || options.download || "";
+  const downloadLabel = options.downloadLabel || "Download Original";
   previewRoot.render(
     React.createElement(FilePreviewModal, {
       open: true,
       previewUrl,
       downloadUrl,
+      downloadLabel,
       fileName,
       onClose: unmountPreview,
     })

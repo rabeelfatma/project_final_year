@@ -157,11 +157,15 @@ const teacherService = {
     }
   },
 
-  // 🔥 PUBLISH RESULTS
+  // 🔥 PUBLISH RESULTS — scope: 'ai' | 'full' (default full)
   publishBulkResults: async (data) => {
     try {
       if (!data?.submissionIds?.length) throw new Error("No submission IDs provided");
-      const response = await api.post('/teacher/publish-results', { submissionIds: data.submissionIds });
+      const scope = data.scope === 'ai' ? 'ai' : 'full';
+      const response = await api.post('/teacher/publish-results', {
+        submissionIds: data.submissionIds,
+        scope,
+      });
       return response.data;
     } catch (error) {
       console.error("Publish Error:", error.response?.data || error.message);

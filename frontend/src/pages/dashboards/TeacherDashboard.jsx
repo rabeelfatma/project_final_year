@@ -4,7 +4,8 @@ import {
   Layout, PlusCircle, BookOpen, ClipboardCheck, Users, RotateCcw,
   Loader2, FileUp, X, CheckCircle, TrendingUp, Download,
   ShieldCheck, Clock, Trash2, Edit3, Sparkles, MessageSquare,
-  Send, Eye, AlertCircle, ShieldAlert, FileText, ListChecks, Archive
+  Send, Eye, AlertCircle, ShieldAlert, FileText, Archive,
+  Layers, Folder, CalendarDays, Search, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -22,7 +23,6 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import ProfilePage from '../account/ProfilePage';
 import SettingsPage from '../account/SettingsPage';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
-import FileLink from '../../components/files/FileLink';
 import {
   ACADEMIC_ACCEPT,
   assertAcademicFile,
@@ -113,6 +113,11 @@ export default function TeacherDashboard() {
   const [submissions, setSubmissions]           = useState([]);
   const [selectedSubmissions, setSelectedSubmissions] = useState([]);
   const [selectSubmissionsMode, setSelectSubmissionsMode] = useState(false);
+  const [submissionSearch, setSubmissionSearch] = useState('');
+  const [submissionAssignmentFilter, setSubmissionAssignmentFilter] = useState('all');
+  const [submissionStatusFilter, setSubmissionStatusFilter] = useState('all');
+  const [submissionPage, setSubmissionPage] = useState(1);
+  const SUBMISSIONS_PAGE_SIZE = 8;
   const [selectedAssignments, setSelectedAssignments] = useState([]);
   const [manageAssignments, setManageAssignments] = useState(false);
   /** Active list = non-archived (active + legacy deactive). Archived = status archived only. */
@@ -207,11 +212,62 @@ export default function TeacherDashboard() {
     });
   };
 
+  const submissionStatusBucket = (status) => {
+    if (status === 'PUBLISHED') return 'published';
+    if (status === 'AI_GRADED') return 'ai_graded';
+    if (status === 'AI_PROCESSING') return 'ai_processing';
+    if (['graded', 'GRADED', 'Graded', 'REVIEWED'].includes(status)) return 'graded';
+    return 'awaiting';
+  };
+
+  const filteredSubmissions = submissions.filter((sub) => {
+    const q = submissionSearch.trim().toLowerCase();
+    if (q) {
+      const hay = [
+        sub.student?.name,
+        sub.student?.registrationNumber,
+        sub.student?.email,
+        sub.assignment?.title,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (submissionAssignmentFilter !== 'all') {
+      if (String(sub.assignment?._id || '') !== String(submissionAssignmentFilter)) return false;
+    }
+    if (submissionStatusFilter !== 'all') {
+      if (submissionStatusBucket(sub.status) !== submissionStatusFilter) return false;
+    }
+    return true;
+  });
+
+  const submissionAssignmentOptions = (() => {
+    const map = new Map();
+    for (const sub of submissions) {
+      const id = sub.assignment?._id;
+      if (!id) continue;
+      const key = String(id);
+      if (!map.has(key)) {
+        map.set(key, sub.assignment?.title || 'Untitled');
+      }
+    }
+    return [...map.entries()].map(([id, title]) => ({ id, title }));
+  })();
+
+  const submissionTotalPages = Math.max(1, Math.ceil(filteredSubmissions.length / SUBMISSIONS_PAGE_SIZE));
+  const safeSubmissionPage = Math.min(submissionPage, submissionTotalPages);
+  const pagedSubmissions = filteredSubmissions.slice(
+    (safeSubmissionPage - 1) * SUBMISSIONS_PAGE_SIZE,
+    safeSubmissionPage * SUBMISSIONS_PAGE_SIZE
+  );
+
   const handleSelectAllSubmissions = (checked) => {
     if (checked) {
-      const first40 = submissions.slice(0, 40).map((s) => s._id);
+      const first40 = filteredSubmissions.slice(0, 40).map((s) => s._id);
       setSelectedSubmissions(first40);
-      if (submissions.length > 40) alert('Only first 40 students selected due to limit.');
+      if (filteredSubmissions.length > 40) alert('Only first 40 students selected due to limit.');
     } else {
       setSelectedSubmissions([]);
     }
@@ -235,13 +291,36 @@ export default function TeacherDashboard() {
     return [...new Set(ids)];
   };
 
+  const eligiblePublishSubmissionIds = () =>
+    submissions
+      .filter((sub) => {
+        if (sub.status === 'PUBLISHED') return false;
+        const hasTeacher =
+          sub.marks !== null &&
+          sub.marks !== undefined &&
+          Number.isFinite(Number(sub.marks)) &&
+          Number(sub.marks) >= 0;
+        const hasAi =
+          sub.aiScore !== null &&
+          sub.aiScore !== undefined &&
+          Number.isFinite(Number(sub.aiScore)) &&
+          Number(sub.aiScore) >= 0;
+        return hasTeacher || hasAi;
+      })
+      .map((sub) => sub._id);
+
   // ── AI Evaluation ─────────────────────────────────────────
   const handleAiEvaluation = () => {
-    if (selectedSubmissions.length === 0) {
-      alert('Select at least one submission first (double-click a row).');
+    if (!aiInstructions.trim()) {
+      alert('Please provide grading instructions first.');
       return;
     }
-    if (!aiInstructions.trim()) return alert('Please provide grading instructions first.');
+    if (selectedSubmissions.length === 0) {
+      alert(
+        'Select at least one submission before AI Evaluate.\n\nDouble-click a row to enter selection mode, then choose the submissions to grade.'
+      );
+      return;
+    }
     setAiQuestionFilePrompt({ open: true });
   };
 
@@ -277,10 +356,27 @@ export default function TeacherDashboard() {
 
   // ── Publish Bulk ──────────────────────────────────────────
   const handlePublishBulk = async () => {
-    if (selectedSubmissions.length === 0) return;
+    const ids =
+      selectedSubmissions.length > 0
+        ? selectedSubmissions
+        : eligiblePublishSubmissionIds();
+
+    if (!ids.length) {
+      alert(
+        'No eligible submissions to publish.\n\nA submission needs AI marks or Teacher marks, and must not already be published. Students only see published results.'
+      );
+      return;
+    }
+
+    const usingSelection = selectedSubmissions.length > 0;
+    const confirmMsg = usingSelection
+      ? `Publish marks for ${ids.length} selected submission(s)? Students will see these results.`
+      : `No rows selected. Publish marks for ${ids.length} eligible reviewed/graded submission(s)? Students will see these results.`;
+    if (!window.confirm(confirmMsg)) return;
+
     try {
       setIsPublishing(true);
-      const result = await teacherService.publishBulkResults({ submissionIds: selectedSubmissions });
+      const result = await teacherService.publishBulkResults({ submissionIds: ids });
       const published = Number(result?.published);
       alert(
         Number.isFinite(published)
@@ -299,7 +395,9 @@ export default function TeacherDashboard() {
   // ── Plagiarism check ─────────────────────────────────────
   const handlePlagiarismCheck = async () => {
     if (selectedSubmissions.length === 0) {
-      alert('Select at least one submission first.');
+      alert(
+        'Select at least one submission before Check Plagiarism.\n\nDouble-click a row to enter selection mode, then select submissions from the same assignment to compare.'
+      );
       return;
     }
     try {
@@ -345,7 +443,8 @@ export default function TeacherDashboard() {
     }
   };
 
-  const handleSaveEvaluation = async (publish = false) => {
+  const handleSaveEvaluation = async () => {
+    if (savingEval) return;
     if (manualScore === '' || manualScore === null || manualScore === undefined) {
       alert('Please enter Teacher Marks. AI Marks remain separate and will not be copied into this field.');
       return;
@@ -362,13 +461,23 @@ export default function TeacherDashboard() {
     }
     try {
       setSavingEval(true);
-      await teacherService.updateFinalGrade(selectedReview._id, {
+      const response = await teacherService.updateFinalGrade(selectedReview._id, {
         marks:    marksNum,
         feedback: teacherNote,
-        status:   publish ? 'PUBLISHED' : 'graded',
+        status:   'graded',
       });
-      alert(publish ? '✅ Published!' : '✅ Saved!');
-      setReviewModalOpen(false);
+      const saved = response?.data || response;
+      // Keep Review Evaluation open after Save Teacher Grade so publish actions remain available.
+      setSelectedReview((prev) => (prev ? {
+        ...prev,
+        ...(saved && typeof saved === 'object' ? saved : {}),
+        marks: marksNum,
+        feedback: teacherNote,
+        status: prev.status === 'PUBLISHED' ? 'PUBLISHED' : 'graded',
+      } : prev));
+      setManualScore(String(marksNum));
+      setTeacherNote(teacherNote);
+      alert('✅ Teacher grade saved.');
       fetchAllData();
     } catch (err) {
       console.error('Save Evaluation Error:', err?.response?.data || err.message);
@@ -378,21 +487,112 @@ export default function TeacherDashboard() {
     }
   };
 
+  const applyPublishStateToReview = (result) => {
+    const detail = Array.isArray(result?.details)
+      ? result.details.find((row) => String(row.id) === String(selectedReview?._id))
+      : null;
+    const components = detail?.components || [];
+    setSelectedReview((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, status: 'PUBLISHED' };
+      if (result?.scope === 'ai' || components.includes('AI Result')) {
+        next.aiPublished = true;
+      }
+      if (components.includes('Teacher Marks')) next.teacherMarksPublished = true;
+      if (components.includes('Teacher Feedback')) next.teacherFeedbackPublished = true;
+      return next;
+    });
+    return components;
+  };
+
   const handlePublishAiResult = async () => {
+    if (savingEval) return;
     if (selectedReview?.aiScore == null || !Number.isFinite(Number(selectedReview.aiScore))) {
-      alert('No AI marks available to publish. Run AI grading first, or enter Teacher Marks.');
+      alert('No AI marks available to publish. Run AI grading first.');
       return;
     }
     try {
       setSavingEval(true);
       const result = await teacherService.publishBulkResults({
         submissionIds: [selectedReview._id],
+        scope: 'ai',
       });
-      alert(`✅ Published ${Number(result?.published) || 1} AI result(s) to the student.`);
-      setReviewModalOpen(false);
+      const components = applyPublishStateToReview(result);
+      if (Number(result?.published) > 0) {
+        alert('✅ AI Result published to the student (AI Marks + AI Feedback only).');
+      } else {
+        alert(components.length || selectedReview.aiPublished
+          ? 'AI Result was already published.'
+          : (result?.details?.[0]?.reason || 'Nothing new to publish.'));
+      }
+      // Keep modal open for further Teacher publication actions.
       fetchAllData();
     } catch (err) {
       alert('❌ Failed to publish AI result: ' + (err?.response?.data?.message || err.message));
+    } finally {
+      setSavingEval(false);
+    }
+  };
+
+  const handlePublishAvailableResults = async () => {
+    if (savingEval) return;
+    const maxMarks = Number(selectedReview?.totalMarks || selectedReview?.assignment?.points);
+    const marksRaw = manualScore;
+    const hasMarksInput = marksRaw !== '' && marksRaw !== null && marksRaw !== undefined;
+    const marksNum = Number(marksRaw);
+    const hasValidMarks = hasMarksInput && Number.isFinite(marksNum) && marksNum >= 0 &&
+      (!Number.isFinite(maxMarks) || marksNum <= maxMarks);
+    const feedbackText = String(teacherNote || '');
+    const hasFeedback = feedbackText.trim().length > 0;
+    const hasAi = selectedReview?.aiScore != null && Number.isFinite(Number(selectedReview.aiScore));
+
+    if (hasMarksInput && !hasValidMarks) {
+      alert(
+        Number.isFinite(maxMarks) && marksNum > maxMarks
+          ? `Teacher Marks cannot exceed the maximum of ${maxMarks}.`
+          : 'Teacher Marks must be a valid non-negative number.'
+      );
+      return;
+    }
+
+    if (!hasAi && !hasValidMarks && !hasFeedback &&
+        !(selectedReview?.marks != null && Number.isFinite(Number(selectedReview.marks))) &&
+        !String(selectedReview?.feedback || '').trim()) {
+      alert('Nothing to publish. Run AI grading or enter Teacher Marks/Feedback first.');
+      return;
+    }
+
+    try {
+      setSavingEval(true);
+      // Persist optional Teacher fields first without publishing.
+      if (hasValidMarks || hasFeedback) {
+        const payload = { status: 'graded', feedback: feedbackText };
+        if (hasValidMarks) payload.marks = marksNum;
+        const response = await teacherService.updateFinalGrade(selectedReview._id, payload);
+        const saved = response?.data || response;
+        setSelectedReview((prev) => (prev ? {
+          ...prev,
+          ...(saved && typeof saved === 'object' ? saved : {}),
+          marks: hasValidMarks ? marksNum : prev.marks,
+          feedback: feedbackText,
+        } : prev));
+        if (hasValidMarks) setManualScore(String(marksNum));
+      }
+
+      const result = await teacherService.publishBulkResults({
+        submissionIds: [selectedReview._id],
+        scope: 'full',
+      });
+      const components = applyPublishStateToReview(result);
+      if (Number(result?.published) > 0) {
+        alert(`✅ Published to student: ${components.join(', ') || 'available results'}.`);
+      } else {
+        alert(result?.details?.[0]?.reason || 'All available results were already published.');
+      }
+      // Keep modal open unless Teacher closes manually.
+      fetchAllData();
+    } catch (err) {
+      alert('❌ Failed to publish: ' + (err?.response?.data?.message || err.message));
     } finally {
       setSavingEval(false);
     }
@@ -520,7 +720,7 @@ export default function TeacherDashboard() {
     setConfirmState({
       title: 'Unarchive assignment?',
       description:
-        'This assignment will return to Active with its original title, instructions, attachments, dates, marks and submissions preserved. Start and due dates are not changed. If the due date has already passed, students still cannot submit.',
+        'This assignment will return to Active with its original title, attachments, dates, marks and submissions preserved. Start and due dates are not changed. If the due date has already passed, students still cannot submit.',
       detail: asgn?.title || 'Selected assignment',
       confirmLabel: 'Unarchive',
       danger: false,
@@ -1251,12 +1451,6 @@ export default function TeacherDashboard() {
               <p className="qc-create-form__hint">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
 
               <div className="qc-create-form__field">
-                <label className="qc-label">Description <span className="text-red-400" aria-hidden="true">*</span></label>
-                <textarea className="qc-input qc-create-form__description" value={form.description} onChange={e => { setForm({...form, description:e.target.value}); setFormErrors((prev) => ({ ...prev, description: undefined })); }} placeholder="Instructions..." maxLength={2000} aria-required="true" aria-invalid={Boolean(formErrors.description)}/>
-                {formErrors.description ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.description}</p> : null}
-              </div>
-
-              <div className="qc-create-form__field">
                 <label className="qc-label">Reference File <span className="text-red-400" aria-hidden="true">*</span></label>
                 <div className={`qc-create-form__file ${formErrors.file ? 'is-invalid' : ''}`} onClick={() => fileInputRef.current.click()} role="button" tabIndex={0} aria-invalid={Boolean(formErrors.file)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}>
                   <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
@@ -1302,9 +1496,15 @@ export default function TeacherDashboard() {
 
         {/* ══ ASSIGNMENTS TAB ══ */}
         {activeTab === 'assignments' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
-              <h1 className="qc-page-title">My Assignments</h1>
+          <div className="qc-assignment-workspace animate-in fade-in duration-500">
+            <div className="qc-assignment-workspace__header">
+              <div className="qc-assignment-workspace__heading">
+                <div className="qc-assignment-workspace__title-row">
+                  <FileText size={22} className="qc-assignment-workspace__title-icon" aria-hidden="true" />
+                  <h1 className="qc-page-title">Assignment Workspace</h1>
+                </div>
+                <p className="qc-page-subtitle">Manage your assignments</p>
+              </div>
               <div className="qc-list-toolbar">
                 <OverflowMenu
                   label="Manage assignments"
@@ -1335,112 +1535,170 @@ export default function TeacherDashboard() {
                     },
                   ]}
                 />
-                <button
-                  type="button"
-                  className={`qc-manage-toggle ${manageAssignments ? 'is-active' : ''}`}
-                  onClick={() => {
-                    if (manageAssignments) {
-                      setManageAssignments(false);
-                      setSelectedAssignments([]);
-                    } else {
-                      setManageAssignments(true);
-                    }
-                  }}
-                  aria-pressed={manageAssignments}
-                >
-                  <ListChecks size={14} aria-hidden="true" />
-                  {manageAssignments ? 'Done' : 'Select'}
-                </button>
-                {manageAssignments && (
-                  <>
-                    <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="qc-check"
-                        checked={
-                          visibleAssignments.length > 0 &&
-                          visibleAssignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
-                        }
-                        onChange={(e) =>
-                          setSelectedAssignments(
-                            e.target.checked
-                              ? visibleAssignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
-                              : []
-                          )
-                        }
-                      />
-                      Select all
-                    </label>
-                    <span className="qc-chat-selection-count" aria-live="polite">
-                      {selectedAssignments.length} selected
-                    </span>
-                    {assignmentShelf === 'active' && selectedAssignments.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleArchiveSelectedAssignments}
-                        disabled={!selectedAssignments.length || confirmBusy}
-                        className="qc-chat-toolbar-btn"
-                      >
-                        <Archive size={13} aria-hidden="true" /> Archive Selected
-                      </button>
-                    )}
-                    {assignmentShelf === 'archived' && selectedAssignments.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleUnarchiveSelectedAssignments}
-                        disabled={!selectedAssignments.length || confirmBusy}
-                        className="qc-chat-toolbar-btn"
-                      >
-                        <RotateCcw size={13} aria-hidden="true" /> Unarchive Selected
-                      </button>
-                    )}
-                    {selectedAssignments.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteSelectedAssignments}
-                        disabled={!selectedAssignments.length || confirmBusy}
-                        className="qc-chat-toolbar-btn danger"
-                      >
-                        <Trash2 size={13} aria-hidden="true" /> Delete selected
-                      </button>
-                    )}
-                  </>
-                )}
               </div>
             </div>
-            <div className="qc-segmented mb-5" role="tablist" aria-label="Assignment shelf">
+
+            <div className="qc-assignment-summary" aria-label="Assignment summary">
+              <div className="qc-assignment-summary__card">
+                <div className="qc-assignment-summary__icon" aria-hidden="true">
+                  <Layers size={16} />
+                </div>
+                <div>
+                  <p className="qc-assignment-summary__label">Total Assignments</p>
+                  <p className="qc-assignment-summary__value">{assignments.length}</p>
+                </div>
+              </div>
+              <div className="qc-assignment-summary__card">
+                <div className="qc-assignment-summary__icon" aria-hidden="true">
+                  <Folder size={16} />
+                </div>
+                <div>
+                  <p className="qc-assignment-summary__label">Active Assignments</p>
+                  <p className="qc-assignment-summary__value">
+                    {assignments.filter((a) => a.status !== 'archived').length}
+                  </p>
+                </div>
+              </div>
+              <div className="qc-assignment-summary__card">
+                <div className="qc-assignment-summary__icon" aria-hidden="true">
+                  <Archive size={16} />
+                </div>
+                <div>
+                  <p className="qc-assignment-summary__label">Archived Assignments</p>
+                  <p className="qc-assignment-summary__value">
+                    {assignments.filter((a) => a.status === 'archived').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="qc-segmented mb-4" role="tablist" aria-label="Assignment shelf">
               <button
                 type="button"
                 role="tab"
                 aria-selected={assignmentShelf === 'active'}
                 className={`qc-segmented__item ${assignmentShelf === 'active' ? 'is-active' : ''}`}
-                onClick={() => { setAssignmentShelf('active'); setSelectedAssignments([]); }}
+                onClick={() => {
+                  setAssignmentShelf('active');
+                  setSelectedAssignments([]);
+                  setManageAssignments(false);
+                }}
               >
-                Active ({assignments.filter((a) => a.status !== 'archived').length})
+                Active
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={assignmentShelf === 'archived'}
                 className={`qc-segmented__item ${assignmentShelf === 'archived' ? 'is-active' : ''}`}
-                onClick={() => { setAssignmentShelf('archived'); setSelectedAssignments([]); }}
+                onClick={() => {
+                  setAssignmentShelf('archived');
+                  setSelectedAssignments([]);
+                  setManageAssignments(false);
+                }}
               >
-                Archived ({assignments.filter((a) => a.status === 'archived').length})
+                Archived
               </button>
             </div>
-            <div className="grid grid-cols-1 gap-3">
+
+            {manageAssignments && (() => {
+              const allVisibleSelected =
+                visibleAssignments.length > 0 &&
+                visibleAssignments.every((a) => isAssignmentSelected(selectedAssignments, a._id));
+              const hasSelection = selectedAssignments.length > 0;
+              const archiveLabel = allVisibleSelected ? 'Archive All' : 'Archive Selected';
+              const restoreLabel = allVisibleSelected ? 'Restore All' : 'Restore Selected';
+              const deleteLabel = allVisibleSelected ? 'Delete All' : 'Delete Selected';
+              return (
+              <div className="qc-selection-bar mb-4" role="status" aria-live="polite">
+                <div className="qc-selection-bar__left">
+                  <span className="qc-selection-bar__count">
+                    {selectedAssignments.length} selected
+                  </span>
+                  <label className="qc-selection-bar__select-all">
+                    <input
+                      type="checkbox"
+                      className="qc-check"
+                      checked={allVisibleSelected}
+                      onChange={(e) =>
+                        setSelectedAssignments(
+                          e.target.checked
+                            ? visibleAssignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
+                            : []
+                        )
+                      }
+                    />
+                    Select All
+                  </label>
+                </div>
+                <div className="qc-selection-bar__actions">
+                  {hasSelection && assignmentShelf === 'active' && (
+                    <button
+                      type="button"
+                      onClick={
+                        allVisibleSelected
+                          ? handleArchiveAllAssignments
+                          : handleArchiveSelectedAssignments
+                      }
+                      disabled={confirmBusy}
+                      className="qc-chat-toolbar-btn"
+                    >
+                      <Archive size={13} aria-hidden="true" /> {archiveLabel}
+                    </button>
+                  )}
+                  {hasSelection && assignmentShelf === 'archived' && (
+                    <button
+                      type="button"
+                      onClick={
+                        allVisibleSelected
+                          ? handleUnarchiveAllAssignments
+                          : handleUnarchiveSelectedAssignments
+                      }
+                      disabled={confirmBusy}
+                      className="qc-chat-toolbar-btn"
+                    >
+                      <RotateCcw size={13} aria-hidden="true" /> {restoreLabel}
+                    </button>
+                  )}
+                  {hasSelection && (
+                    <button
+                      type="button"
+                      onClick={
+                        allVisibleSelected
+                          ? handleDeleteAllVisibleAssignments
+                          : handleDeleteSelectedAssignments
+                      }
+                      disabled={confirmBusy}
+                      className="qc-chat-toolbar-btn danger"
+                    >
+                      <Trash2 size={13} aria-hidden="true" /> {deleteLabel}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="qc-selection-exit"
+                    title="Exit selection"
+                    aria-label="Exit selection mode"
+                    onClick={() => {
+                      setManageAssignments(false);
+                      setSelectedAssignments([]);
+                    }}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              );
+            })()}
+
+            <div className="qc-assignment-list">
               {visibleAssignments.map((asgn) => {
                 const isArchived = asgn.status === 'archived';
                 const isOverdue = !isArchived && new Date(asgn.deadline) < new Date();
-                const displayStatus = isArchived
-                  ? 'archived'
-                  : (isOverdue ? 'deactive' : (asgn.status || 'active'));
+                const isInactive = !isArchived && (asgn.status === 'deactive' || isOverdue);
                 const assignmentId = normalizeAssignmentId(asgn._id);
-                const statusLabel = displayStatus === 'deactive'
-                  ? (isOverdue ? 'Overdue' : 'Deactive')
-                  : displayStatus === 'archived'
-                    ? 'Archived'
-                    : 'Active';
+                const statusLabel = isArchived ? 'ARCHIVED' : (isInactive ? 'INACTIVE' : 'ACTIVE');
+                const statusClass = isArchived ? 'archived' : (isInactive ? 'inactive' : 'active');
                 const overflowItems = isArchived
                   ? [{
                       id: `edit-assignment-${assignmentId}`,
@@ -1480,11 +1738,15 @@ export default function TeacherDashboard() {
                 return (
                   <article
                     key={assignmentId || asgn._id}
-                    className={`qc-card qc-assignment-card ${selected ? 'is-selected' : ''}`}
+                    className={`qc-card qc-assignment-card ${selected ? 'is-selected' : ''} ${manageAssignments ? 'is-selecting' : ''}`}
                     onDoubleClick={(event) => {
-                      if (event.target?.closest?.('button, a, input, label, .qc-file-link')) return;
+                      if (event.target?.closest?.('button, a, input, label, .qc-file-link, .qc-view-file-btn, .qc-overflow-menu')) return;
+                      event.preventDefault();
                       if (!manageAssignments) setManageAssignments(true);
-                      setSelectedAssignments((prev) => toggleAssignmentSelection(prev, assignmentId));
+                      setSelectedAssignments((prev) => {
+                        if (isAssignmentSelected(prev, assignmentId)) return prev;
+                        return toggleAssignmentSelection(prev, assignmentId);
+                      });
                     }}
                   >
                     <div className="qc-assignment-card__main">
@@ -1502,52 +1764,49 @@ export default function TeacherDashboard() {
                           }
                         />
                       )}
+                      <div className="qc-assignment-card__doc-icon" aria-hidden="true">
+                        <FileText size={16} />
+                      </div>
                       <div className="min-w-0 flex-1">
-                        <div className="qc-assignment-card__title-row">
-                          <h3 className="qc-assignment-card__title">{asgn.title}</h3>
-                          {asgn.file ? (
-                            <FileLink
-                              variant="icon"
-                              fileName={asgn.originalFileName || 'assignment'}
-                              openLabel="Open Assignment File"
-                              onOpen={async () => {
-                                if (manageAssignments) return;
-                                try {
-                                  await openProtectedPreview(
-                                    teacherService.previewAssignment(asgn._id),
-                                    asgn.originalFileName || 'assignment',
-                                    { downloadUrl: teacherService.downloadAssignment(asgn._id) }
-                                  );
-                                } catch (e) {
-                                  alert(e.message);
-                                }
-                              }}
-                            />
-                          ) : null}
-                          <span className={`qc-status-badge is-${displayStatus === 'deactive' && isOverdue ? 'overdue' : displayStatus}`}>
-                            {statusLabel}
-                          </span>
-                        </div>
+                        <h3 className="qc-assignment-card__title">{asgn.title}</h3>
                         <div className="qc-assignment-card__meta">
                           <p className="qc-assignment-card__meta-item">
-                            Subject: {asgn.subject || 'General'}
-                          </p>
-                          <p className="qc-assignment-card__meta-item">
-                            <Clock size={12} aria-hidden="true"/> Start: {asgn.startDate ? new Date(asgn.startDate).toLocaleString() : '—'}
+                            <CalendarDays size={12} aria-hidden="true"/> Start: {asgn.startDate ? new Date(asgn.startDate).toLocaleString() : '—'}
                           </p>
                           <p className={`qc-assignment-card__meta-item ${isOverdue ? 'is-danger' : ''}`}>
                             <Clock size={12} aria-hidden="true"/> Due: {asgn.deadline ? new Date(asgn.deadline).toLocaleString() : '—'}
                           </p>
-                          {isArchived && (
-                            <p className="qc-assignment-card__meta-item is-warning">
-                              Status: Archived — hidden from students
-                              {asgn.updatedAt ? ` · Updated ${new Date(asgn.updatedAt).toLocaleString()}` : ''}
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="qc-assignment-card__actions" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                    <div className="qc-assignment-card__aside" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                      {asgn.file ? (
+                        <button
+                          type="button"
+                          className="qc-view-file-btn"
+                          title="View File"
+                          aria-label={`View file for ${asgn.title || 'assignment'}`}
+                          onClick={async (event) => {
+                            event.stopPropagation();
+                            try {
+                              await openProtectedPreview(
+                                teacherService.previewAssignment(asgn._id),
+                                asgn.originalFileName || 'assignment',
+                                { downloadUrl: teacherService.downloadAssignment(asgn._id) }
+                              );
+                            } catch (e) {
+                              alert(e.message);
+                            }
+                          }}
+                        >
+                          <Eye size={14} aria-hidden="true" />
+                          View File
+                        </button>
+                      ) : null}
+                      <span className={`qc-status-badge is-${statusClass}`}>
+                        <span className="qc-status-badge__dot" aria-hidden="true" />
+                        {statusLabel}
+                      </span>
                       <OverflowMenu
                         label={`More actions for ${asgn.title || 'assignment'}`}
                         items={overflowItems}
@@ -1568,153 +1827,257 @@ export default function TeacherDashboard() {
 
         {/* ══ SUBMISSIONS TAB ══ */}
         {activeTab === 'submissions' && (
-          <div className="qc-fill-page">
-            <div className="flex flex-col gap-3 shrink-0">
-              <div className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-3">
-                <div>
+          <div className="qc-submissions-page">
+            <header className="qc-submissions-header">
+              <div className="qc-submissions-header__copy">
+                <div className="qc-submissions-header__title-row">
+                  <ClipboardCheck size={22} className="qc-submissions-header__icon" aria-hidden="true" />
                   <h1 className="qc-page-title">Submissions</h1>
-                  <p className="qc-toolbar-hint mt-1">
-                    Double-click a row to enter selection mode. AI Evaluate will ask whether to include question files.
-                  </p>
                 </div>
-                <div className="qc-submissions-toolbar">
+                <p className="qc-page-subtitle">
+                  Review, evaluate, and publish student submissions.
+                </p>
+              </div>
+              <div className="qc-submissions-toolbar">
+                <button
+                  type="button"
+                  onClick={handleAiEvaluation}
+                  disabled={aiLoading}
+                  className="qc-btn qc-btn-primary"
+                >
+                  {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
+                  AI Evaluate
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePlagiarismCheck}
+                  disabled={checkingPlagiarism}
+                  className="qc-btn qc-btn-primary"
+                >
+                  {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>}
+                  Check Plagiarism
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePublishBulk}
+                  disabled={isPublishing}
+                  className="qc-btn qc-btn-primary"
+                >
+                  {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
+                  Publish Marks
+                </button>
+              </div>
+            </header>
+
+            {selectSubmissionsMode && (
+              <div className="qc-selection-bar" role="status" aria-live="polite">
+                <div className="qc-selection-bar__left">
+                  <label className="qc-selection-bar__select-all">
+                    <input
+                      type="checkbox"
+                      className="qc-check"
+                      aria-label="Select all filtered submissions"
+                      checked={
+                        filteredSubmissions.slice(0, 40).length > 0 &&
+                        selectedSubmissions.length === filteredSubmissions.slice(0, 40).length
+                      }
+                      onChange={(e) => handleSelectAllSubmissions(e.target.checked)}
+                    />
+                    Select All
+                  </label>
+                  <span className="qc-selection-bar__count">
+                    <span className={selectedSubmissions.length >= 40 ? 'text-red-500' : 'accent-text'}>
+                      {selectedSubmissions.length}
+                    </span>
+                    {' '}selected
+                  </span>
+                </div>
+                <div className="qc-selection-bar__actions">
                   <button
                     type="button"
-                    onClick={handleAiEvaluation}
-                    disabled={!selectedSubmissions.length || aiLoading}
-                    className="qc-btn qc-btn-primary"
+                    className="qc-btn qc-btn-secondary"
+                    onClick={handleResetSelectedGrades}
+                    disabled={!selectedSubmissions.length}
                   >
-                    {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
-                    AI Evaluate
+                    <RotateCcw size={14} aria-hidden="true" /> Reset All Grades
                   </button>
                   <button
                     type="button"
-                    onClick={handlePlagiarismCheck}
-                    disabled={!selectedSubmissions.length || checkingPlagiarism}
-                    className="qc-btn qc-btn-primary"
+                    className="qc-btn qc-btn-danger"
+                    onClick={handleDeleteSelectedSubmissions}
+                    disabled={!selectedSubmissions.length}
                   >
-                    {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>}
-                    Check Plagiarism
+                    <Trash2 size={14} aria-hidden="true" /> Delete Selected
                   </button>
-                  <button
-                    type="button"
-                    onClick={handlePublishBulk}
-                    disabled={!selectedSubmissions.length || isPublishing}
-                    className="qc-btn qc-btn-primary"
-                  >
-                    {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
-                    Publish Marks
+                  <button type="button" className="qc-btn qc-btn-ghost" onClick={clearSubmissionSelection}>
+                    Clear
                   </button>
                 </div>
               </div>
+            )}
 
-              {selectSubmissionsMode && (
-                <div className="qc-selection-bar" role="status" aria-live="polite">
-                  <div className="qc-selection-bar__left">
-                    <label className="qc-selection-bar__select-all">
-                      <input
-                        type="checkbox"
-                        className="qc-check"
-                        aria-label="Select all submissions on this page"
-                        checked={
-                          submissions.slice(0, 40).length > 0 &&
-                          selectedSubmissions.length === submissions.slice(0, 40).length
-                        }
-                        onChange={(e) => handleSelectAllSubmissions(e.target.checked)}
-                      />
-                      Select All
-                    </label>
-                    <span className="qc-selection-bar__count">
-                      <span className={selectedSubmissions.length >= 40 ? 'text-red-500' : 'accent-text'}>
-                        {selectedSubmissions.length}
-                      </span>
-                      {' '}selected
-                    </span>
-                  </div>
-                  <div className="qc-selection-bar__actions">
-                    <button
-                      type="button"
-                      className="qc-btn qc-btn-secondary"
-                      onClick={handleResetSelectedGrades}
-                      disabled={!selectedSubmissions.length}
-                    >
-                      <RotateCcw size={14} aria-hidden="true" /> Reset All Grades
-                    </button>
-                    <button
-                      type="button"
-                      className="qc-btn qc-btn-danger"
-                      onClick={handleDeleteSelectedSubmissions}
-                      disabled={!selectedSubmissions.length}
-                    >
-                      <Trash2 size={14} aria-hidden="true" /> Delete Selected
-                    </button>
-                    <button type="button" className="qc-btn qc-btn-ghost" onClick={clearSubmissionSelection}>
-                      Clear
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="qc-card flex flex-col gap-3 !p-3">
-                <div className="flex items-center gap-2 text-sky-400 font-black text-[10px] uppercase tracking-widest">
-                  <MessageSquare size={14}/> Grading Instructions for AI
+            <section className="qc-submissions-ai-panel" aria-label="AI grading controls">
+              <div className="qc-submissions-ai-panel__instructions">
+                <div className="qc-submissions-ai-panel__label">
+                  <MessageSquare size={14} aria-hidden="true" /> Grading Instructions for AI
                 </div>
                 <textarea
                   value={aiInstructions}
-                  onChange={e => setAiInstructions(e.target.value)}
-                  className="w-full theme-input border rounded-xl p-3 text-sm h-16 resize-none outline-none"
+                  onChange={(e) => setAiInstructions(e.target.value)}
+                  className="qc-submissions-ai-panel__textarea theme-input"
                   placeholder="Example: Evaluate out of 30 marks. Check correctness, completeness and clarity."
                 />
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 pt-2 border-t border-slate-800">
-                  <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest shrink-0">
-                    <FileUp size={14}/> Extra reference files (optional)
-                  </div>
-                  <div
-                    className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg theme-page border border-slate-700 hover:border-sky-500/50 transition-all min-w-0"
-                    onClick={() => multimediaInputRef.current.click()}
-                  >
-                    <input type="file" ref={multimediaInputRef} className="hidden" accept="*/*" multiple onChange={handleMultimediaChange}/>
-                    {multimediaFiles.length ? (
-                      <div className="flex items-center gap-2 text-sky-400 text-[10px] font-bold min-w-0">
-                        <CheckCircle size={12}/>
-                        <span className="max-w-[min(220px,50vw)] truncate">{multimediaFiles.length} file(s) selected</span>
-                        <X size={12} className="text-slate-500 hover:text-white shrink-0" onClick={e => { e.stopPropagation(); setMultimediaFiles([]); if (multimediaInputRef.current) multimediaInputRef.current.value = null; }}/>
-                      </div>
-                    ) : (
-                      <span className="text-slate-500 text-[10px] font-bold">Choose files</span>
-                    )}
-                  </div>
+              </div>
+              <div className="qc-submissions-ai-panel__files">
+                <div className="qc-submissions-ai-panel__label qc-submissions-ai-panel__label--muted">
+                  <FileUp size={14} aria-hidden="true" /> Reference Files (Optional)
+                </div>
+                <div
+                  className="qc-submissions-choose-files"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => multimediaInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      multimediaInputRef.current?.click();
+                    }
+                  }}
+                >
+                  <input
+                    type="file"
+                    ref={multimediaInputRef}
+                    className="hidden"
+                    accept="*/*"
+                    multiple
+                    onChange={handleMultimediaChange}
+                  />
+                  {multimediaFiles.length ? (
+                    <span className="qc-submissions-choose-files__selected">
+                      <CheckCircle size={12} aria-hidden="true" />
+                      <span className="truncate">{multimediaFiles.length} file(s) selected</span>
+                      <button
+                        type="button"
+                        className="qc-submissions-choose-files__clear"
+                        aria-label="Clear reference files"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMultimediaFiles([]);
+                          if (multimediaInputRef.current) multimediaInputRef.current.value = null;
+                        }}
+                      >
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    </span>
+                  ) : (
+                    <span>Choose Files</span>
+                  )}
                 </div>
               </div>
+            </section>
+
+            <div className="qc-submissions-filters" role="search" aria-label="Filter submissions">
+              <label className="qc-search-field qc-submissions-filters__search">
+                <Search size={14} className="qc-search-field__icon" aria-hidden="true" />
+                <span className="sr-only">Search by student or assignment</span>
+                <input
+                  type="search"
+                  value={submissionSearch}
+                  onChange={(e) => {
+                    setSubmissionSearch(e.target.value);
+                    setSubmissionPage(1);
+                  }}
+                  placeholder="Search by student or assignment"
+                  className="qc-search-field__input"
+                />
+              </label>
+              <select
+                className="qc-submissions-filter-select"
+                value={submissionAssignmentFilter}
+                aria-label="Filter by assignment"
+                onChange={(e) => {
+                  setSubmissionAssignmentFilter(e.target.value);
+                  setSubmissionPage(1);
+                }}
+              >
+                <option value="all">All Assignments</option>
+                {submissionAssignmentOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.title}</option>
+                ))}
+              </select>
+              <select
+                className="qc-submissions-filter-select"
+                value={submissionStatusFilter}
+                aria-label="Filter by status"
+                onChange={(e) => {
+                  setSubmissionStatusFilter(e.target.value);
+                  setSubmissionPage(1);
+                }}
+              >
+                <option value="all">All Statuses</option>
+                <option value="awaiting">Awaiting Evaluation</option>
+                <option value="ai_processing">AI Processing</option>
+                <option value="ai_graded">AI Graded</option>
+                <option value="graded">Graded</option>
+                <option value="published">Published</option>
+              </select>
             </div>
 
-            <div className="qc-table-wrap qc-fill-scroll qc-lms-table-wrap">
-                <table className="w-full min-w-[920px] text-left border-collapse qc-lms-table">
-                  <thead className="theme-page sticky top-0 z-10 text-[10px] font-black uppercase text-slate-500 tracking-widest border-b border-slate-800">
-                    <tr>
-                      {selectSubmissionsMode && <th className="p-2.5 w-10 text-center" aria-label="Selection" />}
-                      <th className="p-2.5">Student</th>
-                      <th className="p-2.5">Assignment</th>
-                      <th className="p-2.5">Question File</th>
-                      <th className="p-2.5">Score</th>
-                      <th className="p-2.5">Status</th>
-                      <th className="p-2.5 text-center">Review</th>
-                      <th className="p-2.5 text-center">More</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {submissions.map((sub) => (
+            <div className="qc-submissions-card">
+              <table className={`qc-submissions-table${selectSubmissionsMode ? ' is-selecting' : ''}`}>
+                <colgroup>
+                  {selectSubmissionsMode ? <col className="qc-submissions-col-check" /> : null}
+                  <col className="qc-submissions-col-student" />
+                  <col className="qc-submissions-col-assignment" />
+                  <col className="qc-submissions-col-qfile" />
+                  <col className="qc-submissions-col-solution" />
+                  <col className="qc-submissions-col-score" />
+                  <col className="qc-submissions-col-status" />
+                  <col className="qc-submissions-col-review" />
+                  <col className="qc-submissions-col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {selectSubmissionsMode && <th className="text-center" aria-label="Selection" />}
+                    <th>Student</th>
+                    <th>Assignment</th>
+                    <th>Question File</th>
+                    <th>Submission (Solution)</th>
+                    <th>Score</th>
+                    <th>Status</th>
+                    <th className="text-center">Review</th>
+                    <th className="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedSubmissions.map((sub) => {
+                    const maxPts = sub.totalMarks || sub.assignment?.points || '--';
+                    const hasQuestionFile = Boolean(sub.assignment?.file && sub.assignment?._id);
+                    const hasSolutionFile = Boolean(sub.file || sub.originalFileName);
+                    const statusTone =
+                      sub.status === 'PUBLISHED' ? 'is-published' :
+                      sub.status === 'AI_GRADED' ? 'is-evaluated' :
+                      sub.status === 'AI_PROCESSING' ? 'is-awaiting' :
+                      ['graded', 'GRADED', 'Graded', 'REVIEWED'].includes(sub.status) ? 'is-graded' :
+                      'is-awaiting';
+                    const statusLabel =
+                      sub.status === 'AI_PROCESSING' ? 'AI PROCESSING' :
+                      sub.status === 'AI_GRADED' ? 'AI GRADED' :
+                      sub.status === 'PUBLISHED' ? 'PUBLISHED' :
+                      ['graded', 'GRADED', 'Graded', 'REVIEWED'].includes(sub.status) ? 'GRADED' :
+                      'AWAITING EVALUATION';
+                    return (
                       <tr
                         key={sub._id}
-                        className={`qc-lms-row hover:bg-white/5 transition-colors ${selectedSubmissions.includes(sub._id) ? 'is-selected' : ''}`}
+                        className={`qc-submissions-row${selectedSubmissions.includes(sub._id) ? ' is-selected' : ''}`}
                         onDoubleClick={(event) => {
-                          if (event.target?.closest?.('button, a, input, label, .qc-file-link, .qc-file-named')) return;
+                          if (event.target?.closest?.('button, a, input, label, .qc-file-link, .qc-file-named, .qc-view-file-btn, .qc-overflow-menu, .qc-overflow-trigger')) return;
                           if (!selectSubmissionsMode) setSelectSubmissionsMode(true);
                           toggleSelect(sub._id);
                         }}
                       >
                         {selectSubmissionsMode && (
-                          <td className="p-2.5 text-center">
+                          <td className="text-center">
                             <input
                               type="checkbox"
                               className="qc-check"
@@ -1725,80 +2088,111 @@ export default function TeacherDashboard() {
                             />
                           </td>
                         )}
-                        <td className="p-2.5">
-                          <p className="font-bold text-white text-sm">
-                            {sub.student?.name || 'Unknown'}
-                          </p>
-                          <p className="text-[10px] text-sky-500 font-black tracking-widest uppercase">
-                            Reg No: {sub.student?.registrationNumber || 'Not assigned'}
+                        <td>
+                          <p className="qc-submissions-student-name">{sub.student?.name || 'Unknown'}</p>
+                          <p className="qc-submissions-student-reg">
+                            {sub.student?.registrationNumber || 'Not assigned'}
                           </p>
                         </td>
-
-                        <td className="p-2.5">
-                          <button
-                            type="button"
-                            className="qc-link-title text-left qc-assignment-title-full"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openReviewModal(sub);
-                            }}
-                            title={sub.assignment?.title || 'Untitled'}
-                          >
+                        <td>
+                          <span className="qc-submissions-assignment-title" title={sub.assignment?.title || 'Untitled'}>
                             {sub.assignment?.title || 'Untitled'}
-                          </button>
+                          </span>
                         </td>
-                        <td className="p-2.5">
-                          {sub.assignment?.file ? (
-                            <FileLink
-                              variant="named"
-                              fileName={sub.assignment.originalFileName || 'question'}
-                              openLabel={sub.assignment.originalFileName || 'Open question file'}
-                              onOpen={async () => {
+                        <td>
+                          {hasQuestionFile ? (
+                            <button
+                              type="button"
+                              className="qc-view-file-btn"
+                              title="View Question"
+                              aria-label={`View question file for ${sub.assignment?.title || 'assignment'}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
                                 try {
                                   await openProtectedPreview(
                                     teacherService.previewAssignment(sub.assignment._id),
                                     sub.assignment.originalFileName || 'question',
-                                    { downloadUrl: teacherService.downloadAssignment(sub.assignment._id) }
+                                    {
+                                      downloadUrl: teacherService.downloadAssignment(sub.assignment._id),
+                                      downloadLabel: 'Download File',
+                                    }
                                   );
-                                } catch (e) {
-                                  alert(e.message);
+                                } catch (err) {
+                                  alert(err.message);
                                 }
                               }}
-                            />
-                          ) : <span className="theme-muted text-sm" aria-label="No question file">—</span>}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            >
+                              <Eye size={13} aria-hidden="true" />
+                              View Question
+                            </button>
+                          ) : (
+                            <span className="qc-file-unavailable">Not Available</span>
+                          )}
                         </td>
-
-                        <td className="p-2.5">
-                          {['graded','GRADED','PUBLISHED','AI_GRADED','Graded'].includes(sub.status) ? (
-                            <div className="flex flex-col items-start gap-1 min-w-0 whitespace-nowrap">
-                              <span className="text-xs font-black accent-text">AI: {sub.aiScore != null ? `${sub.aiScore}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
-                              <span className="text-xs font-black" style={{color: 'var(--text)'}}>Teacher: {sub.marks != null ? `${sub.marks}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
+                        <td>
+                          {hasSolutionFile ? (
+                            <button
+                              type="button"
+                              className="qc-view-file-btn"
+                              title="View Solution"
+                              aria-label={`View solution from ${sub.student?.name || 'student'}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await openProtectedPreview(
+                                    teacherService.previewSubmission(sub._id),
+                                    sub.originalFileName || 'student-submission',
+                                    {
+                                      downloadUrl: teacherService.downloadSubmission(sub._id),
+                                      downloadLabel: 'Download Submission',
+                                    }
+                                  );
+                                } catch (err) {
+                                  alert(err.message);
+                                }
+                              }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            >
+                              <Eye size={13} aria-hidden="true" />
+                              View Solution
+                            </button>
+                          ) : (
+                            <span className="qc-file-unavailable">Not Available</span>
+                          )}
+                        </td>
+                        <td>
+                          {sub.status === 'AI_PROCESSING' ? (
+                            <span className="qc-submissions-score-muted">AI grading…</span>
+                          ) : (
+                            <div className="qc-submissions-score">
+                              <span className="accent-text">
+                                AI: {sub.aiScore != null && Number.isFinite(Number(sub.aiScore)) ? `${sub.aiScore}/${maxPts}` : `—/${maxPts}`}
+                              </span>
+                              <span>
+                                Teacher: {sub.marks != null && Number.isFinite(Number(sub.marks)) ? `${sub.marks}/${maxPts}` : `—/${maxPts}`}
+                              </span>
                             </div>
-                          ) : sub.status === 'AI_PROCESSING' ? (
-                            <span className="theme-muted text-[10px] font-black uppercase">AI grading…</span>
-                          ) : <span className="theme-muted text-[10px] font-black uppercase">Not graded</span>}
+                          )}
                         </td>
-
-                        <td className="p-2.5">
-                          <span className={`qc-status-badge ${
-                            sub.status === 'PUBLISHED'                            ? 'is-active' :
-                            sub.status === 'AI_GRADED'                            ? 'is-active' :
-                            sub.status === 'AI_PROCESSING'                        ? 'is-active' :
-                            ['graded','GRADED'].includes(sub.status)              ? 'is-active' :
-                                                                                    'is-deactive'
-                          }`}>
-                            {sub.status === 'AI_PROCESSING'            ? 'AI PROCESSING' :
-                             sub.status === 'AI_GRADED'                ? 'AI GRADED / REVIEW' :
-                             sub.status === 'PUBLISHED'                ? 'PUBLISHED' :
-                             ['graded','GRADED'].includes(sub.status)  ? 'TEACHER REVIEWED' :
-                             sub.status === 'submitted'                ? 'SUBMITTED' : 'NOT GRADED'}
+                        <td>
+                          <span className={`qc-status-badge qc-submissions-status ${statusTone}`}>
+                            {statusLabel}
                           </span>
                         </td>
-
-                        <td className="p-2.5 text-center">
-                          <button type="button" onClick={(e) => { e.stopPropagation(); openReviewModal(sub); }} className="qc-icon-btn" title="Review Evaluation" aria-label="Review evaluation"><Eye size={16}/></button>
+                        <td className="text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openReviewModal(sub); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            className="qc-icon-btn"
+                            title="Review Evaluation"
+                            aria-label="Review evaluation"
+                          >
+                            <Eye size={16} />
+                          </button>
                         </td>
-                        <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                        <td className="text-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                           <OverflowMenu
                             label={`Actions for submission ${sub.student?.name || sub._id}`}
                             items={[{
@@ -1816,10 +2210,49 @@ export default function TeacherDashboard() {
                           />
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              {submissions.length === 0 && <NoDataMessage icon={<ClipboardCheck size={40}/>} message="No student submissions yet."/>}
+                    );
+                  })}
+                </tbody>
+              </table>
+              {submissions.length === 0 && (
+                <NoDataMessage icon={<ClipboardCheck size={40}/>} message="No student submissions yet." />
+              )}
+              {submissions.length > 0 && filteredSubmissions.length === 0 && (
+                <NoDataMessage icon={<Search size={40}/>} message="No submissions match your search or filters." />
+              )}
+              {filteredSubmissions.length > 0 && (
+                <div className="qc-submissions-pagination">
+                  <p className="qc-submissions-pagination__meta">
+                    Showing {(safeSubmissionPage - 1) * SUBMISSIONS_PAGE_SIZE + 1}
+                    –
+                    {Math.min(safeSubmissionPage * SUBMISSIONS_PAGE_SIZE, filteredSubmissions.length)}
+                    {' '}of {filteredSubmissions.length}
+                  </p>
+                  <div className="qc-submissions-pagination__controls">
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-ghost"
+                      disabled={safeSubmissionPage <= 1}
+                      onClick={() => setSubmissionPage((p) => Math.max(1, p - 1))}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft size={14} aria-hidden="true" /> Prev
+                    </button>
+                    <span className="qc-submissions-pagination__page">
+                      {safeSubmissionPage} / {submissionTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-ghost"
+                      disabled={safeSubmissionPage >= submissionTotalPages}
+                      onClick={() => setSubmissionPage((p) => Math.min(submissionTotalPages, p + 1))}
+                      aria-label="Next page"
+                    >
+                      Next <ChevronRight size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1832,7 +2265,7 @@ export default function TeacherDashboard() {
                 <h1 className="qc-page-title">Plagiarism Check</h1>
                 <p className="text-slate-500 text-xs max-w-2xl">Local similarity checking compares extracted text from submissions of the same assignment. It is an indicator for teacher review, not an automatic misconduct decision.</p>
               </div>
-              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism || selectedSubmissions.length === 0} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
+              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
                 {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>} Run Check
               </button>
             </div>
@@ -1930,38 +2363,51 @@ export default function TeacherDashboard() {
               <section className="qc-review-modal__block">
                 <h3 className="qc-review-modal__label">Student Submission</h3>
                 <div className="qc-review-modal__file-row">
-                  <FileLink
-                    variant="named"
-                    fileName={selectedReview.originalFileName || 'student-submission'}
-                    openLabel={selectedReview.originalFileName || 'Open student submission'}
-                    onOpen={async () => {
-                      try {
-                        await openProtectedPreview(
-                          teacherService.previewSubmission(selectedReview._id),
-                          selectedReview.originalFileName || 'student-submission',
-                          { downloadUrl: teacherService.downloadSubmission(selectedReview._id) }
-                        );
-                      } catch (error) {
-                        alert(error.message);
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await downloadProtectedFile(
-                          teacherService.downloadSubmission(selectedReview._id),
-                          selectedReview.originalFileName || 'student-submission'
-                        );
-                      } catch (error) {
-                        alert(error.message);
-                      }
-                    }}
-                    className="qc-btn qc-btn-secondary"
-                  >
-                    <Download size={14} aria-hidden="true" /> Download Original
-                  </button>
+                  {(selectedReview.file || selectedReview.originalFileName) ? (
+                    <button
+                      type="button"
+                      className="qc-view-file-btn"
+                      title="View Solution"
+                      aria-label="View submitted solution file"
+                      onClick={async () => {
+                        try {
+                          await openProtectedPreview(
+                            teacherService.previewSubmission(selectedReview._id),
+                            selectedReview.originalFileName || 'student-submission',
+                            {
+                              downloadUrl: teacherService.downloadSubmission(selectedReview._id),
+                              downloadLabel: 'Download Submission',
+                            }
+                          );
+                        } catch (error) {
+                          alert(error.message);
+                        }
+                      }}
+                    >
+                      <Eye size={14} aria-hidden="true" />
+                      View Solution
+                    </button>
+                  ) : (
+                    <span className="qc-file-unavailable">Not Available</span>
+                  )}
+                  {(selectedReview.file || selectedReview.originalFileName) ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await downloadProtectedFile(
+                            teacherService.downloadSubmission(selectedReview._id),
+                            selectedReview.originalFileName || 'student-submission'
+                          );
+                        } catch (error) {
+                          alert(error.message);
+                        }
+                      }}
+                      className="qc-btn qc-btn-secondary"
+                    >
+                      <Download size={14} aria-hidden="true" /> Download Submission
+                    </button>
+                  ) : null}
                 </div>
               </section>
 
@@ -2055,7 +2501,7 @@ export default function TeacherDashboard() {
             <footer className="qc-review-modal__footer">
               <button
                 type="button"
-                onClick={() => handleSaveEvaluation(false)}
+                onClick={handleSaveEvaluation}
                 disabled={savingEval}
                 className="qc-btn qc-btn-primary"
               >
@@ -2067,17 +2513,17 @@ export default function TeacherDashboard() {
                 onClick={handlePublishAiResult}
                 disabled={savingEval || selectedReview.aiScore == null}
                 className="qc-btn qc-btn-primary"
-                title="Publish the AI-generated result to the student"
+                title="Publish only AI Marks and AI Feedback to the student"
               >
                 <Send size={14} aria-hidden="true" />
                 Publish AI Result
               </button>
               <button
                 type="button"
-                onClick={() => handleSaveEvaluation(true)}
+                onClick={handlePublishAvailableResults}
                 disabled={savingEval}
                 className="qc-btn qc-btn-primary"
-                title="Save teacher marks/feedback and publish to the student"
+                title="Publish available AI and entered Teacher results to the student"
               >
                 {savingEval ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} aria-hidden="true" />}
                 Publish

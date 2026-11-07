@@ -252,13 +252,10 @@ function validateAssignmentFields(input = {}, options = {}) {
     else values.title = normalized;
   }
 
+  // Assignment instructions/description UI removed — keep optional for existing records.
   if (checkDescription) {
     const description = String(input.description ?? "").trim();
-    if (!description) {
-      errors.description = "Description is required.";
-    } else if (description.length < DESCRIPTION_MIN_LENGTH) {
-      errors.description = "Description is too short.";
-    } else if (description.length > DESCRIPTION_MAX_LENGTH) {
+    if (description.length > DESCRIPTION_MAX_LENGTH) {
       errors.description = "Description is too long.";
     } else {
       values.description = description;

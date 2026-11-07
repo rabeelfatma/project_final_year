@@ -147,8 +147,12 @@ export default function PortalControls({ role }) {
       >
         <Bell size={18} className="accent-text" />
         {unread > 0 && (
-          <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
-            {unread > 9 ? "9+" : unread}
+          <span
+            className="notification-badge !-right-1 !-top-1"
+            data-digits={String(unread).length}
+            aria-label={`${unread} unread notifications`}
+          >
+            {unread}
           </span>
         )}
       </button>

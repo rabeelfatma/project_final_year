@@ -37,6 +37,15 @@ const {
   verifyScheduleIntent,
 } = require("../utils/assignmentScheduleIntent");
 
+const {
+  hasValidAiScore,
+  hasValidTeacherMarks,
+  hasTeacherFeedbackContent,
+  applyAiPublication,
+  applyTeacherMarksPublication,
+  applyTeacherFeedbackPublication,
+} = require("../utils/publicationVisibility");
+
 
 
 function extractTotalMarks(instructions) {
@@ -354,39 +363,27 @@ exports.createAssignment = async (req, res) => {
 
       status: "active",
 
+      availabilityNotifiedAt: null,
+
     });
 
-
-
-    const students = await User.find({ role: "student" }).select("_id");
-
-
-
-    await Promise.all(
-
-      students.map((student) =>
-
-        createNotification({
-
-          recipient: student._id,
-
-          title: "New assignment posted",
-
-          message: `${assignment.title} is available. Total marks: ${assignment.points}.`,
-
-          type: "assignment",
-
-          meta: { assignmentId: assignment._id },
-
-          url: "/dashboard/student",
-
-        })
-
-      )
-
-    );
-
-
+    // Future startDate: save only — availability notifications fire when start is reached.
+    // Already-open active assignments keep immediate "New assignment posted" behavior.
+    try {
+      const {
+        notifyAssignmentAvailable,
+      } = require("../services/assignmentAvailabilityNotificationService");
+      const Notification = require("../models/Notification");
+      await notifyAssignmentAvailable(assignment, {
+        Assignment,
+        User,
+        Notification,
+        createNotification,
+        nowMs: Date.now(),
+      });
+    } catch (notifyErr) {
+      console.error("ASSIGNMENT AVAILABILITY NOTIFY ERROR:", notifyErr);
+    }
 
     res.status(201).json(assignment);
 
@@ -1633,230 +1630,232 @@ exports.evaluateAssignment = async (req, res) => {
 
 
 
-    if (req.body.marks === undefined || req.body.marks === null || String(req.body.marks).trim() === "") {
+    const marksProvided =
+      req.body.marks !== undefined &&
+      req.body.marks !== null &&
+      String(req.body.marks).trim() !== "";
+    const feedbackProvided = Object.prototype.hasOwnProperty.call(req.body, "feedback");
+    const feedbackValue = feedbackProvided ? String(req.body.feedback || "") : undefined;
+
+    if (!marksProvided && !feedbackProvided) {
       return res.status(400).json({
-        message: "Enter Teacher Marks before saving manual grading. AI Marks are stored separately.",
+        message: "Enter Teacher Marks or Teacher Feedback before saving. AI Marks are stored separately.",
       });
     }
-
-    const marks = Number(req.body.marks);
 
     const totalMarks = Number(
-
       submission.totalMarks || submission.assignment?.points
-
     );
 
+    if (marksProvided) {
+      if (!Number.isFinite(totalMarks) || totalMarks <= 0) {
+        return res.status(400).json({
+          message: "Total marks are not set for this assignment.",
+        });
+      }
 
+      const marks = Number(req.body.marks);
+      if (!Number.isFinite(marks) || marks < 0 || marks > totalMarks) {
+        return res.status(400).json({
+          message: `Marks must be between 0 and ${totalMarks}.`,
+        });
+      }
 
-    if (!Number.isFinite(totalMarks) || totalMarks <= 0) {
-
-      return res.status(400).json({
-
-        message: "Total marks are not set for this assignment.",
-
-      });
-
+      submission.marks = marks;
+      submission.totalMarks = totalMarks;
     }
 
-
-
-    if (
-
-      !Number.isFinite(marks) ||
-
-      marks < 0 ||
-
-      marks > totalMarks
-
-    ) {
-
-      return res.status(400).json({
-
-        message: `Marks must be between 0 and ${totalMarks}.`,
-
-      });
-
+    if (feedbackProvided) {
+      submission.feedback = feedbackValue;
     }
 
+    const wantPublish = req.body.status === "PUBLISHED";
+    const now = new Date();
+    const publishedParts = [];
 
-
-    submission.marks = marks;
-
-    submission.totalMarks = totalMarks;
-
-    submission.feedback = String(req.body.feedback || "");
-
-    submission.status =
-
-      req.body.status === "PUBLISHED" ? "PUBLISHED" : "graded";
-
-
+    if (wantPublish) {
+      // Legacy single-call publish: publish each available component independently.
+      if (hasValidAiScore(submission) && submission.aiPublished !== true) {
+        applyAiPublication(submission, now);
+        publishedParts.push("AI Result");
+      }
+      if (hasValidTeacherMarks(submission) && submission.teacherMarksPublished !== true) {
+        applyTeacherMarksPublication(submission, now);
+        publishedParts.push("Teacher Marks");
+      }
+      if (
+        hasTeacherFeedbackContent(submission.feedback) &&
+        submission.teacherFeedbackPublished !== true
+      ) {
+        applyTeacherFeedbackPublication(submission, now);
+        publishedParts.push("Teacher Feedback");
+      }
+      if (!publishedParts.length && !hasValidAiScore(submission) && !hasValidTeacherMarks(submission) && !hasTeacherFeedbackContent(submission.feedback)) {
+        return res.status(400).json({
+          message: "Nothing to publish. Add an AI evaluation or Teacher marks/feedback first.",
+        });
+      }
+    } else if (submission.status !== "PUBLISHED") {
+      submission.status = "graded";
+    }
 
     await submission.save();
 
-
-
-    const published = submission.status === "PUBLISHED";
+    const published = wantPublish && publishedParts.length > 0;
     await createNotification({
-
       recipient: submission.student,
-
       title: published ? "Result published" : "Assignment evaluated",
-
       message: published
         ? `Your ${
             submission.assignment?.title || "assignment"
-          } result is ${marks}/${totalMarks}.`
+          } result was published (${publishedParts.join(", ")}).`
         : `Your ${
             submission.assignment?.title || "assignment"
           } was evaluated. Scores appear after your teacher publishes the result.`,
-
       type: "grade",
-
       meta: { submissionId: submission._id },
-
       url: "/dashboard/student",
-
     });
 
-
-
-    res.json({ success: true, data: submission });
-
+    res.json({ success: true, data: submission, publishedParts });
   } catch (error) {
-
     res.status(500).json({
-
       message: "Grading failed",
-
       error: error.message,
-
     });
-
   }
-
 };
 
 
 
 exports.publishResults = async (req, res) => {
-
   try {
-
     const ids = Array.isArray(req.body.submissionIds)
-
       ? req.body.submissionIds
-
       : [];
-
-
+    const scope = String(req.body.scope || "full").toLowerCase() === "ai" ? "ai" : "full";
 
     if (!ids.length) {
-
       return res.status(400).json({
-
         message: "No submissions selected.",
-
       });
-
     }
 
-
-
     const submissions = await Submission.find({
-
       _id: { $in: ids },
-
       teacherId: req.user._id,
-
     }).populate("assignment", "title points");
 
-
-
     let publishedCount = 0;
+    const details = [];
+
     for (const submission of submissions) {
-
-      // Already published — skip to avoid duplicate student notifications.
-      if (submission.status === "PUBLISHED") continue;
-
-      const hasTeacherMarks =
-        submission.marks !== null &&
-        submission.marks !== undefined &&
-        Number.isFinite(Number(submission.marks)) &&
-        Number(submission.marks) >= 0;
-      const hasAiMarks =
-        submission.aiScore !== null &&
-        submission.aiScore !== undefined &&
-        Number.isFinite(Number(submission.aiScore)) &&
-        Number(submission.aiScore) >= 0;
-
-      // Publishing an AI-only result must never copy AI marks into the teacher field.
-      if (!hasTeacherMarks && !hasAiMarks) continue;
-
-      submission.status = "PUBLISHED";
-
-
+      const now = new Date();
+      const publishedParts = [];
 
       if (!submission.totalMarks) {
-
         submission.totalMarks = submission.assignment?.points || null;
-
       }
 
+      if (scope === "ai") {
+        // Publish AI only — never copy into or require Teacher fields.
+        if (!hasValidAiScore(submission)) {
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "No AI marks available",
+          });
+          continue;
+        }
+        if (submission.aiPublished === true) {
+          // Already published — skip to avoid duplicate student notifications.
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "AI result already published",
+            components: ["AI Result"],
+          });
+          continue;
+        }
+        applyAiPublication(submission, now);
+        publishedParts.push("AI Result");
+      } else {
+        const hasAi = hasValidAiScore(submission);
+        const hasMarks = hasValidTeacherMarks(submission);
+        const hasFeedback = hasTeacherFeedbackContent(submission.feedback);
 
+        if (!hasAi && !hasMarks && !hasFeedback) {
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "No publishable AI or Teacher result",
+          });
+          continue;
+        }
+
+        if (hasAi && submission.aiPublished !== true) {
+          applyAiPublication(submission, now);
+          publishedParts.push("AI Result");
+        }
+        if (hasMarks && submission.teacherMarksPublished !== true) {
+          applyTeacherMarksPublication(submission, now);
+          publishedParts.push("Teacher Marks");
+        }
+        if (hasFeedback && submission.teacherFeedbackPublished !== true) {
+          applyTeacherFeedbackPublication(submission, now);
+          publishedParts.push("Teacher Feedback");
+        }
+
+        if (!publishedParts.length) {
+          // Already published — skip to avoid duplicate student notifications.
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "All available results already published",
+          });
+          continue;
+        }
+      }
 
       await submission.save();
       publishedCount += 1;
-
-
-
-      await createNotification({
-
-        recipient: submission.student,
-
-        title: "Result published",
-
-        message: `Your ${
-          submission.assignment?.title || "assignment"
-        } result is ${
-          hasTeacherMarks
-            ? `Teacher Marks ${submission.marks}`
-            : `AI Marks ${submission.aiScore}`
-        }/${submission.totalMarks}.`,
-
-        type: "grade",
-
-        meta: { submissionId: submission._id },
-
-        url: "/dashboard/student",
-
+      details.push({
+        id: String(submission._id),
+        components: publishedParts,
       });
 
+      const scoreLabel = hasValidTeacherMarks(submission) && submission.teacherMarksPublished
+        ? `Teacher Marks ${submission.marks}`
+        : hasValidAiScore(submission) && submission.aiPublished
+          ? `AI Marks ${submission.aiScore}`
+          : publishedParts.join(", ");
+
+      await createNotification({
+        recipient: submission.student,
+        title: "Result published",
+        message: `Your ${
+          submission.assignment?.title || "assignment"
+        } result is ${scoreLabel}${
+          submission.totalMarks != null ? `/${submission.totalMarks}` : ""
+        } (${publishedParts.join(", ")}).`,
+        type: "grade",
+        meta: { submissionId: submission._id },
+        url: "/dashboard/student",
+      });
     }
 
-
-
     res.json({
-
       success: true,
-
       published: publishedCount,
-
+      scope,
+      details,
     });
-
   } catch (error) {
-
     res.status(500).json({
-
       message: "Publishing failed",
-
       error: error.message,
-
     });
-
   }
-
 };
 
 

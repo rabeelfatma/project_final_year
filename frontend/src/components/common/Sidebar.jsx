@@ -124,7 +124,7 @@ export default function SidebarControls({ role }) {
             setSettingsOpen(false);
             if (next) window.dispatchEvent(new CustomEvent("quickcheck:close-messages"));
           }} className="sidebar-tool">
-            <span className="relative"><Bell size={17}/>{unread > 0 && <span className="notification-badge">{unread > 9 ? "9+" : unread}</span>}</span>
+            <span className="relative"><Bell size={17}/>{unread > 0 && <span className="notification-badge" data-digits={String(unread).length} aria-label={`${unread} unread notifications`}>{unread}</span>}</span>
             <span>Notifications</span>
           </button>
           <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("quickcheck:open-messages"))} className="sidebar-tool">

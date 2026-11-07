@@ -93,8 +93,11 @@ export default function OverflowMenu({
           setOpen((value) => !value);
         }}
       >
-        {buttonLabel ? <span className="qc-overflow-trigger__text">{buttonLabel}</span> : null}
-        <MoreVertical size={16} aria-hidden="true" />
+        {buttonLabel ? (
+          <span className="qc-overflow-trigger__text">{buttonLabel}</span>
+        ) : (
+          <MoreVertical size={16} aria-hidden="true" />
+        )}
       </button>
       {open &&
         createPortal(
