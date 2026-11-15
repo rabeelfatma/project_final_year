@@ -74,7 +74,7 @@ describe("LMS dashboard redesign contracts", () => {
     expect(teacherDash).toMatch(/Not Available/);
     expect(teacherDash).toMatch(/AWAITING EVALUATION|Awaiting Evaluation/);
     expect(teacherDash).toMatch(/disabled=\{aiLoading\}/);
-    expect(teacherDash).toMatch(/disabled=\{checkingPlagiarism\}/);
+    expect(teacherDash).toMatch(/onClick=\{openPlagiarismTab\}/);
     expect(teacherDash).toMatch(/disabled=\{isPublishing\}/);
     expect(teacherDash).not.toMatch(/disabled=\{!selectedSubmissions\.length \|\| aiLoading\}/);
     expect(teacherDash).toMatch(/eligiblePublishSubmissionIds/);

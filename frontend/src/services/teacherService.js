@@ -223,7 +223,70 @@ const teacherService = {
   deleteSubmissionsBulk: async (ids) => {
     const response = await api.post('/teacher/submissions/bulk-delete', { ids });
     return response.data;
-  }
+  },
+
+  // Turnitin-ready plagiarism / similarity (server provider; no local Jaccard scores).
+  getPlagiarismProviderStatus: async () => {
+    const response = await api.get('/plagiarism/provider-status');
+    return response.data;
+  },
+  listSimilarityChecks: async (params = {}) => {
+    const response = await api.get('/plagiarism/checks', { params });
+    return response.data;
+  },
+  createSimilarityChecks: async ({ submissionIds, mode, assignmentId }) => {
+    try {
+      const response = await api.post('/plagiarism/checks', {
+        submissionIds,
+        mode,
+        assignmentId,
+      });
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        return {
+          ...error.response.data,
+          httpStatus: error.response.status,
+          thrown: true,
+        };
+      }
+      throw error;
+    }
+  },
+  getSimilarityCheck: async (id) => {
+    const response = await api.get(`/plagiarism/checks/${id}`);
+    return response.data;
+  },
+  refreshSimilarityCheck: async (id) => {
+    try {
+      const response = await api.post(`/plagiarism/checks/${id}/refresh`);
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        return {
+          ...error.response.data,
+          httpStatus: error.response.status,
+          thrown: true,
+        };
+      }
+      throw error;
+    }
+  },
+  getSimilarityReport: async (id) => {
+    try {
+      const response = await api.get(`/plagiarism/checks/${id}/report`);
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        return {
+          ...error.response.data,
+          httpStatus: error.response.status,
+          thrown: true,
+        };
+      }
+      throw error;
+    }
+  },
 };
 
 // 🔥 SINGLE AI EVALUATION

@@ -5,7 +5,8 @@ import {
   Loader2, FileUp, X, CheckCircle, TrendingUp, Download,
   ShieldCheck, Clock, Trash2, Edit3, Sparkles, MessageSquare,
   Send, Eye, AlertCircle, ShieldAlert, FileText, Archive,
-  Layers, Folder, CalendarDays, Search, ChevronLeft, ChevronRight
+  Layers, Folder, CalendarDays, Search, ChevronLeft, ChevronRight,
+  ExternalLink, RefreshCw
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -29,7 +30,6 @@ import {
   uploadDurableFile,
   appendDurableFields,
 } from '../../services/r2UploadService';
-import api from '../../utils/api';
 import {
   normalizeAssignmentId,
   toggleAssignmentSelection,
@@ -49,6 +49,14 @@ import {
 } from '../../utils/assignmentFieldValidation';
 import { validateAcademicContent, referenceFileSelectionError } from '../../utils/academicFileContent';
 import { createSubmitLock } from '../../utils/submitLock';
+import {
+  filterSubmissionsForAssignment,
+  toggleSubmissionSelection,
+  selectAllSubmissionIds,
+  clearSelectionOnAssignmentChange,
+  fileTypeFromSubmission,
+  describeNetworkOrApiError,
+} from '../../utils/plagiarismSelection';
 
 function StatCard({ label, value, icon }) {
   const [selected, setSelected] = useState(false);
@@ -136,7 +144,18 @@ export default function TeacherDashboard() {
   const [savingEval, setSavingEval]             = useState(false);
   const [reviewContent, setReviewContent]       = useState({ loading: false, text: '', strengths: [], improvements: [] });
   const [checkingPlagiarism, setCheckingPlagiarism] = useState(false);
-  const [plagiarismResults, setPlagiarismResults] = useState([]);
+  const [plagiarismMode, setPlagiarismMode] = useState('external_sources');
+  const [plagiarismProvider, setPlagiarismProvider] = useState(null);
+  const [plagiarismAssignmentId, setPlagiarismAssignmentId] = useState('');
+  const [plagiarismSelectedIds, setPlagiarismSelectedIds] = useState([]);
+  const [plagiarismAssignmentsList, setPlagiarismAssignmentsList] = useState([]);
+  const [plagiarismSubmissionsList, setPlagiarismSubmissionsList] = useState([]);
+  const [plagiarismDataLoading, setPlagiarismDataLoading] = useState(false);
+  const [plagiarismDataError, setPlagiarismDataError] = useState('');
+  const [similarityChecks, setSimilarityChecks] = useState([]);
+  const [similarityLoading, setSimilarityLoading] = useState(false);
+  const [similarityError, setSimilarityError] = useState('');
+  const [similarityDetailId, setSimilarityDetailId] = useState(null);
   const [activePieIndex, setActivePieIndex]     = useState(null);
   const [form, setForm] = useState({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
   /** Original ISO dates while editing — used so unchanged past start/deadline are not blocked. */
@@ -392,23 +411,330 @@ export default function TeacherDashboard() {
     }
   };
 
-  // ── Plagiarism check ─────────────────────────────────────
+  // ── Turnitin-ready plagiarism ─────────────────────────────
+  const plagiarismAssignments = (plagiarismAssignmentsList.length
+    ? plagiarismAssignmentsList
+    : assignments
+  ).filter((asgn) => normalizeAssignmentId(asgn._id));
+
+  const plagiarismSubmissionsForAssignment = filterSubmissionsForAssignment(
+    plagiarismSubmissionsList.length ? plagiarismSubmissionsList : submissions,
+    plagiarismAssignmentId
+  );
+
+  const formatPlagiarismDate = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const similarityStatusLabel = (status) => {
+    switch (status) {
+      case 'provider_not_connected':
+        return 'Provider Not Connected';
+      case 'queued':
+        return 'Queued';
+      case 'processing':
+        return 'Processing';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed';
+      default:
+        return status ? String(status).replace(/_/g, ' ') : 'Unknown';
+    }
+  };
+
+  const similarityStatusClass = (status) => {
+    switch (status) {
+      case 'provider_not_connected':
+        return 'bg-amber-500/15 text-amber-300 border border-amber-500/30';
+      case 'queued':
+        return 'bg-slate-500/15 text-slate-300 border border-slate-500/30';
+      case 'processing':
+        return 'bg-sky-500/15 text-sky-300 border border-sky-500/30';
+      case 'completed':
+        return 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+      case 'failed':
+        return 'bg-red-500/15 text-red-300 border border-red-500/30';
+      default:
+        return 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
+    }
+  };
+
+  const describePlagiarismApiError = (err, fallback) => {
+    const status = err?.response?.status;
+    if (!err?.response) {
+      return describeNetworkOrApiError(err, fallback);
+    }
+    const apiMessage = err?.response?.data?.message || err?.response?.data?.code;
+    if (status === 404) {
+      return (
+        apiMessage ||
+        'Plagiarism API routes were not found on this backend (404). Restart the local API with APP_RUNTIME_MODE=full after the latest plagiarism routes are loaded, or deploy the backend update. This is not a Turnitin score.'
+      );
+    }
+    return apiMessage || err?.message || fallback;
+  };
+
+  /**
+   * Dedicated plagiarism workspace load — same teacher APIs as Dashboard,
+   * but does NOT swallow Network Errors into an empty "no assignments" state.
+   */
+  const loadPlagiarismWorkspace = async () => {
+    setPlagiarismDataLoading(true);
+    setPlagiarismDataError('');
+    try {
+      const [aData, subData] = await Promise.all([
+        teacherService.getMyAssignments(),
+        teacherService.getRecentSubmissions(),
+      ]);
+      const safeAssignments = Array.isArray(aData) ? aData : [];
+      const safeSubmissions = Array.isArray(subData) ? subData : [];
+      setPlagiarismAssignmentsList(safeAssignments);
+      setPlagiarismSubmissionsList(safeSubmissions);
+      // Keep dashboard lists in sync when plagiarism refresh succeeds.
+      setAssignments(safeAssignments);
+      setSubmissions(safeSubmissions);
+    } catch (err) {
+      const message = describePlagiarismApiError(
+        err,
+        'Unable to load teacher assignments and submissions.'
+      );
+      setPlagiarismDataError(message);
+      // Do not clear existing lists on transient refresh failure if we already have data.
+      if (!plagiarismAssignmentsList.length && !assignments.length) {
+        setPlagiarismAssignmentsList([]);
+        setPlagiarismSubmissionsList([]);
+      }
+    } finally {
+      setPlagiarismDataLoading(false);
+    }
+  };
+
+  const loadSimilarityHub = async ({ preserveError = false } = {}) => {
+    setSimilarityLoading(true);
+    if (!preserveError) setSimilarityError('');
+    try {
+      const [providerResult, checksResult] = await Promise.all([
+        teacherService.getPlagiarismProviderStatus().then(
+          (data) => ({ ok: true, data }),
+          (err) => ({ ok: false, err })
+        ),
+        teacherService.listSimilarityChecks().then(
+          (data) => ({ ok: true, data }),
+          (err) => ({ ok: false, err })
+        ),
+      ]);
+
+      if (providerResult.ok) {
+        setPlagiarismProvider(providerResult.data);
+      } else {
+        const status = providerResult.err?.response?.status;
+        const networkDown = !providerResult.err?.response;
+        setPlagiarismProvider({
+          connected: false,
+          status: status === 404 ? 'api_unavailable' : 'provider_not_connected',
+          apiUnavailable: status === 404 || networkDown,
+          message: describePlagiarismApiError(
+            providerResult.err,
+            'Unable to read plagiarism provider status.'
+          ),
+        });
+        // Network / unexpected errors: one clear banner. Skip duplicate for 404/503 provider cases.
+        if (!networkDown && status !== 404 && status !== 503 && !preserveError) {
+          setSimilarityError(
+            describePlagiarismApiError(
+              providerResult.err,
+              'Unable to read plagiarism provider status.'
+            )
+          );
+        } else if (networkDown && !preserveError) {
+          // Provider strip already shows Network Error — avoid a second identical red banner.
+        }
+      }
+
+      if (checksResult.ok) {
+        setSimilarityChecks(
+          Array.isArray(checksResult.data?.checks) ? checksResult.data.checks : []
+        );
+        if (checksResult.data?.provider && providerResult.ok) {
+          setPlagiarismProvider(checksResult.data.provider);
+        }
+      } else {
+        setSimilarityChecks([]);
+        const status = checksResult.err?.response?.status;
+        const networkDown = !checksResult.err?.response;
+        if (!networkDown && status !== 404 && !preserveError) {
+          setSimilarityError(
+            describePlagiarismApiError(
+              checksResult.err,
+              'Unable to load plagiarism check history.'
+            )
+          );
+        }
+      }
+    } catch (err) {
+      if (!preserveError) {
+        setSimilarityError(
+          describePlagiarismApiError(err, 'Unable to load Plagiarism hub.')
+        );
+      }
+      setSimilarityChecks([]);
+    } finally {
+      setSimilarityLoading(false);
+    }
+  };
+
+  const openPlagiarismTab = () => {
+    setShellView('main');
+    setActiveTab('plagiarism');
+    loadPlagiarismWorkspace();
+    loadSimilarityHub();
+  };
+
+  const togglePlagiarismSubmission = (id) => {
+    setPlagiarismSelectedIds((prev) => toggleSubmissionSelection(prev, id));
+  };
+
+  const handlePlagiarismSelectAll = () => {
+    const ids = selectAllSubmissionIds(plagiarismSubmissionsForAssignment);
+    const allSelected =
+      ids.length > 0 && ids.every((id) => plagiarismSelectedIds.map(String).includes(String(id)));
+    setPlagiarismSelectedIds(allSelected ? [] : ids);
+  };
+
+  const handlePlagiarismClearSelection = () => {
+    setPlagiarismSelectedIds([]);
+  };
+
+  const handlePlagiarismAssignmentChange = (assignmentId) => {
+    const next = clearSelectionOnAssignmentChange(assignmentId);
+    setPlagiarismAssignmentId(next.assignmentId);
+    setPlagiarismSelectedIds(next.selectedIds);
+    setSimilarityError('');
+  };
+
   const handlePlagiarismCheck = async () => {
-    if (selectedSubmissions.length === 0) {
+    if (!plagiarismAssignmentId) {
+      alert('Select one assignment, then choose student submissions to check.');
+      return;
+    }
+    const submissionIds = plagiarismSelectedIds;
+    if (!submissionIds.length) {
       alert(
-        'Select at least one submission before Check Plagiarism.\n\nDouble-click a row to enter selection mode, then select submissions from the same assignment to compare.'
+        'Select at least one student submission for the chosen assignment before Check Plagiarism.'
       );
       return;
     }
+    // Guard: never send IDs outside the active assignment filter.
+    const allowed = new Set(
+      plagiarismSubmissionsForAssignment.map((sub) => String(sub._id))
+    );
+    const scopedIds = submissionIds.filter((id) => allowed.has(String(id)));
+    if (scopedIds.length !== submissionIds.length) {
+      setSimilarityError(
+        'Selection included submissions from another assignment. Selection was reset — please reselect.'
+      );
+      setPlagiarismSelectedIds([]);
+      return;
+    }
+    let pendingError = '';
     try {
       setCheckingPlagiarism(true);
-      const { data } = await api.post('/plagiarism/check', { submissionIds: selectedSubmissions });
-      setPlagiarismResults(Array.isArray(data?.results) ? data.results : []);
-      setActiveTab('plagiarism');
+      setSimilarityError('');
+      const result = await teacherService.createSimilarityChecks({
+        submissionIds: scopedIds,
+        assignmentId: plagiarismAssignmentId,
+        mode: plagiarismMode,
+      });
+      const checks = Array.isArray(result?.checks) ? result.checks : [];
+      if (result?.provider) setPlagiarismProvider(result.provider);
+      if (checks.length) {
+        setSimilarityChecks((prev) => {
+          const byId = new Map(checks.map((row) => [String(row._id), row]));
+          const rest = (prev || []).filter((row) => !byId.has(String(row._id)));
+          return [...checks, ...rest];
+        });
+      }
+      if (result?.code === 'PROVIDER_NOT_CONNECTED') {
+        pendingError = '';
+        if (result?.provider) setPlagiarismProvider(result.provider);
+        else {
+          setPlagiarismProvider((prev) => ({
+            ...(prev || {}),
+            connected: false,
+            status: 'provider_not_connected',
+            message:
+              result?.message ||
+              'Turnitin is not configured. No similarity percentage was generated.',
+          }));
+        }
+      } else if (result?.httpStatus === 404) {
+        pendingError = describePlagiarismApiError(
+          { response: { status: 404, data: result } },
+          'Plagiarism check endpoint was not found (404).'
+        );
+      } else if (result?.thrown && result?.code !== 'PROVIDER_NOT_CONNECTED') {
+        pendingError = result?.message || 'Plagiarism check failed.';
+      }
+      await loadSimilarityHub({ preserveError: true });
+      if (pendingError) setSimilarityError(pendingError);
     } catch (err) {
-      alert('❌ Plagiarism check failed: ' + (err.response?.data?.message || err.message));
+      setSimilarityError(
+        describePlagiarismApiError(err, 'Plagiarism check failed.')
+      );
     } finally {
       setCheckingPlagiarism(false);
+    }
+  };
+
+  const handleOpenProviderReport = async (check) => {
+    if (!check?.reportAvailable || check.status !== 'completed') {
+      alert('No provider report is available for this check yet.');
+      return;
+    }
+    try {
+      const result = await teacherService.getSimilarityReport(check._id);
+      if (result?.thrown || !result?.success) {
+        alert(result?.message || 'Provider report is not available.');
+        return;
+      }
+      const openUrl = result?.report?.openUrl || result?.report?.downloadUrl;
+      if (openUrl) {
+        window.open(openUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      alert(
+        'Report metadata is available from the provider, but no open/download URL was returned yet. Official Turnitin report links will appear here once API wiring is complete.'
+      );
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Unable to open provider report.');
+    }
+  };
+
+  const handleRefreshSimilarityCheck = async (checkId) => {
+    try {
+      const result = await teacherService.refreshSimilarityCheck(checkId);
+      if (result?.check) {
+        setSimilarityChecks((prev) =>
+          prev.map((row) => (String(row._id) === String(checkId) ? result.check : row))
+        );
+      }
+      if (result?.thrown || result?.code === 'PROVIDER_NOT_CONNECTED') {
+        setSimilarityError(
+          result?.message || 'Turnitin provider is not connected.'
+        );
+      }
+    } catch (err) {
+      setSimilarityError(err.response?.data?.message || err.message || 'Refresh failed.');
     }
   };
 
@@ -1271,6 +1597,10 @@ export default function TeacherDashboard() {
   };
 
   const openMainTab = (tab) => {
+    if (tab === 'plagiarism') {
+      openPlagiarismTab();
+      return;
+    }
     setShellView('main');
     setActiveTab(tab);
     if (tab !== 'create') setEditingId(null);
@@ -1281,7 +1611,7 @@ export default function TeacherDashboard() {
       : activeTab === 'create' ? (editingId ? 'Edit Assignment' : 'Create Assignment')
       : activeTab === 'assignments' ? 'My Assignments'
       : activeTab === 'submissions' ? 'Submissions'
-      : activeTab === 'plagiarism' ? 'Similarity'
+      : activeTab === 'plagiarism' ? 'Plagiarism'
       : 'Students';
 
   const pageTitle =
@@ -1319,7 +1649,7 @@ export default function TeacherDashboard() {
             <DashboardNavItem icon={<PlusCircle size={18}/>} label={editingId ? 'Edit Assignment' : 'Create Assignment'} active={shellView === 'main' && activeTab==='create'} onClick={() => { setShellView('main'); setActiveTab('create'); }} />
             <DashboardNavItem icon={<BookOpen size={18}/>} label="My Assignments" active={shellView === 'main' && activeTab==='assignments'} onClick={() => openMainTab('assignments')} />
             <DashboardNavItem icon={<ClipboardCheck size={18}/>} label="Submissions" active={shellView === 'main' && activeTab==='submissions'} onClick={() => openMainTab('submissions')} />
-            <DashboardNavItem icon={<ShieldAlert size={18}/>} label="Similarity" active={shellView === 'main' && activeTab==='plagiarism'} onClick={() => openMainTab('plagiarism')} />
+            <DashboardNavItem icon={<ShieldAlert size={18}/>} label="Plagiarism" active={shellView === 'main' && activeTab==='plagiarism'} onClick={() => openMainTab('plagiarism')} />
             <DashboardNavItem icon={<Users size={18}/>} label="Students" active={shellView === 'main' && activeTab==='students'} onClick={() => openMainTab('students')} />
           </nav>
           <SidebarControls />
@@ -1850,11 +2180,10 @@ export default function TeacherDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={handlePlagiarismCheck}
-                  disabled={checkingPlagiarism}
+                  onClick={openPlagiarismTab}
                   className="qc-btn qc-btn-primary"
                 >
-                  {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>}
+                  <ShieldAlert size={14}/>
                   Check Plagiarism
                 </button>
                 <button
@@ -2257,37 +2586,401 @@ export default function TeacherDashboard() {
           </div>
         )}
 
-        {/* ══ PLAGIARISM TAB ══ */}
+        {/* ══ PLAGIARISM / TURNITIN-READY TAB ══ */}
         {activeTab === 'plagiarism' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+          <div className="animate-in fade-in duration-500 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="qc-page-title">Plagiarism Check</h1>
-                <p className="text-slate-500 text-xs max-w-2xl">Local similarity checking compares extracted text from submissions of the same assignment. It is an indicator for teacher review, not an automatic misconduct decision.</p>
+                <h1 className="qc-page-title">Plagiarism Checker</h1>
+                <p className="qc-page-subtitle max-w-2xl">
+                  Select one assignment, choose student submissions, then run a Turnitin-ready check. Scores appear only when the provider returns them.
+                </p>
               </div>
-              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
-                {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>} Run Check
+              <button
+                type="button"
+                onClick={() => {
+                  loadPlagiarismWorkspace();
+                  loadSimilarityHub();
+                }}
+                disabled={similarityLoading || plagiarismDataLoading}
+                className="qc-btn qc-btn-secondary shrink-0 self-start"
+              >
+                {(similarityLoading || plagiarismDataLoading) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                Refresh
               </button>
             </div>
-            <div className="qc-table-wrap">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left">
-                  <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                    <tr><th className="p-5">Student</th><th className="p-5">Assignment</th><th className="p-5">Highest Similarity</th><th className="p-5">Compared With</th><th className="p-5">Status</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {plagiarismResults.map((row) => (
-                      <tr key={String(row.submissionId)}>
-                        <td className="p-5 text-sm font-bold text-white">{row.student}</td>
-                        <td className="p-5 text-sm text-slate-400">{row.assignment}</td>
-                        <td className="p-5 text-sm font-black">{row.similarity}%</td>
-                        <td className="p-5 text-sm text-slate-400">{row.comparedWith ? `${row.comparedWith.student} (${row.comparedWith.similarity}%)` : 'No comparable submission'}</td>
-                        <td className="p-5"><span className={`px-2 py-1 rounded text-[10px] font-black ${row.status === 'HIGH' ? 'bg-red-500/20 text-red-400' : row.status === 'REVIEW' ? 'bg-slate-500/20 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{row.status}</span></td>
-                      </tr>
+
+            <div
+              className={`rounded-xl border px-4 py-3 text-xs ${
+                plagiarismProvider?.connected
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                  : plagiarismProvider?.apiUnavailable
+                    ? 'border-slate-500/35 bg-slate-500/10 text-slate-200'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+              }`}
+              role="status"
+            >
+              <p className="font-black uppercase tracking-widest text-[10px] mb-1">
+                {plagiarismProvider?.connected
+                  ? 'Provider Connected'
+                  : plagiarismProvider?.apiUnavailable
+                    ? 'Plagiarism API Unavailable'
+                    : 'Provider Not Connected'}
+              </p>
+              <p className="leading-relaxed opacity-90">
+                {plagiarismProvider?.message ||
+                  'Turnitin is not configured on the server. No similarity score is generated without official API credentials.'}
+              </p>
+            </div>
+
+            {plagiarismDataError ? (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200" role="alert">
+                {plagiarismDataError}
+              </div>
+            ) : null}
+
+            {similarityError && similarityError !== plagiarismDataError ? (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200" role="alert">
+                {similarityError}
+              </div>
+            ) : null}
+
+            <div className="rounded-xl border border-[var(--border)] p-4 space-y-4">
+              <div className="flex flex-col xl:flex-row xl:items-end gap-3">
+                <label className="flex-1 min-w-0 block">
+                  <span className="block text-[10px] font-black uppercase tracking-widest theme-muted mb-2">Assignment</span>
+                  <select
+                    className="theme-input w-full text-sm"
+                    value={plagiarismAssignmentId}
+                    onChange={(e) => handlePlagiarismAssignmentChange(e.target.value)}
+                    disabled={plagiarismDataLoading || Boolean(plagiarismDataError && !plagiarismAssignments.length)}
+                  >
+                    <option value="">
+                      {plagiarismDataLoading ? 'Loading assignments…' : 'Select an assignment…'}
+                    </option>
+                    {plagiarismAssignments.map((asgn) => (
+                      <option key={String(asgn._id)} value={String(asgn._id)}>
+                        {asgn.title || 'Untitled assignment'}
+                        {asgn.status === 'archived' ? ' (Archived)' : ''}
+                      </option>
                     ))}
-                    {plagiarismResults.length === 0 && <tr><td colSpan="5" className="p-16 text-center text-slate-500 text-xs">Select submissions in the Submissions tab and run a plagiarism check.</td></tr>}
-                  </tbody>
-                </table>
+                  </select>
+                </label>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismMode === 'external_sources' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
+                    <input
+                      type="radio"
+                      name="plagiarismMode"
+                      checked={plagiarismMode === 'external_sources'}
+                      onChange={() => setPlagiarismMode('external_sources')}
+                    />
+                    External Sources
+                  </label>
+                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismMode === 'student_paper_repository' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
+                    <input
+                      type="radio"
+                      name="plagiarismMode"
+                      checked={plagiarismMode === 'student_paper_repository'}
+                      onChange={() => setPlagiarismMode('student_paper_repository')}
+                    />
+                    Student Paper Repository
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePlagiarismCheck}
+                  disabled={
+                    checkingPlagiarism ||
+                    !plagiarismAssignmentId ||
+                    plagiarismSelectedIds.length === 0
+                  }
+                  className="qc-btn qc-btn-primary shrink-0"
+                >
+                  {checkingPlagiarism ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+                  {plagiarismSelectedIds.length
+                    ? `Check Plagiarism (${plagiarismSelectedIds.length})`
+                    : 'Check Plagiarism'}
+                </button>
+              </div>
+              {plagiarismMode === 'student_paper_repository' ? (
+                <p className="text-[11px] theme-muted">
+                  Student Paper Repository requires institutional Turnitin repository configuration and consent. Papers are not auto-deposited.
+                </p>
+              ) : null}
+
+              {plagiarismDataLoading ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  <Loader2 size={16} className="inline animate-spin mr-2" />
+                  Loading your assignments and submissions…
+                </div>
+              ) : plagiarismDataError && !plagiarismAssignments.length ? (
+                <div className="rounded-lg border border-dashed border-red-500/30 px-4 py-8 text-center text-xs text-red-200">
+                  Assignments could not be loaded. Fix the API connection above, then press Refresh.
+                </div>
+              ) : !plagiarismAssignments.length ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  No assignments created yet. Create an assignment from Create Assignment first.
+                </div>
+              ) : !plagiarismAssignmentId ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  Select an assignment to view its student submissions.
+                </div>
+              ) : plagiarismSubmissionsForAssignment.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  This assignment has no student submissions yet.
+                </div>
+              ) : (
+                <div className="qc-table-wrap">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border)]">
+                    <p className="text-[11px] theme-muted">
+                      {plagiarismSelectedIds.length} file{plagiarismSelectedIds.length === 1 ? '' : 's'} selected
+                      {' · '}
+                      {plagiarismSubmissionsForAssignment.length} submission{plagiarismSubmissionsForAssignment.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="qc-btn qc-btn-ghost text-[10px]"
+                        onClick={handlePlagiarismSelectAll}
+                      >
+                        {plagiarismSubmissionsForAssignment.every((sub) =>
+                          plagiarismSelectedIds.map(String).includes(String(sub._id))
+                        )
+                          ? 'Clear All'
+                          : 'Select All'}
+                      </button>
+                      <button
+                        type="button"
+                        className="qc-btn qc-btn-ghost text-[10px]"
+                        onClick={handlePlagiarismClearSelection}
+                        disabled={!plagiarismSelectedIds.length}
+                      >
+                        Clear Selection
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] text-left">
+                      <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
+                        <tr>
+                          <th className="p-3 w-12 text-center">
+                            <input
+                              type="checkbox"
+                              checked={
+                                plagiarismSubmissionsForAssignment.length > 0 &&
+                                plagiarismSubmissionsForAssignment.every((sub) =>
+                                  plagiarismSelectedIds.map(String).includes(String(sub._id))
+                                )
+                              }
+                              onChange={handlePlagiarismSelectAll}
+                              aria-label="Select all submissions"
+                            />
+                          </th>
+                          <th className="p-3">Student</th>
+                          <th className="p-3">Email / Reg</th>
+                          <th className="p-3">Original File</th>
+                          <th className="p-3">Type</th>
+                          <th className="p-3">Submitted</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {plagiarismSubmissionsForAssignment.map((sub) => {
+                          const checked = plagiarismSelectedIds.map(String).includes(String(sub._id));
+                          const secondary =
+                            sub.student?.registrationNumber ||
+                            sub.student?.email ||
+                            sub.registrationNumber ||
+                            sub.email ||
+                            '—';
+                          return (
+                            <tr key={String(sub._id)} className={checked ? 'bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]' : ''}>
+                              <td className="p-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => togglePlagiarismSubmission(sub._id)}
+                                  aria-label={`Select submission from ${sub.student?.name || 'student'}`}
+                                />
+                              </td>
+                              <td className="p-3 text-sm font-bold text-white">
+                                {sub.student?.name || sub.studentName || 'Student'}
+                              </td>
+                              <td className="p-3 text-xs text-slate-400 break-all">
+                                {secondary}
+                              </td>
+                              <td className="p-3 text-sm text-slate-400 break-all">
+                                {sub.originalFileName || 'Untitled file'}
+                              </td>
+                              <td className="p-3 text-xs font-bold text-slate-300 whitespace-nowrap">
+                                {fileTypeFromSubmission(sub)}
+                              </td>
+                              <td className="p-3 text-sm text-slate-400 whitespace-nowrap">
+                                {formatPlagiarismDate(sub.submittedAt || sub.createdAt)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h2 className="text-sm font-bold text-white mb-3">Check history</h2>
+              <div className="qc-table-wrap">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left">
+                    <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
+                      <tr>
+                        <th className="p-4">Student</th>
+                        <th className="p-4">Assignment</th>
+                        <th className="p-4">Mode</th>
+                        <th className="p-4">Similarity</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4">Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {similarityLoading && (
+                        <tr>
+                          <td colSpan="6" className="p-12 text-center text-slate-500 text-xs">
+                            <Loader2 size={18} className="inline animate-spin mr-2" />
+                            Loading check history…
+                          </td>
+                        </tr>
+                      )}
+                      {!similarityLoading && similarityChecks.map((row) => {
+                        const detailOpen = String(similarityDetailId) === String(row._id);
+                        const modeLabel =
+                          row.mode === 'student_paper_repository'
+                            ? 'Student Paper Repository'
+                            : 'External Sources';
+                        const showPercent =
+                          row.status === 'completed' &&
+                          row.similarityPercent !== null &&
+                          row.similarityPercent !== undefined;
+                        return (
+                          <React.Fragment key={String(row._id)}>
+                            <tr>
+                              <td className="p-4 text-sm font-bold text-white">
+                                {row.student?.name || 'Student'}
+                              </td>
+                              <td className="p-4 text-sm text-slate-400">
+                                {row.assignmentTitle || 'Assignment'}
+                              </td>
+                              <td className="p-4 text-xs text-slate-400">{modeLabel}</td>
+                              <td className="p-4 text-sm font-black">
+                                {showPercent ? `${row.similarityPercent}%` : '—'}
+                              </td>
+                              <td className="p-4">
+                                <span className={`inline-flex px-2 py-1 rounded text-[10px] font-black ${similarityStatusClass(row.status)}`}>
+                                  {similarityStatusLabel(row.status)}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="qc-btn qc-btn-ghost text-[10px]"
+                                    onClick={() =>
+                                      setSimilarityDetailId(detailOpen ? null : row._id)
+                                    }
+                                  >
+                                    {detailOpen ? 'Hide' : 'Details'}
+                                  </button>
+                                  {(row.status === 'queued' || row.status === 'processing') && (
+                                    <button
+                                      type="button"
+                                      className="qc-btn qc-btn-ghost text-[10px]"
+                                      onClick={() => handleRefreshSimilarityCheck(row._id)}
+                                    >
+                                      Refresh
+                                    </button>
+                                  )}
+                                  {row.status === 'completed' && row.reportAvailable && (
+                                    <button
+                                      type="button"
+                                      className="qc-btn qc-btn-secondary text-[10px]"
+                                      onClick={() => handleOpenProviderReport(row)}
+                                    >
+                                      <ExternalLink size={12} /> Open Report
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {detailOpen && (
+                              <tr>
+                                <td colSpan="6" className="px-4 pb-4">
+                                  <div className="rounded-xl border border-[var(--border)] p-4 space-y-3 text-xs">
+                                    {row.errorMessage && (
+                                      <p className="text-amber-200">{row.errorMessage}</p>
+                                    )}
+                                    {row.status === 'completed' && showPercent && (
+                                      <p className="text-white font-bold">
+                                        Provider similarity: {row.similarityPercent}%
+                                      </p>
+                                    )}
+                                    {row.status === 'completed' && Array.isArray(row.matchedSources) && row.matchedSources.length > 0 ? (
+                                      <div>
+                                        <p className="font-black uppercase tracking-widest text-[10px] theme-muted mb-2">Matched sources</p>
+                                        <ul className="space-y-2">
+                                          {row.matchedSources.map((source, idx) => (
+                                            <li key={`${row._id}-src-${idx}`} className="theme-muted">
+                                              <span className="text-white font-semibold">{source.title || 'Source'}</span>
+                                              {source.percent != null ? ` — ${source.percent}%` : ''}
+                                              {source.url ? (
+                                                <span className="block break-all opacity-80">{source.url}</span>
+                                              ) : null}
+                                              {source.detail ? (
+                                                <span className="block opacity-80">{source.detail}</span>
+                                              ) : null}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    ) : row.status === 'completed' ? (
+                                      <p className="theme-muted">No matched sources were supplied by the provider for this check.</p>
+                                    ) : null}
+                                    {row.status === 'completed' && Array.isArray(row.highlightedPassages) && row.highlightedPassages.length > 0 && (
+                                      <div>
+                                        <p className="font-black uppercase tracking-widest text-[10px] theme-muted mb-2">Highlighted passages</p>
+                                        <ul className="space-y-2">
+                                          {row.highlightedPassages.map((passage, idx) => (
+                                            <li key={`${row._id}-pass-${idx}`} className="rounded-lg border border-[var(--border)] px-3 py-2 text-slate-300">
+                                              <p className="italic">&ldquo;{passage.text}&rdquo;</p>
+                                              {passage.sourceTitle ? (
+                                                <p className="mt-1 theme-muted">Source: {passage.sourceTitle}</p>
+                                              ) : null}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {row.status !== 'completed' && !row.errorMessage && (
+                                      <p className="theme-muted">
+                                        Waiting for the Turnitin provider. Local peer-comparison scores are never shown here.
+                                      </p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                      {!similarityLoading && similarityChecks.length === 0 && (
+                        <tr>
+                          <td colSpan="6" className="p-12 text-center text-slate-500 text-xs">
+                            No plagiarism checks yet. Select submissions above and run Check Plagiarism.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
