@@ -29,10 +29,14 @@ describe("independent AI / Teacher publication visibility", () => {
 
   it("student routes redact using granular publication helpers", () => {
     const src = fs.readFileSync(studentRoutesPath, "utf8");
+    const utilSrc = fs.readFileSync(path.join(root, "utils/publicationVisibility.js"), "utf8");
     assert.match(src, /redactSubmissionForStudent/);
     assert.match(src, /canShowAiResult/);
     assert.match(src, /canShowTeacherMarks/);
-    assert.match(src, /canShowTeacherFeedback/);
+    // Feedback visibility is enforced inside redactSubmissionForStudent — not via a
+    // direct studentRoutes import of canShowTeacherFeedback.
+    assert.match(utilSrc, /function canShowTeacherFeedback/);
+    assert.match(utilSrc, /const showFeedback = canShowTeacherFeedback\(submission\)/);
     assert.doesNotMatch(src, /marks:\s*canShowResult\s*\?\s*submission\.marks\s*\?\?\s*submission\.aiScore/);
   });
 

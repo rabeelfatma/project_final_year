@@ -1431,6 +1431,10 @@ describe("bulk archive ownership + student delete policy", () => {
     assert.match(dash, /assignmentShelf === 'archived'/);
     assert.match(dash, /label: 'Unarchive'/);
     assert.match(dash, /label: 'Archive'/);
-    assert.doesNotMatch(dash, /window\.confirm/);
+    // Archive/unarchive use ConfirmDialog state (Publish may still use window.confirm).
+    assert.match(dash, /const handleArchiveAssignment[\s\S]*?setConfirmState\(\{/);
+    assert.match(dash, /const handleUnarchiveAssignment[\s\S]*?setConfirmState\(\{/);
+    assert.doesNotMatch(dash, /const handleArchiveAssignment[\s\S]*?window\.confirm/);
+    assert.doesNotMatch(dash, /const handleUnarchiveAssignment[\s\S]*?window\.confirm/);
   });
 });

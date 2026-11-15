@@ -130,6 +130,7 @@ function loadTeacherRouter(authedUser) {
         deleteAssignment: ok,
         deleteAssignmentsBulk: ok,
         archiveAssignmentsBulk: ok,
+        unarchiveAssignmentsBulk: ok,
         updateAssignmentStatus: ok,
         evaluateWithGemini: ok,
         evaluateAssignment: ok,

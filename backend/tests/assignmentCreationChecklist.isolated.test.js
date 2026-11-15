@@ -529,15 +529,18 @@ describe("assignment creation checklist (73)", () => {
   it("54 every required text and schedule field is reported when missing", () => {
     const result = fields.validateAssignmentFields({}, { mode: "create", now: FIXED_NOW });
     assert.equal(result.ok, false);
-    for (const key of ["title", "description", "points", "startDate", "deadline"]) {
+    // Description is optional (instructions UI removed); other create fields stay required.
+    for (const key of ["title", "points", "startDate", "deadline"]) {
       assert.ok(result.errors[key], key);
     }
+    assert.equal(result.errors.description, undefined);
   });
 
-  it("55 whitespace-only description is rejected", () => {
+  it("55 whitespace-only description is accepted as empty optional text", () => {
     const result = validate({ description: "   " });
-    assert.equal(result.ok, false);
-    assert.match(result.errors.description, /Description is required/);
+    assert.equal(result.ok, true);
+    assert.equal(result.values.description, "");
+    assert.equal(result.errors?.description, undefined);
   });
 
   it("56 create API rejects a missing reference file and an invalid body", async () => {
@@ -974,7 +977,10 @@ describe("final checklist additions", () => {
   });
 
   it("76 description length, multiline text, and HTML are handled as text", () => {
-    assert.match(validate({ description: "Too short" }).errors.description, /too short/);
+    // Description is optional — short text is allowed; only max length is enforced.
+    const short = validate({ description: "Too short" });
+    assert.equal(short.ok, true);
+    assert.equal(short.values.description, "Too short");
     const ok = validate({ description: "Line one\nLine two is enough." });
     assert.equal(ok.ok, true);
     assert.match(ok.values.description, /\n/);

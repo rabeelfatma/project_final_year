@@ -106,7 +106,8 @@ describe("QC-19 grading notification and path safety", () => {
       "utf8"
     );
     assert.match(dash, /Publish results to release scores/);
-    assert.match(dash, /label="Similarity"/);
+    assert.match(dash, /label="Plagiarism"/);
+    assert.match(dash, /Plagiarism Checker/);
   });
 
   it("landing copy does not claim internet-wide plagiarism", () => {

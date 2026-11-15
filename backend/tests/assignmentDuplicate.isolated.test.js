@@ -215,7 +215,7 @@ describe("assignment duplicate title policy (ignore dates)", () => {
 });
 
 describe("description + reference file create requirements", () => {
-  it("10-11. missing and whitespace-only description → validation 400 shape", () => {
+  it("10-11. missing and whitespace-only description are optional on create", () => {
     const { validateAssignmentFields } = require(fieldValidationPath);
     const now = Date.parse("2026-10-31T12:00:00.000Z");
     const base = {
@@ -228,15 +228,17 @@ describe("description + reference file create requirements", () => {
       { ...base, description: "" },
       { mode: "create", now }
     );
-    assert.equal(missing.ok, false);
-    assert.match(missing.errors.description, /required/i);
+    assert.equal(missing.ok, true);
+    assert.equal(missing.values.description, "");
+    assert.equal(missing.errors?.description, undefined);
 
     const whitespace = validateAssignmentFields(
       { ...base, description: "   \n\t  " },
       { mode: "create", now }
     );
-    assert.equal(whitespace.ok, false);
-    assert.match(whitespace.errors.description, /required/i);
+    assert.equal(whitespace.ok, true);
+    assert.equal(whitespace.values.description, "");
+    assert.equal(whitespace.errors?.description, undefined);
   });
 
   it("12-15. createAssignment enforces verified file; update keeps existing", async () => {

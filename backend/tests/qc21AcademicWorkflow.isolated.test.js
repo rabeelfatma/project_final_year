@@ -630,16 +630,18 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
         });
         assert.equal(republish.json.published, 0);
 
-        // 14-15. Student retrieves published marks/feedback; dashboards align
+        // 14-15. Student retrieves published AI result; Teacher marks stay unpublished/null
         authedUser = {
           _id: studentId,
           role: "student",
           name: "Student One",
         };
         const visible = await request(port, "GET", "/api/student/assignments");
-        assert.equal(visible.json[0].marks, 16);
+        assert.equal(visible.json[0].aiScore, 16);
+        assert.equal(visible.json[0].marks, null);
+        assert.equal(visible.json[0].feedback, "");
         assert.equal(visible.json[0].totalMarks, 20);
-        assert.match(String(visible.json[0].aiFeedback || visible.json[0].feedback), /Solid/i);
+        assert.match(String(visible.json[0].aiFeedback || ""), /Solid/i);
         assert.equal(visible.json[0].resultStatus, "PUBLISHED");
         assert.deepEqual(visible.json[0].aiStrengths, ["Explained the concept"]);
 

@@ -201,7 +201,7 @@ describe("QC UI polish contracts", () => {
     assert.match(student, /qc-assignment-inline-notice/);
     assert.match(student, /qc-already-submitted-inline/);
     assert.match(student, /canSubmit === true/);
-    assert.match(student, /Submitted — awaiting evaluation/);
+    assert.match(student, /Awaiting evaluation/);
     assert.match(student, /qc-assignments-toolbar/);
     assert.doesNotMatch(student, /qc-info-toast--float/);
     assert.doesNotMatch(student, /createPortal/);
