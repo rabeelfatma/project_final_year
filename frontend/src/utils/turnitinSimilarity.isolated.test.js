@@ -37,14 +37,16 @@ describe("Turnitin-ready Plagiarism hub", () => {
     expect(teacherDash).toMatch(/Provider Not Connected/);
     expect(teacherDash).toMatch(/External Sources/);
     expect(teacherDash).toMatch(/Student Paper Repository/);
-    expect(teacherDash).toMatch(/external_sources/);
-    expect(teacherDash).toMatch(/student_paper_repository/);
+    expect(teacherDash).toMatch(/PLAGIARISM_MODES\.EXTERNAL_SOURCES|external_sources/);
+    expect(teacherDash).toMatch(
+      /PLAGIARISM_MODES\.STUDENT_PAPER_REPOSITORY|student_paper_repository/
+    );
     expect(teacherDash).toMatch(/Check Plagiarism/);
-    expect(teacherDash).toMatch(/plagiarismAssignmentId/);
-    expect(teacherDash).toMatch(/plagiarismSelectedIds/);
+    expect(teacherDash).toMatch(/plagiarismSelectedAssignmentIds/);
+    expect(teacherDash).toMatch(/plagiarismSelectMode/);
     expect(teacherDash).toMatch(/Select All|Clear Selection|Clear All/);
     expect(teacherDash).toMatch(/No assignments created yet|Assignments could not be loaded/);
-    expect(teacherDash).toMatch(/This assignment has no student submissions yet/);
+    expect(teacherDash).toMatch(/has no student submissions yet/);
     expect(teacherDash).toMatch(/preserveError/);
     expect(teacherDash).toMatch(/apiUnavailable|loadPlagiarismWorkspace/);
     expect(teacherDash).not.toMatch(/Local text-shingle similarity/);

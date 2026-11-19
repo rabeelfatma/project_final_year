@@ -279,6 +279,17 @@ exports.listChecks = async (req, res) => {
       }
       filter.submission = req.query.submissionId;
     }
+    if (req.query.assignmentId) {
+      if (!isObjectId(req.query.assignmentId)) {
+        return res.status(400).json({
+          success: false,
+          code: "INVALID_ASSIGNMENT_ID",
+          message: "Invalid assignment id.",
+        });
+      }
+      // Ownership is already enforced via teacherId on SimilarityCheck rows.
+      filter.assignment = req.query.assignmentId;
+    }
     if (req.query.status) {
       filter.status = String(req.query.status);
     }

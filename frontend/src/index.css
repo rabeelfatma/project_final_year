@@ -5592,9 +5592,9 @@ button,
 }
 
 .qc-status-badge.is-submitted {
-  border-color: color-mix(in srgb, #06b6d4 42%, var(--border));
-  background: color-mix(in srgb, #06b6d4 14%, var(--surface));
-  color: #22d3ee;
+  border-color: color-mix(in srgb, #22c55e 42%, var(--border));
+  background: color-mix(in srgb, #22c55e 14%, var(--surface));
+  color: #4ade80;
 }
 
 .qc-status-badge.is-graded {
@@ -7625,6 +7625,19 @@ input.qc-check[type="checkbox"]:disabled,
   max-width: none;
 }
 
+/* Plagiarism / Submissions search: one chrome only ? defeat nested global input styles. */
+.qc-plagiarism-page .qc-search-field input.qc-search-field__input,
+.qc-submissions-filters .qc-search-field input.qc-search-field__input {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 .qc-submissions-filter-select {
   width: 100%;
   min-height: 2.4rem;
@@ -7836,6 +7849,26 @@ input.qc-check[type="checkbox"]:disabled,
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.qc-submissions-pagination__controls .qc-btn {
+  cursor: pointer;
+}
+
+.qc-submissions-pagination__controls .qc-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.qc-submissions-pagination__controls .qc-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.96);
+}
+
+.qc-submissions-pagination__controls .qc-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 @media (max-width: 1023px) {

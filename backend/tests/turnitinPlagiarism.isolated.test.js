@@ -102,9 +102,12 @@ describe("Turnitin-ready plagiarism architecture (isolated)", () => {
     assert.match(dash, /Provider Not Connected|provider_not_connected|PROVIDER_NOT_CONNECTED/);
     assert.match(dash, /Plagiarism Checker/);
     assert.match(dash, /label=["']Plagiarism["']/);
-    assert.match(dash, /external_sources|External Sources/);
-    assert.match(dash, /student_paper_repository|Student Paper Repository/);
-    assert.match(dash, /plagiarismAssignmentId/);
+    assert.match(dash, /external_sources|External Sources|PLAGIARISM_MODES\.EXTERNAL_SOURCES/);
+    assert.match(
+      dash,
+      /student_paper_repository|Student Paper Repository|PLAGIARISM_MODES\.STUDENT_PAPER_REPOSITORY/
+    );
+    assert.match(dash, /plagiarismSelectedAssignmentIds|plagiarismAssignmentFilter/);
     assert.match(dash, /preserveError/);
     assert.doesNotMatch(dash, /Local text-shingle similarity/);
     assert.doesNotMatch(dash, /Highest Similarity/);

@@ -184,14 +184,13 @@ describe("QC UI polish contracts", () => {
     assert.match(topBar, /Clear all/);
   });
 
-  it("student assignment cards show Submitted status and badge-anchored duplicate notice", () => {
+  it("student assignment cards show SUBMITTED badge instead of a misleading Submit button", () => {
     const student = read("frontend/src/pages/dashboards/StudentDashboard.jsx");
     const css = read("frontend/src/index.css");
     const routes = read("backend/routes/studentRoutes.js");
-    assert.match(student, /Already submitted\./);
     assert.match(
       student,
-      /Your submission is saved\. You do not need to submit it again\./
+      /Already Submitted — You don(?:&apos;|')t need to submit again\./
     );
     assert.match(student, /setTimeout\(\(\) => setDuplicateNoticeId\(null\), 3000\)/);
     assert.match(student, /onAlreadySubmitted/);
@@ -200,6 +199,9 @@ describe("QC UI polish contracts", () => {
     assert.match(student, /qc-assignment-status-anchor/);
     assert.match(student, /qc-assignment-inline-notice/);
     assert.match(student, /qc-already-submitted-inline/);
+    assert.match(student, /data-testid="qc-assignment-submitted-badge"/);
+    assert.match(student, />\s*SUBMITTED\s*</);
+    assert.match(student, /label:\s*["']SUBMITTED["']/);
     assert.match(student, /canSubmit === true/);
     assert.match(student, /Awaiting evaluation/);
     assert.match(student, /qc-assignments-toolbar/);
@@ -208,8 +210,10 @@ describe("QC UI polish contracts", () => {
     assert.doesNotMatch(student, /Short text answer \(demo-friendly\)/i);
     assert.match(css, /\.qc-assignment-status-anchor/);
     assert.match(css, /\.qc-assignment-inline-notice[\s\S]*position:\s*absolute/);
+    assert.match(css, /\.qc-status-badge\.is-submitted/);
     assert.doesNotMatch(css, /\.qc-info-toast--float/);
     assert.match(routes, /ALREADY_SUBMITTED/);
+    assert.match(routes, /isSubmitted:\s*Boolean\(submission\)/);
     assert.match(routes, /You have already submitted this assignment\./);
   });
 });

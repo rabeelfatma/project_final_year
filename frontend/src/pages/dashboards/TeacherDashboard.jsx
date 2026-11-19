@@ -51,12 +51,27 @@ import { validateAcademicContent, referenceFileSelectionError } from '../../util
 import { createSubmitLock } from '../../utils/submitLock';
 import {
   filterSubmissionsForAssignment,
-  toggleSubmissionSelection,
-  selectAllSubmissionIds,
-  clearSelectionOnAssignmentChange,
-  fileTypeFromSubmission,
   describeNetworkOrApiError,
+  normalizePlagiarismAssignmentId,
+  toggleIdSelection,
+  selectAllAssignmentIds,
+  isIdSelected,
+  deriveAssignmentPlagiarismStatus,
+  assignmentPlagiarismStatusLabel,
+  filterPlagiarismAssignments,
+  toggleComparisonMode,
+  selectedComparisonModes,
+  describePlagiarismCheckRequirements,
+  PLAGIARISM_MODES,
+  ASSIGNMENT_CHECK_STATUS,
 } from '../../utils/plagiarismSelection';
+import {
+  submissionsTotalPages,
+  clampSubmissionPage,
+  goToPreviousSubmissionPage,
+  goToNextSubmissionPage,
+  submissionPageMeta,
+} from '../../utils/submissionsPagination';
 
 function StatCard({ label, value, icon }) {
   const [selected, setSelected] = useState(false);
@@ -144,10 +159,17 @@ export default function TeacherDashboard() {
   const [savingEval, setSavingEval]             = useState(false);
   const [reviewContent, setReviewContent]       = useState({ loading: false, text: '', strengths: [], improvements: [] });
   const [checkingPlagiarism, setCheckingPlagiarism] = useState(false);
-  const [plagiarismMode, setPlagiarismMode] = useState('external_sources');
+  const [plagiarismModes, setPlagiarismModes] = useState({
+    [PLAGIARISM_MODES.EXTERNAL_SOURCES]: true,
+    [PLAGIARISM_MODES.STUDENT_PAPER_REPOSITORY]: false,
+  });
   const [plagiarismProvider, setPlagiarismProvider] = useState(null);
-  const [plagiarismAssignmentId, setPlagiarismAssignmentId] = useState('');
-  const [plagiarismSelectedIds, setPlagiarismSelectedIds] = useState([]);
+  const [plagiarismAssignmentFilter, setPlagiarismAssignmentFilter] = useState('all');
+  const [plagiarismStatusFilter, setPlagiarismStatusFilter] = useState('all');
+  const [plagiarismSearch, setPlagiarismSearch] = useState('');
+  const [plagiarismSelectMode, setPlagiarismSelectMode] = useState(false);
+  const [plagiarismSelectedAssignmentIds, setPlagiarismSelectedAssignmentIds] = useState([]);
+  const [plagiarismCheckProgress, setPlagiarismCheckProgress] = useState('');
   const [plagiarismAssignmentsList, setPlagiarismAssignmentsList] = useState([]);
   const [plagiarismSubmissionsList, setPlagiarismSubmissionsList] = useState([]);
   const [plagiarismDataLoading, setPlagiarismDataLoading] = useState(false);
@@ -275,12 +297,41 @@ export default function TeacherDashboard() {
     return [...map.entries()].map(([id, title]) => ({ id, title }));
   })();
 
-  const submissionTotalPages = Math.max(1, Math.ceil(filteredSubmissions.length / SUBMISSIONS_PAGE_SIZE));
-  const safeSubmissionPage = Math.min(submissionPage, submissionTotalPages);
+  const submissionTotalPages = submissionsTotalPages(
+    filteredSubmissions.length,
+    SUBMISSIONS_PAGE_SIZE
+  );
+  // Clamp for display/slice — state can lag after filters shrink the page count.
+  const safeSubmissionPage = clampSubmissionPage(submissionPage, submissionTotalPages);
+  const submissionRange = submissionPageMeta(
+    safeSubmissionPage,
+    SUBMISSIONS_PAGE_SIZE,
+    filteredSubmissions.length
+  );
   const pagedSubmissions = filteredSubmissions.slice(
     (safeSubmissionPage - 1) * SUBMISSIONS_PAGE_SIZE,
     safeSubmissionPage * SUBMISSIONS_PAGE_SIZE
   );
+
+  useEffect(() => {
+    if (submissionPage !== safeSubmissionPage) {
+      setSubmissionPage(safeSubmissionPage);
+    }
+  }, [submissionPage, safeSubmissionPage]);
+
+  useEffect(() => {
+    // Dropdown no longer lists provider_not_connected; keep filter valid.
+    const allowed = new Set([
+      'all',
+      ASSIGNMENT_CHECK_STATUS.NOT_CHECKED,
+      ASSIGNMENT_CHECK_STATUS.IN_PROGRESS,
+      ASSIGNMENT_CHECK_STATUS.COMPLETED,
+      ASSIGNMENT_CHECK_STATUS.FAILED,
+    ]);
+    if (!allowed.has(plagiarismStatusFilter)) {
+      setPlagiarismStatusFilter('all');
+    }
+  }, [plagiarismStatusFilter]);
 
   const handleSelectAllSubmissions = (checked) => {
     if (checked) {
@@ -415,12 +466,17 @@ export default function TeacherDashboard() {
   const plagiarismAssignments = (plagiarismAssignmentsList.length
     ? plagiarismAssignmentsList
     : assignments
-  ).filter((asgn) => normalizeAssignmentId(asgn._id));
+  ).filter((asgn) => normalizePlagiarismAssignmentId(asgn._id));
 
-  const plagiarismSubmissionsForAssignment = filterSubmissionsForAssignment(
-    plagiarismSubmissionsList.length ? plagiarismSubmissionsList : submissions,
-    plagiarismAssignmentId
-  );
+  const plagiarismFilteredAssignments = filterPlagiarismAssignments({
+    assignments: plagiarismAssignments,
+    search: plagiarismSearch,
+    assignmentFilter: plagiarismAssignmentFilter,
+    statusFilter: plagiarismStatusFilter,
+    checks: similarityChecks,
+  });
+
+  const plagiarismActiveModes = selectedComparisonModes(plagiarismModes);
 
   const formatPlagiarismDate = (value) => {
     if (!value) return '—';
@@ -600,90 +656,220 @@ export default function TeacherDashboard() {
     loadSimilarityHub();
   };
 
-  const togglePlagiarismSubmission = (id) => {
-    setPlagiarismSelectedIds((prev) => toggleSubmissionSelection(prev, id));
+  const handlePlagiarismAssignmentDoubleClick = (assignmentId) => {
+    const id = normalizePlagiarismAssignmentId(assignmentId);
+    if (!id) return;
+    setPlagiarismSelectMode(true);
+    setPlagiarismSelectedAssignmentIds((prev) => {
+      if (isIdSelected(prev, id)) return prev.map(String);
+      return toggleIdSelection(prev, id);
+    });
   };
 
-  const handlePlagiarismSelectAll = () => {
-    const ids = selectAllSubmissionIds(plagiarismSubmissionsForAssignment);
-    const allSelected =
-      ids.length > 0 && ids.every((id) => plagiarismSelectedIds.map(String).includes(String(id)));
-    setPlagiarismSelectedIds(allSelected ? [] : ids);
+  const handlePlagiarismToggleAssignment = (assignmentId) => {
+    if (!plagiarismSelectMode) return;
+    setPlagiarismSelectedAssignmentIds((prev) =>
+      toggleIdSelection(prev, assignmentId)
+    );
+  };
+
+  const handlePlagiarismSelectAllAssignments = (checked) => {
+    if (!plagiarismSelectMode) return;
+    if (checked) {
+      setPlagiarismSelectedAssignmentIds(
+        selectAllAssignmentIds(plagiarismFilteredAssignments)
+      );
+      return;
+    }
+    setPlagiarismSelectedAssignmentIds([]);
   };
 
   const handlePlagiarismClearSelection = () => {
-    setPlagiarismSelectedIds([]);
+    setPlagiarismSelectedAssignmentIds([]);
+    setPlagiarismSelectMode(false);
   };
 
-  const handlePlagiarismAssignmentChange = (assignmentId) => {
-    const next = clearSelectionOnAssignmentChange(assignmentId);
-    setPlagiarismAssignmentId(next.assignmentId);
-    setPlagiarismSelectedIds(next.selectedIds);
-    setSimilarityError('');
+  const refreshPlagiarismAfterAssignmentChange = async () => {
+    await Promise.all([loadPlagiarismWorkspace(), loadSimilarityHub({ preserveError: true }), fetchAllData()]);
+  };
+
+  const handlePlagiarismDeleteAssignment = (id) => {
+    const assignmentId = normalizePlagiarismAssignmentId(id);
+    const asgn = plagiarismAssignments.find(
+      (item) => normalizePlagiarismAssignmentId(item._id) === assignmentId
+    );
+    const subCount = filterSubmissionsForAssignment(
+      plagiarismSubmissionsList.length ? plagiarismSubmissionsList : submissions,
+      assignmentId
+    ).length;
+    setConfirmState({
+      title: 'Delete assignment?',
+      description:
+        'This permanently deletes the assignment, its student submissions, and plagiarism check history owned by your account. This cannot be undone.',
+      detail: `${asgn?.title || 'Selected assignment'} · ${subCount} submission${subCount === 1 ? '' : 's'}`,
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await teacherService.deleteAssignment(assignmentId);
+          setPlagiarismSelectedAssignmentIds((prev) =>
+            prev.filter((value) => normalizePlagiarismAssignmentId(value) !== assignmentId)
+          );
+          if (plagiarismAssignmentFilter === assignmentId) {
+            setPlagiarismAssignmentFilter('all');
+          }
+          await refreshPlagiarismAfterAssignmentChange();
+        } catch (error) {
+          alert(describeDeleteError(error));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handlePlagiarismDeleteSelectedAssignments = () => {
+    const ids = plagiarismSelectedAssignmentIds
+      .map(normalizePlagiarismAssignmentId)
+      .filter(Boolean);
+    if (!ids.length) return;
+    setConfirmState({
+      title: 'Delete selected assignments?',
+      description: `Permanently delete ${ids.length} selected assignment(s)? This also removes their student submissions and plagiarism check history owned by your account. This cannot be undone.`,
+      detail: `${ids.length} assignment${ids.length === 1 ? '' : 's'} selected`,
+      confirmLabel: 'Delete All',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await teacherService.deleteAssignmentsBulk(ids);
+          setPlagiarismSelectedAssignmentIds([]);
+          setPlagiarismSelectMode(false);
+          if (ids.includes(String(plagiarismAssignmentFilter))) {
+            setPlagiarismAssignmentFilter('all');
+          }
+          await refreshPlagiarismAfterAssignmentChange();
+        } catch (error) {
+          alert(describeDeleteError(error));
+          throw error;
+        }
+      },
+    });
   };
 
   const handlePlagiarismCheck = async () => {
-    if (!plagiarismAssignmentId) {
-      alert('Select one assignment, then choose student submissions to check.');
+    if (checkingPlagiarism) return;
+
+    const requirementsMessage = describePlagiarismCheckRequirements({
+      assignmentIds: plagiarismSelectedAssignmentIds,
+      modes: plagiarismModes,
+    });
+    if (requirementsMessage) {
+      setSimilarityError(requirementsMessage);
       return;
     }
-    const submissionIds = plagiarismSelectedIds;
-    if (!submissionIds.length) {
-      alert(
-        'Select at least one student submission for the chosen assignment before Check Plagiarism.'
-      );
-      return;
-    }
-    // Guard: never send IDs outside the active assignment filter.
-    const allowed = new Set(
-      plagiarismSubmissionsForAssignment.map((sub) => String(sub._id))
+
+    const modes = plagiarismActiveModes;
+    const assignmentIds = plagiarismSelectedAssignmentIds
+      .map(normalizePlagiarismAssignmentId)
+      .filter(Boolean);
+    const ownedIds = new Set(
+      plagiarismAssignments.map((asgn) => normalizePlagiarismAssignmentId(asgn._id))
     );
-    const scopedIds = submissionIds.filter((id) => allowed.has(String(id)));
-    if (scopedIds.length !== submissionIds.length) {
+    const scopedAssignmentIds = assignmentIds.filter((id) => ownedIds.has(id));
+    if (scopedAssignmentIds.length !== assignmentIds.length) {
       setSimilarityError(
-        'Selection included submissions from another assignment. Selection was reset — please reselect.'
+        'Selection included assignments that are not owned by this account. Selection was reset.'
       );
-      setPlagiarismSelectedIds([]);
+      setPlagiarismSelectedAssignmentIds([]);
       return;
     }
+
+    const allSubs = plagiarismSubmissionsList.length
+      ? plagiarismSubmissionsList
+      : submissions;
+    const jobs = [];
+    const skipNotes = [];
+    for (const assignmentId of scopedAssignmentIds) {
+      const asgn = plagiarismAssignments.find(
+        (row) => normalizePlagiarismAssignmentId(row._id) === assignmentId
+      );
+      const title = asgn?.title || 'Assignment';
+      const subs = filterSubmissionsForAssignment(allSubs, assignmentId);
+      if (!subs.length) {
+        skipNotes.push(`“${title}” has no student submissions yet.`);
+        continue;
+      }
+      const submissionIds = selectAllAssignmentIds(
+        subs.map((sub) => ({ _id: sub._id }))
+      );
+      for (const mode of modes) {
+        jobs.push({ assignmentId, title, submissionIds, mode });
+      }
+    }
+
+    if (!jobs.length) {
+      setSimilarityError(
+        skipNotes[0] ||
+          'Selected assignments have no student submissions to check.'
+      );
+      return;
+    }
+
     let pendingError = '';
     try {
       setCheckingPlagiarism(true);
       setSimilarityError('');
-      const result = await teacherService.createSimilarityChecks({
-        submissionIds: scopedIds,
-        assignmentId: plagiarismAssignmentId,
-        mode: plagiarismMode,
-      });
-      const checks = Array.isArray(result?.checks) ? result.checks : [];
-      if (result?.provider) setPlagiarismProvider(result.provider);
-      if (checks.length) {
-        setSimilarityChecks((prev) => {
-          const byId = new Map(checks.map((row) => [String(row._id), row]));
-          const rest = (prev || []).filter((row) => !byId.has(String(row._id)));
-          return [...checks, ...rest];
-        });
-      }
-      if (result?.code === 'PROVIDER_NOT_CONNECTED') {
-        pendingError = '';
-        if (result?.provider) setPlagiarismProvider(result.provider);
-        else {
-          setPlagiarismProvider((prev) => ({
-            ...(prev || {}),
-            connected: false,
-            status: 'provider_not_connected',
-            message:
-              result?.message ||
-              'Turnitin is not configured. No similarity percentage was generated.',
-          }));
-        }
-      } else if (result?.httpStatus === 404) {
-        pendingError = describePlagiarismApiError(
-          { response: { status: 404, data: result } },
-          'Plagiarism check endpoint was not found (404).'
+      setPlagiarismCheckProgress(`Starting ${jobs.length} check job(s)…`);
+
+      for (let index = 0; index < jobs.length; index += 1) {
+        const job = jobs[index];
+        const modeLabel =
+          job.mode === PLAGIARISM_MODES.STUDENT_PAPER_REPOSITORY
+            ? 'Student Paper Repository'
+            : 'External Sources';
+        setPlagiarismCheckProgress(
+          `Checking ${index + 1}/${jobs.length}: ${job.title} · ${modeLabel}`
         );
-      } else if (result?.thrown && result?.code !== 'PROVIDER_NOT_CONNECTED') {
-        pendingError = result?.message || 'Plagiarism check failed.';
+
+        const result = await teacherService.createSimilarityChecks({
+          submissionIds: job.submissionIds,
+          assignmentId: job.assignmentId,
+          mode: job.mode,
+        });
+        const checks = Array.isArray(result?.checks) ? result.checks : [];
+        if (result?.provider) setPlagiarismProvider(result.provider);
+        if (checks.length) {
+          setSimilarityChecks((prev) => {
+            const byId = new Map(checks.map((row) => [String(row._id), row]));
+            const rest = (prev || []).filter((row) => !byId.has(String(row._id)));
+            return [...checks, ...rest];
+          });
+        }
+        if (result?.code === 'PROVIDER_NOT_CONNECTED') {
+          if (result?.provider) setPlagiarismProvider(result.provider);
+          else {
+            setPlagiarismProvider((prev) => ({
+              ...(prev || {}),
+              connected: false,
+              status: 'provider_not_connected',
+              message:
+                result?.message ||
+                'Turnitin is not configured. No similarity percentage was generated.',
+            }));
+          }
+        } else if (result?.httpStatus === 404) {
+          pendingError = describePlagiarismApiError(
+            { response: { status: 404, data: result } },
+            'Plagiarism check endpoint was not found (404).'
+          );
+        } else if (result?.thrown && result?.code !== 'PROVIDER_NOT_CONNECTED') {
+          pendingError =
+            `${job.title} (${modeLabel}): ` +
+            (result?.message || 'Plagiarism check failed.');
+        }
+      }
+
+      if (skipNotes.length && !pendingError) {
+        pendingError = skipNotes.join(' ');
       }
       await loadSimilarityHub({ preserveError: true });
       if (pendingError) setSimilarityError(pendingError);
@@ -693,6 +879,7 @@ export default function TeacherDashboard() {
       );
     } finally {
       setCheckingPlagiarism(false);
+      setPlagiarismCheckProgress('');
     }
   };
 
@@ -1257,7 +1444,8 @@ export default function TeacherDashboard() {
     const asgn = assignments.find((item) => normalizeAssignmentId(item._id) === assignmentId);
     setConfirmState({
       title: 'Delete assignment?',
-      description: 'This permanently removes the assignment. This action cannot be undone.',
+      description:
+        'This permanently deletes the assignment, its student submissions, and plagiarism check history owned by your account. This cannot be undone.',
       detail: asgn?.title || 'Selected assignment',
       confirmLabel: 'Delete',
       danger: true,
@@ -1280,7 +1468,7 @@ export default function TeacherDashboard() {
     if (!selectedAssignments.length) return;
     setConfirmState({
       title: 'Delete selected assignments?',
-      description: `Permanently delete ${selectedAssignments.length} selected assignment(s)? This cannot be undone.`,
+      description: `Permanently delete ${selectedAssignments.length} selected assignment(s)? This also removes their student submissions and plagiarism check history owned by your account. This cannot be undone.`,
       confirmLabel: 'Delete selected',
       danger: true,
       onConfirm: async () => {
@@ -2552,20 +2740,21 @@ export default function TeacherDashboard() {
               {filteredSubmissions.length > 0 && (
                 <div className="qc-submissions-pagination">
                   <p className="qc-submissions-pagination__meta">
-                    Showing {(safeSubmissionPage - 1) * SUBMISSIONS_PAGE_SIZE + 1}
-                    –
-                    {Math.min(safeSubmissionPage * SUBMISSIONS_PAGE_SIZE, filteredSubmissions.length)}
-                    {' '}of {filteredSubmissions.length}
+                    Showing {submissionRange.from}–{submissionRange.to} of {submissionRange.total}
                   </p>
                   <div className="qc-submissions-pagination__controls">
                     <button
                       type="button"
                       className="qc-btn qc-btn-ghost"
                       disabled={safeSubmissionPage <= 1}
-                      onClick={() => setSubmissionPage((p) => Math.max(1, p - 1))}
+                      onClick={() =>
+                        setSubmissionPage((p) =>
+                          goToPreviousSubmissionPage(p, submissionTotalPages)
+                        )
+                      }
                       aria-label="Previous page"
                     >
-                      <ChevronLeft size={14} aria-hidden="true" /> Prev
+                      <ChevronLeft size={14} aria-hidden="true" /> Previous
                     </button>
                     <span className="qc-submissions-pagination__page">
                       {safeSubmissionPage} / {submissionTotalPages}
@@ -2574,7 +2763,11 @@ export default function TeacherDashboard() {
                       type="button"
                       className="qc-btn qc-btn-ghost"
                       disabled={safeSubmissionPage >= submissionTotalPages}
-                      onClick={() => setSubmissionPage((p) => Math.min(submissionTotalPages, p + 1))}
+                      onClick={() =>
+                        setSubmissionPage((p) =>
+                          goToNextSubmissionPage(p, submissionTotalPages)
+                        )
+                      }
                       aria-label="Next page"
                     >
                       Next <ChevronRight size={14} aria-hidden="true" />
@@ -2588,27 +2781,46 @@ export default function TeacherDashboard() {
 
         {/* ══ PLAGIARISM / TURNITIN-READY TAB ══ */}
         {activeTab === 'plagiarism' && (
-          <div className="animate-in fade-in duration-500 space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-              <div className="min-w-0">
-                <h1 className="qc-page-title">Plagiarism Checker</h1>
+          <div className="qc-plagiarism-page animate-in fade-in duration-500 space-y-5">
+            <header className="qc-submissions-header">
+              <div className="qc-submissions-header__copy">
+                <div className="qc-submissions-header__title-row">
+                  <ShieldAlert size={22} className="qc-submissions-header__icon" aria-hidden="true" />
+                  <h1 className="qc-page-title">Plagiarism Checker</h1>
+                </div>
                 <p className="qc-page-subtitle max-w-2xl">
-                  Select one assignment, choose student submissions, then run a Turnitin-ready check. Scores appear only when the provider returns them.
+                  Double-click assignments to select them, choose comparison modes, then run Turnitin-ready checks. Scores appear only when the provider returns them.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  loadPlagiarismWorkspace();
-                  loadSimilarityHub();
-                }}
-                disabled={similarityLoading || plagiarismDataLoading}
-                className="qc-btn qc-btn-secondary shrink-0 self-start"
-              >
-                {(similarityLoading || plagiarismDataLoading) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                Refresh
-              </button>
-            </div>
+              <div className="qc-submissions-toolbar">
+                <button
+                  type="button"
+                  onClick={() => {
+                    loadPlagiarismWorkspace();
+                    loadSimilarityHub();
+                  }}
+                  disabled={similarityLoading || plagiarismDataLoading}
+                  className="qc-btn qc-btn-secondary"
+                >
+                  {(similarityLoading || plagiarismDataLoading) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePlagiarismCheck}
+                  disabled={checkingPlagiarism}
+                  aria-busy={checkingPlagiarism}
+                  className="qc-btn qc-btn-primary"
+                >
+                  {checkingPlagiarism ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+                  {checkingPlagiarism
+                    ? 'Checking…'
+                    : plagiarismSelectedAssignmentIds.length
+                      ? `Check Plagiarism (${plagiarismSelectedAssignmentIds.length})`
+                      : 'Check Plagiarism'}
+                </button>
+              </div>
+            </header>
 
             <div
               className={`rounded-xl border px-4 py-3 text-xs ${
@@ -2645,67 +2857,158 @@ export default function TeacherDashboard() {
               </div>
             ) : null}
 
+            {plagiarismCheckProgress ? (
+              <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-xs text-sky-100" role="status" aria-live="polite">
+                <Loader2 size={14} className="inline animate-spin mr-2" />
+                {plagiarismCheckProgress}
+              </div>
+            ) : null}
+
+            <div className="qc-submissions-filters" role="search" aria-label="Filter plagiarism assignments">
+              <label className="qc-search-field qc-submissions-filters__search">
+                <Search size={14} className="qc-search-field__icon" aria-hidden="true" />
+                <span className="sr-only">Search by assignment title</span>
+                <input
+                  type="search"
+                  value={plagiarismSearch}
+                  onChange={(e) => setPlagiarismSearch(e.target.value)}
+                  placeholder="Search by assignment title"
+                  className="qc-search-field__input"
+                />
+              </label>
+              <select
+                className="qc-submissions-filter-select"
+                value={plagiarismAssignmentFilter}
+                aria-label="Filter by assignment"
+                onChange={(e) => setPlagiarismAssignmentFilter(e.target.value)}
+                disabled={plagiarismDataLoading || Boolean(plagiarismDataError && !plagiarismAssignments.length)}
+              >
+                <option value="all">All Assignments</option>
+                {plagiarismAssignments.map((asgn) => (
+                  <option key={String(asgn._id)} value={String(asgn._id)}>
+                    {asgn.title || 'Untitled assignment'}
+                    {asgn.status === 'archived' ? ' (Archived)' : ''}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="qc-submissions-filter-select"
+                value={plagiarismStatusFilter}
+                aria-label="Filter by plagiarism status"
+                onChange={(e) => setPlagiarismStatusFilter(e.target.value)}
+              >
+                <option value="all">All Statuses</option>
+                <option value={ASSIGNMENT_CHECK_STATUS.NOT_CHECKED}>Not Checked</option>
+                <option value={ASSIGNMENT_CHECK_STATUS.IN_PROGRESS}>In Progress</option>
+                <option value={ASSIGNMENT_CHECK_STATUS.COMPLETED}>Completed</option>
+                <option value={ASSIGNMENT_CHECK_STATUS.FAILED}>Failed</option>
+              </select>
+            </div>
+
             <div className="rounded-xl border border-[var(--border)] p-4 space-y-4">
-              <div className="flex flex-col xl:flex-row xl:items-end gap-3">
-                <label className="flex-1 min-w-0 block">
-                  <span className="block text-[10px] font-black uppercase tracking-widest theme-muted mb-2">Assignment</span>
-                  <select
-                    className="theme-input w-full text-sm"
-                    value={plagiarismAssignmentId}
-                    onChange={(e) => handlePlagiarismAssignmentChange(e.target.value)}
-                    disabled={plagiarismDataLoading || Boolean(plagiarismDataError && !plagiarismAssignments.length)}
-                  >
-                    <option value="">
-                      {plagiarismDataLoading ? 'Loading assignments…' : 'Select an assignment…'}
-                    </option>
-                    {plagiarismAssignments.map((asgn) => (
-                      <option key={String(asgn._id)} value={String(asgn._id)}>
-                        {asgn.title || 'Untitled assignment'}
-                        {asgn.status === 'archived' ? ' (Archived)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="flex flex-wrap gap-2 shrink-0">
-                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismMode === 'external_sources' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismModes[PLAGIARISM_MODES.EXTERNAL_SOURCES] ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
                     <input
-                      type="radio"
-                      name="plagiarismMode"
-                      checked={plagiarismMode === 'external_sources'}
-                      onChange={() => setPlagiarismMode('external_sources')}
+                      type="checkbox"
+                      className="qc-check"
+                      checked={Boolean(plagiarismModes[PLAGIARISM_MODES.EXTERNAL_SOURCES])}
+                      onChange={() =>
+                        setPlagiarismModes((prev) =>
+                          toggleComparisonMode(prev, PLAGIARISM_MODES.EXTERNAL_SOURCES)
+                        )
+                      }
                     />
                     External Sources
                   </label>
-                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismMode === 'student_paper_repository' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
+                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismModes[PLAGIARISM_MODES.STUDENT_PAPER_REPOSITORY] ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
                     <input
-                      type="radio"
-                      name="plagiarismMode"
-                      checked={plagiarismMode === 'student_paper_repository'}
-                      onChange={() => setPlagiarismMode('student_paper_repository')}
+                      type="checkbox"
+                      className="qc-check"
+                      checked={Boolean(plagiarismModes[PLAGIARISM_MODES.STUDENT_PAPER_REPOSITORY])}
+                      onChange={() =>
+                        setPlagiarismModes((prev) =>
+                          toggleComparisonMode(prev, PLAGIARISM_MODES.STUDENT_PAPER_REPOSITORY)
+                        )
+                      }
                     />
                     Student Paper Repository
                   </label>
                 </div>
-                <button
-                  type="button"
-                  onClick={handlePlagiarismCheck}
-                  disabled={
-                    checkingPlagiarism ||
-                    !plagiarismAssignmentId ||
-                    plagiarismSelectedIds.length === 0
-                  }
-                  className="qc-btn qc-btn-primary shrink-0"
-                >
-                  {checkingPlagiarism ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
-                  {plagiarismSelectedIds.length
-                    ? `Check Plagiarism (${plagiarismSelectedIds.length})`
-                    : 'Check Plagiarism'}
-                </button>
+                <p className="text-[11px] theme-muted">
+                  Double-click an assignment to start selection. Single-click does not select.
+                </p>
               </div>
-              {plagiarismMode === 'student_paper_repository' ? (
+              {plagiarismModes[PLAGIARISM_MODES.STUDENT_PAPER_REPOSITORY] ? (
                 <p className="text-[11px] theme-muted">
                   Student Paper Repository requires institutional Turnitin repository configuration and consent. Papers are not auto-deposited.
                 </p>
+              ) : null}
+
+              {plagiarismSelectMode ? (
+                <div className="qc-selection-bar" role="status" aria-live="polite">
+                  <div className="qc-selection-bar__left">
+                    <label className="qc-selection-bar__select-all">
+                      <input
+                        type="checkbox"
+                        className="qc-check"
+                        aria-label="Select all filtered assignments"
+                        checked={
+                          plagiarismFilteredAssignments.length > 0 &&
+                          plagiarismFilteredAssignments.every((asgn) =>
+                            isIdSelected(
+                              plagiarismSelectedAssignmentIds,
+                              asgn._id
+                            )
+                          )
+                        }
+                        onChange={(e) =>
+                          handlePlagiarismSelectAllAssignments(e.target.checked)
+                        }
+                      />
+                      Select All
+                    </label>
+                    <span className="qc-selection-bar__count">
+                      <span className="accent-text">{plagiarismSelectedAssignmentIds.length}</span>
+                      {' '}selected
+                    </span>
+                  </div>
+                  <div className="qc-selection-bar__actions">
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-ghost"
+                      onClick={handlePlagiarismClearSelection}
+                    >
+                      Clear All
+                    </button>
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-danger"
+                      onClick={handlePlagiarismDeleteSelectedAssignments}
+                      disabled={!plagiarismSelectedAssignmentIds.length}
+                    >
+                      <Trash2 size={14} aria-hidden="true" /> Delete All
+                    </button>
+                  </div>
+                </div>
+              ) : plagiarismSelectedAssignmentIds.length > 0 ? (
+                <div className="qc-selection-bar" role="status">
+                  <div className="qc-selection-bar__left">
+                    <span className="qc-selection-bar__count">
+                      <span className="accent-text">{plagiarismSelectedAssignmentIds.length}</span>
+                      {' '}assignment{plagiarismSelectedAssignmentIds.length === 1 ? '' : 's'} ready to check
+                    </span>
+                  </div>
+                  <div className="qc-selection-bar__actions">
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-ghost"
+                      onClick={handlePlagiarismClearSelection}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                </div>
               ) : null}
 
               {plagiarismDataLoading ? (
@@ -2721,108 +3024,92 @@ export default function TeacherDashboard() {
                 <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
                   No assignments created yet. Create an assignment from Create Assignment first.
                 </div>
-              ) : !plagiarismAssignmentId ? (
+              ) : plagiarismFilteredAssignments.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
-                  Select an assignment to view its student submissions.
-                </div>
-              ) : plagiarismSubmissionsForAssignment.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
-                  This assignment has no student submissions yet.
+                  No assignments match the current search and filters.
                 </div>
               ) : (
-                <div className="qc-table-wrap">
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border)]">
-                    <p className="text-[11px] theme-muted">
-                      {plagiarismSelectedIds.length} file{plagiarismSelectedIds.length === 1 ? '' : 's'} selected
-                      {' · '}
-                      {plagiarismSubmissionsForAssignment.length} submission{plagiarismSubmissionsForAssignment.length === 1 ? '' : 's'}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="qc-btn qc-btn-ghost text-[10px]"
-                        onClick={handlePlagiarismSelectAll}
+                <div className="space-y-3">
+                  {plagiarismFilteredAssignments.map((asgn) => {
+                    const assignmentId = normalizePlagiarismAssignmentId(asgn._id);
+                    const selected = isIdSelected(plagiarismSelectedAssignmentIds, assignmentId);
+                    const checkStatus = deriveAssignmentPlagiarismStatus(
+                      assignmentId,
+                      similarityChecks
+                    );
+                    const subCount = filterSubmissionsForAssignment(
+                      plagiarismSubmissionsList.length
+                        ? plagiarismSubmissionsList
+                        : submissions,
+                      assignmentId
+                    ).length;
+                    return (
+                      <article
+                        key={assignmentId}
+                        className={`qc-card qc-assignment-card ${selected ? 'is-selected' : ''} ${plagiarismSelectMode ? 'is-selecting' : ''}`}
+                        onClick={(event) => {
+                          // Prevent normal single-click from activating selection mode.
+                          if (!plagiarismSelectMode) return;
+                          if (event.target?.closest?.('button, a, input, label')) return;
+                        }}
+                        onDoubleClick={(event) => {
+                          if (event.target?.closest?.('button, a, input, label, .qc-overflow-menu')) return;
+                          event.preventDefault();
+                          handlePlagiarismAssignmentDoubleClick(assignmentId);
+                        }}
                       >
-                        {plagiarismSubmissionsForAssignment.every((sub) =>
-                          plagiarismSelectedIds.map(String).includes(String(sub._id))
-                        )
-                          ? 'Clear All'
-                          : 'Select All'}
-                      </button>
-                      <button
-                        type="button"
-                        className="qc-btn qc-btn-ghost text-[10px]"
-                        onClick={handlePlagiarismClearSelection}
-                        disabled={!plagiarismSelectedIds.length}
-                      >
-                        Clear Selection
-                      </button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-left">
-                      <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                        <tr>
-                          <th className="p-3 w-12 text-center">
+                        <div className="qc-assignment-card__main">
+                          {plagiarismSelectMode ? (
                             <input
                               type="checkbox"
-                              checked={
-                                plagiarismSubmissionsForAssignment.length > 0 &&
-                                plagiarismSubmissionsForAssignment.every((sub) =>
-                                  plagiarismSelectedIds.map(String).includes(String(sub._id))
-                                )
-                              }
-                              onChange={handlePlagiarismSelectAll}
-                              aria-label="Select all submissions"
+                              className="qc-check"
+                              aria-label={`Select assignment ${asgn.title || assignmentId}`}
+                              checked={selected}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() => handlePlagiarismToggleAssignment(assignmentId)}
                             />
-                          </th>
-                          <th className="p-3">Student</th>
-                          <th className="p-3">Email / Reg</th>
-                          <th className="p-3">Original File</th>
-                          <th className="p-3">Type</th>
-                          <th className="p-3">Submitted</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        {plagiarismSubmissionsForAssignment.map((sub) => {
-                          const checked = plagiarismSelectedIds.map(String).includes(String(sub._id));
-                          const secondary =
-                            sub.student?.registrationNumber ||
-                            sub.student?.email ||
-                            sub.registrationNumber ||
-                            sub.email ||
-                            '—';
-                          return (
-                            <tr key={String(sub._id)} className={checked ? 'bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]' : ''}>
-                              <td className="p-3 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => togglePlagiarismSubmission(sub._id)}
-                                  aria-label={`Select submission from ${sub.student?.name || 'student'}`}
-                                />
-                              </td>
-                              <td className="p-3 text-sm font-bold text-white">
-                                {sub.student?.name || sub.studentName || 'Student'}
-                              </td>
-                              <td className="p-3 text-xs text-slate-400 break-all">
-                                {secondary}
-                              </td>
-                              <td className="p-3 text-sm text-slate-400 break-all">
-                                {sub.originalFileName || 'Untitled file'}
-                              </td>
-                              <td className="p-3 text-xs font-bold text-slate-300 whitespace-nowrap">
-                                {fileTypeFromSubmission(sub)}
-                              </td>
-                              <td className="p-3 text-sm text-slate-400 whitespace-nowrap">
-                                {formatPlagiarismDate(sub.submittedAt || sub.createdAt)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          ) : null}
+                          <div className="qc-assignment-card__doc-icon" aria-hidden="true">
+                            <FileText size={16} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="qc-assignment-card__title">{asgn.title || 'Untitled assignment'}</h3>
+                            <div className="qc-assignment-card__meta">
+                              <p className="qc-assignment-card__meta-item">
+                                <ClipboardCheck size={12} aria-hidden="true" />
+                                {subCount} submission{subCount === 1 ? '' : 's'}
+                              </p>
+                              <p className="qc-assignment-card__meta-item">
+                                <Clock size={12} aria-hidden="true" />
+                                Due: {asgn.deadline ? new Date(asgn.deadline).toLocaleString() : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="qc-assignment-card__aside" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                          <span className={`inline-flex px-2 py-1 rounded text-[10px] font-black ${similarityStatusClass(
+                            checkStatus === ASSIGNMENT_CHECK_STATUS.IN_PROGRESS
+                              ? 'processing'
+                              : checkStatus === ASSIGNMENT_CHECK_STATUS.NOT_CHECKED
+                                ? ''
+                                : checkStatus
+                          )}`}>
+                            {assignmentPlagiarismStatusLabel(checkStatus)}
+                          </span>
+                          <OverflowMenu
+                            label={`More actions for ${asgn.title || 'assignment'}`}
+                            items={[{
+                              id: `plagiarism-delete-${assignmentId}`,
+                              label: 'Delete',
+                              danger: true,
+                              icon: <Trash2 size={14} />,
+                              onSelect: () => handlePlagiarismDeleteAssignment(assignmentId),
+                            }]}
+                          />
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2831,13 +3118,14 @@ export default function TeacherDashboard() {
               <h2 className="text-sm font-bold text-white mb-3">Check history</h2>
               <div className="qc-table-wrap">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-left">
+                  <table className="w-full min-w-[820px] text-left">
                     <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
                       <tr>
                         <th className="p-4">Student</th>
                         <th className="p-4">Assignment</th>
                         <th className="p-4">Mode</th>
                         <th className="p-4">Similarity</th>
+                        <th className="p-4">Checked</th>
                         <th className="p-4">Status</th>
                         <th className="p-4">Report</th>
                       </tr>
@@ -2845,7 +3133,7 @@ export default function TeacherDashboard() {
                     <tbody className="divide-y divide-slate-800">
                       {similarityLoading && (
                         <tr>
-                          <td colSpan="6" className="p-12 text-center text-slate-500 text-xs">
+                          <td colSpan="7" className="p-12 text-center text-slate-500 text-xs">
                             <Loader2 size={18} className="inline animate-spin mr-2" />
                             Loading check history…
                           </td>
@@ -2873,6 +3161,9 @@ export default function TeacherDashboard() {
                               <td className="p-4 text-xs text-slate-400">{modeLabel}</td>
                               <td className="p-4 text-sm font-black">
                                 {showPercent ? `${row.similarityPercent}%` : '—'}
+                              </td>
+                              <td className="p-4 text-xs text-slate-400 whitespace-nowrap">
+                                {formatPlagiarismDate(row.requestedAt || row.completedAt || row.createdAt)}
                               </td>
                               <td className="p-4">
                                 <span className={`inline-flex px-2 py-1 rounded text-[10px] font-black ${similarityStatusClass(row.status)}`}>
@@ -2913,7 +3204,7 @@ export default function TeacherDashboard() {
                             </tr>
                             {detailOpen && (
                               <tr>
-                                <td colSpan="6" className="px-4 pb-4">
+                                <td colSpan="7" className="px-4 pb-4">
                                   <div className="rounded-xl border border-[var(--border)] p-4 space-y-3 text-xs">
                                     {row.errorMessage && (
                                       <p className="text-amber-200">{row.errorMessage}</p>
@@ -2973,8 +3264,8 @@ export default function TeacherDashboard() {
                       })}
                       {!similarityLoading && similarityChecks.length === 0 && (
                         <tr>
-                          <td colSpan="6" className="p-12 text-center text-slate-500 text-xs">
-                            No plagiarism checks yet. Select submissions above and run Check Plagiarism.
+                          <td colSpan="7" className="p-12 text-center text-slate-500 text-xs">
+                            No plagiarism checks yet. Double-click assignments above and run Check Plagiarism.
                           </td>
                         </tr>
                       )}
