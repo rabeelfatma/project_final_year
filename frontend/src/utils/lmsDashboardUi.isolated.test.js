@@ -134,7 +134,7 @@ describe("LMS dashboard redesign contracts", () => {
     expect(studentDash).toMatch(/Number\(aiScoreRaw\)/);
     expect(studentDash).toMatch(/Number\(teacherMarksRaw\)/);
     expect(studentDash).not.toMatch(/marks\s*\?\?\s*s\.aiScore|marks\s*\?\?\s*asgn\.aiScore|marks\s*\?\?\s*item\.aiScore/);
-    expect(studentDash).toMatch(/label:\s*["']Submitted["']/);
+    expect(studentDash).toMatch(/label:\s*["']SUBMITTED["']/);
     expect(studentDash).toMatch(/studentActivityState/);
     expect(studentDash).toMatch(/countActiveStudentAssignments/);
     expect(studentDash).toMatch(/Not Submitted|Awaiting Evaluation|Published/);

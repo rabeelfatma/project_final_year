@@ -1312,8 +1312,11 @@ function meaningfulSubject(subject) {
 
 function studentStatusLabel(asgn) {
   const status = String(asgn.status || "").toLowerCase();
+  // Prefer authoritative backend submission fields from GET /student/assignments.
   const isSubmitted = Boolean(
-    asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status)
+    asgn.isSubmitted === true ||
+    asgn.submissionId ||
+    ["submitted", "published", "graded", "ai_graded"].includes(status)
   );
   // Never infer publication from saved marks alone — only published flags / status.
   const isPublished = Boolean(
@@ -1327,7 +1330,7 @@ function studentStatusLabel(asgn) {
   // Submission/evaluation badges never use dots.
   if (isPublished) return { label: "Published", tone: "published", showDot: false };
   if (isSubmitted) {
-    return { label: "Submitted", tone: "submitted", showDot: false };
+    return { label: "SUBMITTED", tone: "submitted", showDot: false };
   }
   if (/^pending$/i.test(status) || !status) {
     return { label: "Not Submitted", tone: "not-submitted", showDot: false };
@@ -1345,7 +1348,19 @@ function AssignmentRow({
 }) {
 
   const status = String(asgn.status || "").toLowerCase();
-  const isSubmitted = Boolean(asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status));
+  // Backend GET /student/assignments sets isSubmitted/submissionId/canSubmit from real Submission rows.
+  const isSubmitted = Boolean(
+    asgn.isSubmitted === true ||
+    asgn.submissionId ||
+    ["submitted", "published", "graded", "ai_graded"].includes(status)
+  );
+  const isPublished = Boolean(
+    status === "published" ||
+    asgn.resultStatus === "PUBLISHED" ||
+    asgn.aiPublished === true ||
+    asgn.teacherMarksPublished === true ||
+    asgn.teacherFeedbackPublished === true
+  );
   // Backend canSubmit is authoritative; resubmission is not supported while a submission exists.
   const canUpload = asgn.canSubmit === true && !isSubmitted;
   const availability = String(asgn.availabilityLabel || "").trim();
@@ -1388,9 +1403,8 @@ function AssignmentRow({
     >
       <Info size={14} className="qc-assignment-inline-notice__icon" aria-hidden="true" />
       <div className="qc-assignment-inline-notice__body">
-        <p className="qc-assignment-inline-notice__title">Already submitted.</p>
-        <p className="qc-assignment-inline-notice__detail">
-          Your submission is saved. You do not need to submit it again.
+        <p className="qc-assignment-inline-notice__title">
+          Already Submitted — You don&apos;t need to submit again.
         </p>
       </div>
       <button
@@ -1442,10 +1456,13 @@ function AssignmentRow({
           {activityInfo.label}
         </span>
 
-        <span className={`qc-status-badge is-${statusInfo.tone}`}>
-          {statusInfo.showDot ? <span className="qc-status-badge__dot" aria-hidden="true" /> : null}
-          {statusInfo.label}
-        </span>
+        {/* Published / not-submitted stay in the status column; SUBMITTED replaces the action button. */}
+        {!(isSubmitted && !isPublished) ? (
+          <span className={`qc-status-badge is-${statusInfo.tone}`}>
+            {statusInfo.showDot ? <span className="qc-status-badge__dot" aria-hidden="true" /> : null}
+            {statusInfo.label}
+          </span>
+        ) : null}
 
         {canUpload ? (
           <label className="qc-btn qc-btn-primary cursor-pointer">
@@ -1460,6 +1477,14 @@ function AssignmentRow({
         ) : isSubmitted ? (
           <div className="qc-assignment-status-anchor">
             {duplicateNotice}
+            {!isPublished ? (
+              <span
+                className="qc-status-badge is-submitted"
+                data-testid="qc-assignment-submitted-badge"
+              >
+                SUBMITTED
+              </span>
+            ) : null}
           </div>
         ) : (
           <span className="qc-btn qc-btn-secondary opacity-60 pointer-events-none">{actionLabel}</span>

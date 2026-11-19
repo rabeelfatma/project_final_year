@@ -6,6 +6,8 @@ const User = require("../models/User");
 
 const Submission = require("../models/Submission");
 
+const SimilarityCheck = require("../models/SimilarityCheck");
+
 const { approvedRoleFilter } = require("../utils/approvedUserQuery");
 
 const path = require("path");
@@ -548,6 +550,7 @@ exports.deleteAssignment = async (req, res) => {
 
   try {
 
+    // Ownership enforced in the filter — never delete another teacher's assignment.
     const deleted = await Assignment.findOneAndDelete({
 
       _id: req.params.id,
@@ -571,6 +574,16 @@ exports.deleteAssignment = async (req, res) => {
       await removeStoredAcademicFile(deleted.file);
 
     }
+
+    // Cascade only this teacher's owned dependents for the deleted assignment.
+    await Submission.deleteMany({
+      assignment: deleted._id,
+      teacherId: req.user._id,
+    });
+    await SimilarityCheck.deleteMany({
+      assignment: deleted._id,
+      teacherId: req.user._id,
+    });
 
 
 
@@ -1901,19 +1914,26 @@ exports.deleteAssignmentsBulk = async (req, res) => {
 
 
 
+    const ownedIds = rows.map((r) => r._id);
+
     await Submission.deleteMany({
 
-      assignment: { $in: rows.map((r) => r._id) },
+      assignment: { $in: ownedIds },
 
       teacherId: req.user._id,
 
+    });
+
+    await SimilarityCheck.deleteMany({
+      assignment: { $in: ownedIds },
+      teacherId: req.user._id,
     });
 
 
 
     const result = await Assignment.deleteMany({
 
-      _id: { $in: ids },
+      _id: { $in: ownedIds },
 
       teacher: req.user._id,
 
