@@ -15,11 +15,20 @@ import {
   selectedComparisonModes,
   canRunPlagiarismCheck,
   describePlagiarismCheckRequirements,
+  filterPlagiarismHistoryChecks,
+  pageAfterHistoryCountChange,
   selectAllAssignmentIds,
   isIdSelected,
   PLAGIARISM_MODES,
   ASSIGNMENT_CHECK_STATUS,
 } from "./plagiarismSelection.js";
+import {
+  submissionsTotalPages,
+  clampSubmissionPage,
+  goToNextSubmissionPage,
+  goToPreviousSubmissionPage,
+  submissionPageMeta,
+} from "./submissionsPagination.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const teacherDash = fs.readFileSync(
@@ -258,5 +267,134 @@ describe("Teacher Plagiarism workspace wiring", () => {
   it("does not treat network failure as an empty assignment list alone", () => {
     expect(teacherDash).toMatch(/describeNetworkOrApiError|Network Error: the API server is unreachable/);
     expect(teacherDash).toMatch(/setPlagiarismDataError/);
+  });
+
+  it("wires Clear Check History confirmation without touching assignment delete flows", () => {
+    expect(teacherDash).toMatch(/Clear Check History/);
+    expect(teacherDash).toMatch(/Clear Plagiarism Check History\?/);
+    expect(teacherDash).toMatch(
+      /permanently delete all your plagiarism check history\?/
+    );
+    expect(teacherDash).toMatch(/Assignments and student submissions will not be deleted/);
+    expect(teacherDash).toMatch(/confirmLabel:\s*['"]Clear History['"]/);
+    expect(teacherDash).toMatch(/cancelLabel:\s*['"]Cancel['"]/);
+    expect(teacherDash).toMatch(/handleClearPlagiarismHistory/);
+    expect(teacherDash).toMatch(/clearSimilarityHistory/);
+    expect(teacherDash).toMatch(/setClearingPlagiarismHistory\(false\)/);
+    expect(teacherService).toMatch(/clearSimilarityHistory/);
+    expect(teacherService).toMatch(/api\.post\(['"]\/plagiarism\/checks\/clear['"]\)/);
+    expect(teacherDash).toMatch(/setPlagiarismHistoryPage\(1\)/);
+    // Existing assignment deletion paths remain.
+    expect(teacherDash).toMatch(/handlePlagiarismDeleteAssignment/);
+    expect(teacherDash).toMatch(/handlePlagiarismDeleteSelectedAssignments/);
+  });
+
+  it("paginates assignment cards and history independently with page size 8", () => {
+    expect(teacherDash).toMatch(/PLAGIARISM_ASSIGNMENT_PAGE_SIZE\s*=\s*8/);
+    expect(teacherDash).toMatch(/PLAGIARISM_HISTORY_PAGE_SIZE\s*=\s*8/);
+    expect(teacherDash).toMatch(/pagedPlagiarismAssignments/);
+    expect(teacherDash).toMatch(/pagedPlagiarismHistory/);
+    expect(teacherDash).toMatch(/plagiarismAssignmentPage/);
+    expect(teacherDash).toMatch(/plagiarismHistoryPage/);
+    expect(teacherDash).toMatch(/qc-plagiarism-assignment-pagination/);
+    expect(teacherDash).toMatch(/qc-plagiarism-history-pagination/);
+    expect(teacherDash).toMatch(/filterPlagiarismHistoryChecks/);
+    expect(teacherDash).toMatch(/Showing \{plagiarismAssignmentRange\.from\}/);
+    expect(teacherDash).toMatch(/Showing \{plagiarismHistoryRange\.from\}/);
+    expect(teacherDash).toMatch(
+      /setPlagiarismAssignmentPage\(\(p\)\s*=>\s*goToPreviousSubmissionPage\(p,\s*plagiarismAssignmentTotalPages\)\s*\)/s
+    );
+    expect(teacherDash).toMatch(
+      /setPlagiarismHistoryPage\(\(p\)\s*=>\s*goToNextSubmissionPage\(p,\s*plagiarismHistoryTotalPages\)\s*\)/s
+    );
+    expect(teacherDash).toMatch(
+      /setPlagiarismSearch\(e\.target\.value\);\s*setPlagiarismAssignmentPage\(1\);\s*setPlagiarismHistoryPage\(1\);/s
+    );
+    expect(teacherDash).toMatch(
+      /setPlagiarismAssignmentFilter\(e\.target\.value\);\s*setPlagiarismAssignmentPage\(1\);\s*setPlagiarismHistoryPage\(1\);/s
+    );
+    expect(teacherDash).toMatch(
+      /setPlagiarismStatusFilter\(e\.target\.value\);\s*setPlagiarismAssignmentPage\(1\);\s*setPlagiarismHistoryPage\(1\);/s
+    );
+  });
+});
+
+describe("plagiarism history filter and pagination helpers", () => {
+  const history = [
+    {
+      _id: "c1",
+      assignment: "a1",
+      assignmentTitle: "Midterm Essay",
+      student: { name: "Ada" },
+      status: "completed",
+    },
+    {
+      _id: "c2",
+      assignment: "a1",
+      assignmentTitle: "Midterm Essay",
+      student: { name: "Grace" },
+      status: "failed",
+    },
+    {
+      _id: "c3",
+      assignment: "a2",
+      assignmentTitle: "Lab Report",
+      student: { name: "Lin" },
+      status: "queued",
+    },
+  ];
+
+  it("filters history by search and assignment and paginates 0/5/8/9 records", () => {
+    expect(
+      filterPlagiarismHistoryChecks({
+        checks: history,
+        search: "lab",
+        assignmentFilter: "all",
+      }).map((row) => row._id)
+    ).toEqual(["c3"]);
+    expect(
+      filterPlagiarismHistoryChecks({
+        checks: history,
+        search: "",
+        assignmentFilter: "a1",
+      }).map((row) => row._id)
+    ).toEqual(["c1", "c2"]);
+
+    // Assignment list and history both use page size 8 helpers independently.
+    expect(submissionsTotalPages(0, 8)).toBe(1);
+    expect(submissionsTotalPages(5, 8)).toBe(1);
+    expect(submissionsTotalPages(8, 8)).toBe(1);
+    expect(submissionsTotalPages(9, 8)).toBe(2);
+    expect(submissionPageMeta(1, 8, 5)).toEqual({
+      page: 1,
+      totalPages: 1,
+      from: 1,
+      to: 5,
+      total: 5,
+    });
+    expect(submissionPageMeta(1, 8, 0)).toEqual({
+      page: 1,
+      totalPages: 1,
+      from: 0,
+      to: 0,
+      total: 0,
+    });
+    expect(submissionPageMeta(2, 8, 9)).toEqual({
+      page: 2,
+      totalPages: 2,
+      from: 9,
+      to: 9,
+      total: 9,
+    });
+    expect(goToPreviousSubmissionPage(1, 2)).toBe(1);
+    expect(goToNextSubmissionPage(2, 2)).toBe(2);
+    expect(clampSubmissionPage(99, 2)).toBe(2);
+  });
+
+  it("resets or clamps page after history deletion on the last page", () => {
+    expect(pageAfterHistoryCountChange(2, 8, 9)).toBe(2);
+    expect(pageAfterHistoryCountChange(2, 8, 8)).toBe(1);
+    expect(pageAfterHistoryCountChange(3, 8, 0)).toBe(1);
+    expect(pageAfterHistoryCountChange(5, 8, 16)).toBe(2);
   });
 });
