@@ -225,3 +225,45 @@ export function describePlagiarismCheckRequirements({ assignmentIds, modes } = {
   if (!hasAssignments) return "Please select at least one assignment.";
   return "Please select at least one comparison mode.";
 }
+
+/**
+ * Filter plagiarism check-history rows by assignment title/student search and assignment id.
+ */
+export function filterPlagiarismHistoryChecks({
+  checks,
+  search = "",
+  assignmentFilter = "all",
+  statusFilter = "all",
+} = {}) {
+  const rows = Array.isArray(checks) ? checks : [];
+  const q = String(search || "").trim().toLowerCase();
+  const filterId = String(assignmentFilter || "all");
+  const status = String(statusFilter || "all");
+
+  return rows.filter((row) => {
+    const assignmentId = normalizePlagiarismAssignmentId(
+      row?.assignment ?? row?.assignmentId
+    );
+    if (filterId !== "all" && assignmentId !== filterId) return false;
+    if (q) {
+      const title = String(row?.assignmentTitle || "").toLowerCase();
+      const student = String(row?.student?.name || "").toLowerCase();
+      if (!title.includes(q) && !student.includes(q)) return false;
+    }
+    if (status !== "all") {
+      const derived = deriveAssignmentPlagiarismStatus(assignmentId, rows);
+      if (derived !== status) return false;
+    }
+    return true;
+  });
+}
+
+/** After history shrinks, keep the current page valid (or reset to 1 when empty). */
+export function pageAfterHistoryCountChange(page, pageSize, nextTotal) {
+  const total = Math.max(0, Number(nextTotal) || 0);
+  const size = Math.max(1, Number(pageSize) || 1);
+  const totalPages = Math.max(1, Math.ceil(total / size) || 1);
+  const raw = Number(page);
+  if (!Number.isFinite(raw) || total === 0) return 1;
+  return Math.min(Math.max(1, Math.trunc(raw)), totalPages);
+}

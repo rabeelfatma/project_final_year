@@ -7827,6 +7827,19 @@ input.qc-check[type="checkbox"]:disabled,
   height: 1.85rem;
 }
 
+.qc-plagiarism-history-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.qc-plagiarism-history-header .qc-btn {
+  cursor: pointer;
+}
+
 .qc-submissions-pagination {
   display: flex;
   flex-wrap: wrap;

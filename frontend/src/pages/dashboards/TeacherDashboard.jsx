@@ -62,6 +62,8 @@ import {
   toggleComparisonMode,
   selectedComparisonModes,
   describePlagiarismCheckRequirements,
+  filterPlagiarismHistoryChecks,
+  pageAfterHistoryCountChange,
   PLAGIARISM_MODES,
   ASSIGNMENT_CHECK_STATUS,
 } from '../../utils/plagiarismSelection';
@@ -170,6 +172,12 @@ export default function TeacherDashboard() {
   const [plagiarismSelectMode, setPlagiarismSelectMode] = useState(false);
   const [plagiarismSelectedAssignmentIds, setPlagiarismSelectedAssignmentIds] = useState([]);
   const [plagiarismCheckProgress, setPlagiarismCheckProgress] = useState('');
+  const [plagiarismAssignmentPage, setPlagiarismAssignmentPage] = useState(1);
+  const [plagiarismHistoryPage, setPlagiarismHistoryPage] = useState(1);
+  const [clearingPlagiarismHistory, setClearingPlagiarismHistory] = useState(false);
+  const [plagiarismHistoryNotice, setPlagiarismHistoryNotice] = useState('');
+  const PLAGIARISM_ASSIGNMENT_PAGE_SIZE = 8;
+  const PLAGIARISM_HISTORY_PAGE_SIZE = 8;
   const [plagiarismAssignmentsList, setPlagiarismAssignmentsList] = useState([]);
   const [plagiarismSubmissionsList, setPlagiarismSubmissionsList] = useState([]);
   const [plagiarismDataLoading, setPlagiarismDataLoading] = useState(false);
@@ -475,6 +483,59 @@ export default function TeacherDashboard() {
     statusFilter: plagiarismStatusFilter,
     checks: similarityChecks,
   });
+  const plagiarismAssignmentTotalPages = submissionsTotalPages(
+    plagiarismFilteredAssignments.length,
+    PLAGIARISM_ASSIGNMENT_PAGE_SIZE
+  );
+  const safePlagiarismAssignmentPage = clampSubmissionPage(
+    plagiarismAssignmentPage,
+    plagiarismAssignmentTotalPages
+  );
+  const plagiarismAssignmentRange = submissionPageMeta(
+    safePlagiarismAssignmentPage,
+    PLAGIARISM_ASSIGNMENT_PAGE_SIZE,
+    plagiarismFilteredAssignments.length
+  );
+  const pagedPlagiarismAssignments = plagiarismFilteredAssignments.slice(
+    (safePlagiarismAssignmentPage - 1) * PLAGIARISM_ASSIGNMENT_PAGE_SIZE,
+    safePlagiarismAssignmentPage * PLAGIARISM_ASSIGNMENT_PAGE_SIZE
+  );
+
+  const filteredPlagiarismHistory = filterPlagiarismHistoryChecks({
+    checks: similarityChecks,
+    search: plagiarismSearch,
+    assignmentFilter: plagiarismAssignmentFilter,
+    statusFilter: plagiarismStatusFilter,
+  });
+  const plagiarismHistoryTotalPages = submissionsTotalPages(
+    filteredPlagiarismHistory.length,
+    PLAGIARISM_HISTORY_PAGE_SIZE
+  );
+  const safePlagiarismHistoryPage = clampSubmissionPage(
+    plagiarismHistoryPage,
+    plagiarismHistoryTotalPages
+  );
+  const plagiarismHistoryRange = submissionPageMeta(
+    safePlagiarismHistoryPage,
+    PLAGIARISM_HISTORY_PAGE_SIZE,
+    filteredPlagiarismHistory.length
+  );
+  const pagedPlagiarismHistory = filteredPlagiarismHistory.slice(
+    (safePlagiarismHistoryPage - 1) * PLAGIARISM_HISTORY_PAGE_SIZE,
+    safePlagiarismHistoryPage * PLAGIARISM_HISTORY_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    if (plagiarismAssignmentPage !== safePlagiarismAssignmentPage) {
+      setPlagiarismAssignmentPage(safePlagiarismAssignmentPage);
+    }
+  }, [plagiarismAssignmentPage, safePlagiarismAssignmentPage]);
+
+  useEffect(() => {
+    if (plagiarismHistoryPage !== safePlagiarismHistoryPage) {
+      setPlagiarismHistoryPage(safePlagiarismHistoryPage);
+    }
+  }, [plagiarismHistoryPage, safePlagiarismHistoryPage]);
 
   const plagiarismActiveModes = selectedComparisonModes(plagiarismModes);
 
@@ -682,6 +743,52 @@ export default function TeacherDashboard() {
       return;
     }
     setPlagiarismSelectedAssignmentIds([]);
+  };
+
+  const handleClearPlagiarismHistory = () => {
+    if (clearingPlagiarismHistory) return;
+    setConfirmState({
+      title: 'Clear Plagiarism Check History?',
+      description:
+        'Are you sure you want to permanently delete all your plagiarism check history? Assignments and student submissions will not be deleted.',
+      confirmLabel: 'Clear History',
+      cancelLabel: 'Cancel',
+      danger: true,
+      onConfirm: async () => {
+        if (clearingPlagiarismHistory) return;
+        setClearingPlagiarismHistory(true);
+        setPlagiarismHistoryNotice('');
+        setSimilarityError('');
+        try {
+          const result = await teacherService.clearSimilarityHistory();
+          if (!result?.success) {
+            throw new Error(
+              result?.message || 'Unable to clear plagiarism check history.'
+            );
+          }
+          const deletedCount = Number(result?.deletedCount) || 0;
+          setSimilarityChecks([]);
+          setSimilarityDetailId(null);
+          setPlagiarismHistoryPage(1);
+          setPlagiarismHistoryNotice(
+            deletedCount > 0
+              ? `Cleared ${deletedCount} plagiarism check${deletedCount === 1 ? '' : 's'}. Assignments and submissions were not deleted.`
+              : 'No plagiarism check history to clear.'
+          );
+          await loadSimilarityHub({ preserveError: true });
+        } catch (error) {
+          setSimilarityError(
+            describeNetworkOrApiError(
+              error,
+              'Unable to clear plagiarism check history.'
+            )
+          );
+          throw error;
+        } finally {
+          setClearingPlagiarismHistory(false);
+        }
+      },
+    });
   };
 
   const handlePlagiarismClearSelection = () => {
@@ -2871,7 +2978,11 @@ export default function TeacherDashboard() {
                 <input
                   type="search"
                   value={plagiarismSearch}
-                  onChange={(e) => setPlagiarismSearch(e.target.value)}
+                  onChange={(e) => {
+                    setPlagiarismSearch(e.target.value);
+                    setPlagiarismAssignmentPage(1);
+                    setPlagiarismHistoryPage(1);
+                  }}
                   placeholder="Search by assignment title"
                   className="qc-search-field__input"
                 />
@@ -2880,7 +2991,11 @@ export default function TeacherDashboard() {
                 className="qc-submissions-filter-select"
                 value={plagiarismAssignmentFilter}
                 aria-label="Filter by assignment"
-                onChange={(e) => setPlagiarismAssignmentFilter(e.target.value)}
+                onChange={(e) => {
+                  setPlagiarismAssignmentFilter(e.target.value);
+                  setPlagiarismAssignmentPage(1);
+                  setPlagiarismHistoryPage(1);
+                }}
                 disabled={plagiarismDataLoading || Boolean(plagiarismDataError && !plagiarismAssignments.length)}
               >
                 <option value="all">All Assignments</option>
@@ -2895,7 +3010,11 @@ export default function TeacherDashboard() {
                 className="qc-submissions-filter-select"
                 value={plagiarismStatusFilter}
                 aria-label="Filter by plagiarism status"
-                onChange={(e) => setPlagiarismStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setPlagiarismStatusFilter(e.target.value);
+                  setPlagiarismAssignmentPage(1);
+                  setPlagiarismHistoryPage(1);
+                }}
               >
                 <option value="all">All Statuses</option>
                 <option value={ASSIGNMENT_CHECK_STATUS.NOT_CHECKED}>Not Checked</option>
@@ -3030,7 +3149,7 @@ export default function TeacherDashboard() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {plagiarismFilteredAssignments.map((asgn) => {
+                  {pagedPlagiarismAssignments.map((asgn) => {
                     const assignmentId = normalizePlagiarismAssignmentId(asgn._id);
                     const selected = isIdSelected(plagiarismSelectedAssignmentIds, assignmentId);
                     const checkStatus = deriveAssignmentPlagiarismStatus(
@@ -3110,12 +3229,80 @@ export default function TeacherDashboard() {
                       </article>
                     );
                   })}
+                  {plagiarismFilteredAssignments.length > 0 ? (
+                    <div className="qc-submissions-pagination" data-testid="qc-plagiarism-assignment-pagination">
+                      <p className="qc-submissions-pagination__meta">
+                        Showing {plagiarismAssignmentRange.from}–{plagiarismAssignmentRange.to} of{' '}
+                        {plagiarismAssignmentRange.total}
+                      </p>
+                      <div className="qc-submissions-pagination__controls">
+                        <button
+                          type="button"
+                          className="qc-btn qc-btn-ghost"
+                          disabled={safePlagiarismAssignmentPage <= 1}
+                          onClick={() =>
+                            setPlagiarismAssignmentPage((p) =>
+                              goToPreviousSubmissionPage(p, plagiarismAssignmentTotalPages)
+                            )
+                          }
+                          aria-label="Previous assignments page"
+                        >
+                          <ChevronLeft size={14} aria-hidden="true" /> Previous
+                        </button>
+                        <span className="qc-submissions-pagination__page">
+                          {safePlagiarismAssignmentPage} / {plagiarismAssignmentTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="qc-btn qc-btn-ghost"
+                          disabled={safePlagiarismAssignmentPage >= plagiarismAssignmentTotalPages}
+                          onClick={() =>
+                            setPlagiarismAssignmentPage((p) =>
+                              goToNextSubmissionPage(p, plagiarismAssignmentTotalPages)
+                            )
+                          }
+                          aria-label="Next assignments page"
+                        >
+                          Next <ChevronRight size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
 
             <div>
-              <h2 className="text-sm font-bold text-white mb-3">Check history</h2>
+              <div className="qc-plagiarism-history-header">
+                <h2 className="text-sm font-bold text-white m-0">Check history</h2>
+                <button
+                  type="button"
+                  className="qc-btn qc-btn-secondary"
+                  onClick={handleClearPlagiarismHistory}
+                  disabled={
+                    clearingPlagiarismHistory ||
+                    similarityLoading ||
+                    similarityChecks.length === 0
+                  }
+                  aria-label="Clear plagiarism check history"
+                >
+                  {clearingPlagiarismHistory ? (
+                    <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 size={14} aria-hidden="true" />
+                  )}
+                  Clear Check History
+                </button>
+              </div>
+              {plagiarismHistoryNotice ? (
+                <div
+                  className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100 mb-3"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {plagiarismHistoryNotice}
+                </div>
+              ) : null}
               <div className="qc-table-wrap">
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[820px] text-left">
@@ -3139,7 +3326,7 @@ export default function TeacherDashboard() {
                           </td>
                         </tr>
                       )}
-                      {!similarityLoading && similarityChecks.map((row) => {
+                      {!similarityLoading && pagedPlagiarismHistory.map((row) => {
                         const detailOpen = String(similarityDetailId) === String(row._id);
                         const modeLabel =
                           row.mode === 'student_paper_repository'
@@ -3262,16 +3449,65 @@ export default function TeacherDashboard() {
                           </React.Fragment>
                         );
                       })}
-                      {!similarityLoading && similarityChecks.length === 0 && (
+                      {!similarityLoading &&
+                        similarityChecks.length === 0 && (
                         <tr>
                           <td colSpan="7" className="p-12 text-center text-slate-500 text-xs">
                             No plagiarism checks yet. Double-click assignments above and run Check Plagiarism.
                           </td>
                         </tr>
                       )}
+                      {!similarityLoading &&
+                        similarityChecks.length > 0 &&
+                        filteredPlagiarismHistory.length === 0 && (
+                        <tr>
+                          <td colSpan="7" className="p-12 text-center text-slate-500 text-xs">
+                            No plagiarism checks match your search or filters.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+                {filteredPlagiarismHistory.length > 0 && (
+                  <div className="qc-submissions-pagination" data-testid="qc-plagiarism-history-pagination">
+                    <p className="qc-submissions-pagination__meta">
+                      Showing {plagiarismHistoryRange.from}–{plagiarismHistoryRange.to} of{' '}
+                      {plagiarismHistoryRange.total}
+                    </p>
+                    <div className="qc-submissions-pagination__controls">
+                      <button
+                        type="button"
+                        className="qc-btn qc-btn-ghost"
+                        disabled={safePlagiarismHistoryPage <= 1}
+                        onClick={() =>
+                          setPlagiarismHistoryPage((p) =>
+                            goToPreviousSubmissionPage(p, plagiarismHistoryTotalPages)
+                          )
+                        }
+                        aria-label="Previous page"
+                      >
+                        <ChevronLeft size={14} aria-hidden="true" /> Previous
+                      </button>
+                      <span className="qc-submissions-pagination__page">
+                        {safePlagiarismHistoryPage} / {plagiarismHistoryTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        className="qc-btn qc-btn-ghost"
+                        disabled={safePlagiarismHistoryPage >= plagiarismHistoryTotalPages}
+                        onClick={() =>
+                          setPlagiarismHistoryPage((p) =>
+                            goToNextSubmissionPage(p, plagiarismHistoryTotalPages)
+                          )
+                        }
+                        aria-label="Next page"
+                      >
+                        Next <ChevronRight size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3569,8 +3805,9 @@ export default function TeacherDashboard() {
       description={confirmState?.description}
       detail={confirmState?.detail}
       confirmLabel={confirmState?.confirmLabel}
+      cancelLabel={confirmState?.cancelLabel || 'Cancel'}
       danger={Boolean(confirmState?.danger)}
-      busy={confirmBusy}
+      busy={confirmBusy || clearingPlagiarismHistory}
       onCancel={closeConfirm}
       onConfirm={runConfirm}
     />

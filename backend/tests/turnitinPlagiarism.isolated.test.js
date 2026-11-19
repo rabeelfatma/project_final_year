@@ -85,6 +85,8 @@ describe("Turnitin-ready plagiarism architecture (isolated)", () => {
     assert.doesNotMatch(model, /jaccard/i);
     assert.match(routes, /router\.post\("\/checks"/);
     assert.match(routes, /router\.get\("\/checks"/);
+    assert.match(routes, /router\.post\("\/checks\/clear"/);
+    assert.match(routes, /router\.delete\("\/checks"/);
     assert.match(routes, /router\.get\("\/checks\/:id\/report"/);
     assert.match(routes, /authorize\("teacher", "admin"\)/);
     assert.match(controller, /PROVIDER_NOT_CONNECTED/);
@@ -93,6 +95,10 @@ describe("Turnitin-ready plagiarism architecture (isolated)", () => {
     assert.match(controller, /MIXED_ASSIGNMENT_SUBMISSIONS/);
     assert.match(controller, /INVALID_ASSIGNMENT_ID/);
     assert.match(controller, /teacherId: user\._id/);
+    assert.match(controller, /exports\.clearHistory/);
+    assert.match(controller, /SimilarityCheck\.deleteMany\(\{\s*teacherId\s*\}\)/);
+    assert.doesNotMatch(controller, /Assignment\.deleteMany/);
+    assert.doesNotMatch(controller, /Submission\.deleteMany/);
     assert.doesNotMatch(controller, /compareTexts/);
     assert.doesNotMatch(controller, /Local text-shingle/);
   });
@@ -185,6 +191,16 @@ describe("Turnitin plagiarism HTTP contracts (mock app)", () => {
       });
       if (!row) return null;
       return new mockModel({ ...row });
+    };
+    mockModel.deleteMany = async (filter = {}) => {
+      const before = store.length;
+      store = store.filter((row) => {
+        if (filter.teacherId && String(row.teacherId) === String(filter.teacherId)) {
+          return false;
+        }
+        return true;
+      });
+      return { deletedCount: before - store.length };
     };
 
     // Stub Submission.find used by createChecks.
@@ -358,6 +374,27 @@ describe("Turnitin plagiarism HTTP contracts (mock app)", () => {
         return res.status(500).json({ success: false, message: error.message });
       }
     });
+
+    const clearHistoryHandler = async (req, res) => {
+      const teacherId = req.user?._id;
+      if (!teacherId) {
+        return res.status(401).json({
+          success: false,
+          code: "UNAUTHORIZED",
+          message: "Authentication required.",
+        });
+      }
+      // Ownership: only the caller's teacherId — never wipe peer history.
+      const result = await mockModel.deleteMany({ teacherId });
+      return res.json({
+        success: true,
+        deletedCount: result.deletedCount,
+        message:
+          "Plagiarism check history cleared. Assignments and student submissions were not deleted.",
+      });
+    };
+    app.post("/api/plagiarism/checks/clear", clearHistoryHandler);
+    app.delete("/api/plagiarism/checks", clearHistoryHandler);
 
     app.get("/api/plagiarism/checks/:id", async (req, res) => {
       const row = await mockModel.findOne({
@@ -596,6 +633,54 @@ describe("Turnitin plagiarism HTTP contracts (mock app)", () => {
     const report = await request("GET", `/api/plagiarism/checks/${checkId}/report`);
     assert.equal(report.status, 503);
     assert.equal(report.json.code, "PROVIDER_NOT_CONNECTED");
+  });
+
+  it("clear history deletes only the current teacher's checks and leaves others", async () => {
+    const teacherA = { _id: "507f1f77bcf86cd7994390aa", role: "teacher" };
+    const teacherB = { _id: "507f1f77bcf86cd799439099", role: "teacher" };
+
+    await request("POST", "/api/plagiarism/checks", {
+      body: {
+        mode: "external_sources",
+        assignmentId: "507f1f77bcf86cd7994390cc",
+        submissionIds: ["507f1f77bcf86cd799439011"],
+      },
+      user: teacherA,
+    });
+
+    // Peer history planted directly (other teacher) — must survive clear.
+    await SimilarityCheck.create({
+      submission: "507f1f77bcf86cd799439099",
+      assignment: "507f1f77bcf86cd7994390ee",
+      teacherId: teacherB._id,
+      studentId: "507f1f77bcf86cd7994390dd",
+      mode: "external_sources",
+      status: "provider_not_connected",
+      similarityPercent: null,
+    });
+
+    const beforePeer = store.filter((row) => String(row.teacherId) === teacherB._id);
+    assert.equal(beforePeer.length, 1);
+
+    const cleared = await request("POST", "/api/plagiarism/checks/clear", {
+      user: teacherA,
+    });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.json.success, true);
+    assert.ok(cleared.json.deletedCount >= 1);
+    assert.match(
+      String(cleared.json.message || ""),
+      /Assignments and student submissions were not deleted/i
+    );
+
+    const remainingA = store.filter((row) => String(row.teacherId) === teacherA._id);
+    const remainingB = store.filter((row) => String(row.teacherId) === teacherB._id);
+    assert.equal(remainingA.length, 0);
+    assert.equal(remainingB.length, 1);
+
+    // Cancel path is client-only: no DELETE means store is unchanged for that action.
+    const unchanged = store.length;
+    assert.equal(unchanged, remainingB.length);
   });
 
   it("queued/processing/completed/failed statuses are modeled without invented scores", () => {

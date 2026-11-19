@@ -266,6 +266,40 @@ exports.createChecks = async (req, res) => {
   }
 };
 
+/**
+ * Permanently delete plagiarism check history for the authenticated teacher only.
+ * Never deletes assignments, submissions, grades, or uploaded files.
+ * Never deletes another teacher's SimilarityCheck rows.
+ */
+exports.clearHistory = async (req, res) => {
+  try {
+    const teacherId = req.user?._id;
+    if (!teacherId) {
+      return res.status(401).json({
+        success: false,
+        code: "UNAUTHORIZED",
+        message: "Authentication required.",
+      });
+    }
+
+    // Always scope to the caller's teacherId — do not use an empty admin filter.
+    const result = await SimilarityCheck.deleteMany({ teacherId });
+
+    return res.json({
+      success: true,
+      deletedCount: Number(result?.deletedCount) || 0,
+      message:
+        "Plagiarism check history cleared. Assignments and student submissions were not deleted.",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Unable to clear plagiarism check history.",
+      error: error.message,
+    });
+  }
+};
+
 exports.listChecks = async (req, res) => {
   try {
     const filter = { ...ownershipFilter(req.user) };

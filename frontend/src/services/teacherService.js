@@ -234,6 +234,24 @@ const teacherService = {
     const response = await api.get('/plagiarism/checks', { params });
     return response.data;
   },
+  clearSimilarityHistory: async () => {
+    // POST /checks/clear avoids DELETE-collection 404s on some hosts/proxies.
+    try {
+      const response = await api.post('/plagiarism/checks/clear');
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        const err = new Error(
+          error.response.data.message ||
+            'Unable to clear plagiarism check history.'
+        );
+        err.response = error.response;
+        err.code = error.response.data.code;
+        throw err;
+      }
+      throw error;
+    }
+  },
   createSimilarityChecks: async ({ submissionIds, mode, assignmentId }) => {
     try {
       const response = await api.post('/plagiarism/checks', {
