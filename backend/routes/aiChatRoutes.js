@@ -6,6 +6,7 @@ const controller = require("../controllers/aiChatController");
 router.use(protect);
 router.get("/", controller.list);
 router.post("/bulk-delete", controller.removeMany);
+router.patch("/:clientId/meta", controller.patchMeta);
 router.put("/:clientId", controller.upsert);
 router.delete("/:clientId", controller.remove);
 

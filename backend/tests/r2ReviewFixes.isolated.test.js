@@ -244,7 +244,7 @@ describe("Multer oversized upload settles callback once", () => {
             try {
               assert.equal(calls, 1);
               assert.ok(lastErr);
-              assert.match(String(lastErr.message), /too large/i);
+              assert.match(String(lastErr.message), /exceeds the limit/i);
               assert.equal(lastInfo, undefined);
               resolve();
             } catch (e) {

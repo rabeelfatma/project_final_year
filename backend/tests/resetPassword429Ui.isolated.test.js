@@ -56,9 +56,9 @@ describe("ResetPassword confirm 429 UX contract", () => {
     const afterFetch = src.slice(fetchIdx);
     const notOkIdx = afterFetch.indexOf("if (!res.ok)");
     assert.ok(notOkIdx >= 0);
-    const notOkBlock = afterFetch.slice(notOkIdx, notOkIdx + 220);
+    const notOkBlock = afterFetch.slice(notOkIdx, notOkIdx + 900);
     assert.match(notOkBlock, /setLinkInvalid\s*\(\s*true\s*\)/);
-    assert.match(notOkBlock, /Invalid or expired reset link/);
+    assert.match(notOkBlock, /Reset link is invalid or expired/);
   });
 
   it("preserves success flow clearing password fields after confirm", () => {
@@ -67,7 +67,7 @@ describe("ResetPassword confirm 429 UX contract", () => {
     assert.match(src, /setPassword\s*\(\s*""\s*\)/);
     assert.match(src, /setConfirmPassword\s*\(\s*""\s*\)/);
     assert.match(src, /setToken\s*\(\s*""\s*\)/);
-    assert.match(src, /Password updated successfully/);
+    assert.match(src, /Password reset successfully/);
   });
 
   it("keeps busy guard against repeated submit while in flight", () => {

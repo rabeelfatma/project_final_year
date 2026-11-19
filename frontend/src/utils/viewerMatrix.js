@@ -1,0 +1,95 @@
+/**
+ * Extension → viewer strategy for the exact 77-item academic allowlist.
+ * Keep in sync with backend/utils/uploadAllowlist.js ACADEMIC_EXTENSIONS.
+ */
+
+/** @typedef {'pptx-wasm'|'exceljs'|'mammoth'|'pdf-embed'|'image'|'audio'|'code'|'markdown'|'notebook'|'table'|'structured'|'archive-list'|'backend-html'|'download-only'} ViewerId */
+
+/** @type {Record<string, { viewer: ViewerId; fidelity: string; notes: string }>} */
+export const VIEWER_BY_EXT = {
+  pdf: { viewer: "pdf-embed", fidelity: "high", notes: "Native browser PDF embed with zoom/fullscreen." },
+  doc: { viewer: "download-only", fidelity: "none", notes: "Legacy OLE .doc — no reliable in-browser visual render." },
+  docx: { viewer: "mammoth", fidelity: "good", notes: "Client Mammoth HTML pages (headings/tables/images)." },
+  txt: { viewer: "code", fidelity: "exact", notes: "Plain text with scroll; no execution." },
+  md: { viewer: "markdown", fidelity: "good", notes: "Lightweight Markdown render." },
+  rtf: { viewer: "backend-html", fidelity: "limited", notes: "Backend HTML when available; else Download Original." },
+  csv: { viewer: "table", fidelity: "exact", notes: "Delimited table viewer." },
+  tsv: { viewer: "table", fidelity: "exact", notes: "Tab-delimited table viewer." },
+  json: { viewer: "structured", fidelity: "exact", notes: "Pretty-print + syntax highlight." },
+  xml: { viewer: "structured", fidelity: "exact", notes: "Syntax-highlighted XML text." },
+  yaml: { viewer: "structured", fidelity: "exact", notes: "Syntax-highlighted YAML text." },
+  yml: { viewer: "structured", fidelity: "exact", notes: "Syntax-highlighted YAML text." },
+  xlsx: { viewer: "exceljs", fidelity: "good", notes: "ExcelJS grid: col widths, row heights, merges, fonts(pt), wraps, fills, borders, zoom, hidden cols/rows, freeze panes." },
+  xls: { viewer: "download-only", fidelity: "none", notes: "Legacy BIFF .xls — ExcelJS cannot load; Download Original only." },
+  ods: { viewer: "download-only", fidelity: "none", notes: "ODS — ExcelJS xlsx loader does not support; Download Original only." },
+  pptx: { viewer: "pptx-wasm", fidelity: "high", notes: "MIT pptx-wasm canvas slides + thumbs/nav/fullscreen." },
+  ppt: { viewer: "download-only", fidelity: "none", notes: "Legacy .ppt — no visual in-browser renderer." },
+  odp: { viewer: "download-only", fidelity: "none", notes: "ODP — no reliable visual slide engine; Download Original." },
+  zip: { viewer: "archive-list", fidelity: "listing", notes: "Backend adm-zip listing only; never execute members." },
+  rar: { viewer: "download-only", fidelity: "none", notes: "Listing not supported safely client-side." },
+  "7z": { viewer: "download-only", fidelity: "none", notes: "Listing not supported safely client-side." },
+  tar: { viewer: "download-only", fidelity: "none", notes: "Listing not supported safely client-side." },
+  gz: { viewer: "download-only", fidelity: "none", notes: "Listing not supported safely client-side." },
+  png: { viewer: "image", fidelity: "exact", notes: "Zoom/rotate/fit image preview." },
+  jpg: { viewer: "image", fidelity: "exact", notes: "Zoom/rotate/fit image preview." },
+  jpeg: { viewer: "image", fidelity: "exact", notes: "Zoom/rotate/fit image preview." },
+  gif: { viewer: "image", fidelity: "exact", notes: "Animated GIF via native <img>." },
+  webp: { viewer: "image", fidelity: "exact", notes: "Zoom/rotate/fit image preview." },
+  bmp: { viewer: "image", fidelity: "exact", notes: "Zoom/rotate/fit image preview." },
+  svg: { viewer: "image", fidelity: "exact", notes: "SVG as image; scripts not executed as app code." },
+  heic: { viewer: "image", fidelity: "browser-dependent", notes: "Fallback to Download if browser cannot decode." },
+  heif: { viewer: "image", fidelity: "browser-dependent", notes: "Fallback to Download if browser cannot decode." },
+  tif: { viewer: "image", fidelity: "browser-dependent", notes: "Fallback to Download if browser cannot decode." },
+  tiff: { viewer: "image", fidelity: "browser-dependent", notes: "Fallback to Download if browser cannot decode." },
+  mp3: { viewer: "audio", fidelity: "exact", notes: "Native audio controls." },
+  wav: { viewer: "audio", fidelity: "exact", notes: "Native audio controls." },
+  ogg: { viewer: "audio", fidelity: "exact", notes: "Native audio controls." },
+  aac: { viewer: "audio", fidelity: "browser-dependent", notes: "Native audio when codec supported." },
+  flac: { viewer: "audio", fidelity: "browser-dependent", notes: "Native audio when codec supported." },
+  m4a: { viewer: "audio", fidelity: "exact", notes: "Native audio controls." },
+  py: { viewer: "code", fidelity: "exact", notes: "Syntax highlight + line numbers; never execute." },
+  ipynb: { viewer: "notebook", fidelity: "good", notes: "Cell structure + safe text outputs; never execute." },
+  js: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  jsx: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  ts: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  tsx: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  cpp: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  c: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  h: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  hpp: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  java: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  php: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  cs: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  swift: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  go: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  rs: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  kt: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  kts: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  sql: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  html: { viewer: "code", fidelity: "exact", notes: "Shown as source code; not executed as page." },
+  htm: { viewer: "code", fidelity: "exact", notes: "Shown as source code; not executed as page." },
+  css: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  scss: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  sass: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  less: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  vue: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  svelte: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  sh: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  bat: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  ps1: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  rb: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  r: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  m: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  mm: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  dart: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  lua: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+  pl: { viewer: "code", fidelity: "exact", notes: "Syntax highlight; never execute." },
+};
+
+/** Canonical allowlist extensions without leading dots (must stay 77). */
+export const ALLOWLIST_EXTS = Object.keys(VIEWER_BY_EXT);
+
+export function viewerForExt(ext) {
+  const key = String(ext || "").replace(/^\./, "").toLowerCase();
+  return VIEWER_BY_EXT[key] || null;
+}

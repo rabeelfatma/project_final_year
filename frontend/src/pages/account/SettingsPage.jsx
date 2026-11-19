@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Bell,
   KeyRound,
-  Monitor,
   Moon,
   Palette,
   Sun,
@@ -22,9 +21,8 @@ const TABS = [
 ];
 
 /**
- * Dedicated settings page wired only to real, existing preferences:
- * theme mode, accent colour, in-app notification centre, and password-reset link.
- * Does not add browser push notifications.
+ * Shared Settings for Admin, Teacher, and Student.
+ * Vertical left nav + content panel on the right (stacks on small screens).
  */
 export default function SettingsPage({ onBack, role = "user" }) {
   const { theme, setTheme, accent, accents, setAccent } = useTheme();
@@ -44,13 +42,12 @@ export default function SettingsPage({ onBack, role = "user" }) {
   };
 
   return (
-    <div className="max-w-3xl">
-      <div className="qc-page-header">
+    <div className="qc-settings-shell">
+      <div className="qc-page-header qc-settings-header">
         <div>
           <h2 className="qc-page-title">Settings</h2>
           <p className="qc-page-subtitle">
-            Appearance, in-app notifications, and account security for your{" "}
-            {role} account.
+            Appearance, notifications, and security for your {role} account.
           </p>
         </div>
         {typeof onBack === "function" && (
@@ -61,129 +58,126 @@ export default function SettingsPage({ onBack, role = "user" }) {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-5">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setActiveTab(id)}
-            className={`qc-filter-chip !normal-case !tracking-normal !font-semibold inline-flex gap-2 ${
-              activeTab === id ? "is-active" : ""
-            }`}
-          >
-            <Icon size={14} aria-hidden="true" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <div className="qc-settings-layout">
+        <nav className="qc-settings-sidenav" aria-label="Settings sections">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              onClick={() => setActiveTab(id)}
+              className={`qc-settings-sidenav__item ${activeTab === id ? "is-active" : ""}`}
+            >
+              <Icon size={15} aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
-      {activeTab === "appearance" && (
-        <div className="space-y-4">
-          <section className="qc-card">
-            <h3 className="qc-section-title mb-3">Theme mode</h3>
-            <p className="text-sm theme-muted mb-4">
-              Choose light or dark mode. Your preference is saved on this device.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="qc-settings-content" role="tabpanel">
+          {activeTab === "appearance" && (
+            <section className="qc-card qc-settings-card">
+              <div className="qc-settings-row">
+                <div className="qc-settings-row__copy">
+                  <p className="qc-settings-row__title">Theme mode</p>
+                  <p className="qc-settings-row__hint">Saved on this device.</p>
+                </div>
+                <div className="qc-theme-pills" role="group" aria-label="Theme mode">
+                  <button
+                    type="button"
+                    className={`qc-theme-pill ${theme === "light" ? "is-selected" : ""}`}
+                    onClick={() => setTheme("light")}
+                    aria-pressed={theme === "light"}
+                  >
+                    <Sun size={14} aria-hidden="true" />
+                    Light
+                  </button>
+                  <button
+                    type="button"
+                    className={`qc-theme-pill ${theme === "dark" ? "is-selected" : ""}`}
+                    onClick={() => setTheme("dark")}
+                    aria-pressed={theme === "dark"}
+                  >
+                    <Moon size={14} aria-hidden="true" />
+                    Dark
+                  </button>
+                </div>
+              </div>
+
+              <div className="qc-settings-divider" />
+
+              <div className="qc-settings-row qc-settings-row--stack">
+                <div className="qc-settings-row__copy">
+                  <p className="qc-settings-row__title">Accent colour</p>
+                  <p className="qc-settings-row__hint">Used for actions, charts, and highlights.</p>
+                </div>
+                <div className="qc-swatch-grid" role="group" aria-label="Accent colour">
+                  {Object.entries(accents).map(([key, item]) => (
+                    <button
+                      type="button"
+                      key={key}
+                      className={`qc-swatch ${accent === key ? "is-selected" : ""}`}
+                      onClick={() => setAccent(key)}
+                      aria-pressed={accent === key}
+                      title={item.name}
+                    >
+                      <span
+                        className="qc-swatch__tone"
+                        style={{ background: theme === "dark" ? item.valueDark : item.value }}
+                      />
+                      <span className="qc-swatch__label">{item.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeTab === "notifications" && (
+            <section className="qc-card qc-settings-card">
               <button
                 type="button"
-                onClick={() => setTheme("light")}
-                className={`settings-row ${theme === "light" ? "ring-2 ring-[var(--accent)]" : ""}`}
+                role="switch"
+                aria-checked={notificationsEnabled}
+                aria-label="In-app notification centre"
+                onClick={toggleNotifications}
+                className="qc-settings-row qc-settings-row--button"
               >
-                <span>
-                  <Sun size={15} />
-                  Light mode
-                </span>
-                <Monitor size={15} />
+                <div className="qc-settings-row__copy">
+                  <p className="qc-settings-row__title">
+                    <Bell size={14} aria-hidden="true" />
+                    In-app notification centre
+                  </p>
+                  <p className="qc-settings-row__hint">
+                    {notificationsEnabled
+                      ? "On — open the bell in the top bar to review alerts."
+                      : "Off — history is kept and returns when you enable this again."}
+                  </p>
+                </div>
+                <span className={`toggle ${notificationsEnabled ? "on" : ""}`} aria-hidden="true" />
               </button>
-              <button
-                type="button"
-                onClick={() => setTheme("dark")}
-                className={`settings-row ${theme === "dark" ? "ring-2 ring-[var(--accent)]" : ""}`}
-              >
-                <span>
-                  <Moon size={15} />
-                  Dark mode
-                </span>
-                <Monitor size={15} />
-              </button>
-            </div>
-          </section>
+            </section>
+          )}
 
-          <section className="qc-card">
-            <h3 className="qc-section-title mb-3">Accent colour</h3>
-            <p className="text-sm theme-muted mb-4">
-              Applies across dashboards, charts, and interactive controls.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {Object.entries(accents).map(([key, item]) => (
-                <button
-                  type="button"
-                  key={key}
-                  onClick={() => setAccent(key)}
-                  className={`accent-option ${accent === key ? "selected" : ""}`}
-                >
-                  <span style={{ background: theme === "dark" ? item.valueDark : item.value }} />
-                  {item.name}
-                </button>
-              ))}
-            </div>
-          </section>
+          {activeTab === "account" && (
+            <section className="qc-card qc-settings-card">
+              <div className="qc-settings-row qc-settings-row--stack">
+                <div className="qc-settings-row__copy">
+                  <p className="qc-settings-row__title">Password</p>
+                  <p className="qc-settings-row__hint">
+                    Reset via email using the existing recovery flow. Profile data stays in your account when the database is connected.
+                  </p>
+                </div>
+                <Link to="/forgot-password" className="qc-btn qc-btn-secondary inline-flex self-start">
+                  <KeyRound size={15} aria-hidden="true" />
+                  Change or reset password
+                </Link>
+              </div>
+            </section>
+          )}
         </div>
-      )}
-
-      {activeTab === "notifications" && (
-        <section className="qc-card space-y-4">
-          <h3 className="qc-section-title">In-website notifications</h3>
-          <p className="text-sm theme-muted leading-relaxed">
-            QuickCheck Hub delivers account updates through the notification
-            bell in the top bar. Open the bell to review, mark as read, or clear
-            messages. Browser push notifications are not used.
-          </p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={notificationsEnabled}
-            aria-label="In-app notification centre"
-            onClick={toggleNotifications}
-            className="settings-row w-full text-left"
-          >
-            <span>
-              <Bell size={15} aria-hidden="true" />
-              In-app notification centre
-            </span>
-            <span
-              className={`toggle ${notificationsEnabled ? "on" : ""}`}
-              aria-hidden="true"
-            />
-          </button>
-          <p className="theme-muted text-xs leading-relaxed">
-            {notificationsEnabled
-              ? "On — the notification centre is available from the top bar. History still requires a connected server and database."
-              : "Off — the notification centre is disabled on this device. Existing history is preserved and can be viewed again when you turn this back on."}
-          </p>
-        </section>
-      )}
-
-      {activeTab === "account" && (
-        <section className="qc-card space-y-4">
-          <h3 className="qc-section-title">Password</h3>
-          <p className="text-sm theme-muted leading-relaxed">
-            Use the existing password recovery flow to reset your password via
-            email. You will be signed out of this session only after you choose
-            Logout from the account menu.
-          </p>
-          <Link to="/forgot-password" className="qc-btn qc-btn-secondary inline-flex">
-            <KeyRound size={16} aria-hidden="true" />
-            Change or reset password
-          </Link>
-          <p className="theme-muted text-xs leading-relaxed">
-            Theme and notification preferences stay on this device. Profile name,
-            email, and academic data are stored in your QuickCheck Hub account
-            when the database is connected.
-          </p>
-        </section>
-      )}
+      </div>
     </div>
   );
 }

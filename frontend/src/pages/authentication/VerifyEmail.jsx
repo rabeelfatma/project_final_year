@@ -124,11 +124,36 @@ export default function VerifyEmail() {
       } catch {
         data = {};
       }
-      setMsg(
-        data.message ||
-          "If an unverified registration exists for that email, a new verification link will be sent shortly."
-      );
-      if (res.ok) setStatus("idle");
+      if (!res.ok) {
+        if (
+          data.code === "EMAIL_NOT_CONFIGURED" ||
+          data.code === "EMAIL_UNAVAILABLE"
+        ) {
+          setMsg(
+            data.message ||
+              "Email verification is temporarily unavailable. Please try again later."
+          );
+        } else if (
+          data.code === "EMAIL_PROVIDER_ERROR" ||
+          data.code === "VERIFICATION_EMAIL_FAILED"
+        ) {
+          setMsg(
+            data.message ||
+              "Email verification is temporarily unavailable. Please try again later."
+          );
+        } else {
+          setMsg(
+            data.message ||
+              "Unable to resend verification email. Please try again later."
+          );
+        }
+      } else {
+        setMsg(
+          data.message ||
+            "If an unverified registration exists for that email, a new verification link will be sent shortly."
+        );
+        setStatus("idle");
+      }
     } catch {
       setMsg("Server unavailable. Please try again later.");
     } finally {
@@ -143,7 +168,7 @@ export default function VerifyEmail() {
   return (
     <div className="qc-auth-shell">
       <div className="qc-auth-card">
-        <div className="text-center mb-7">
+        <div className="text-center mb-4">
           <p className="qc-auth-brand">
             QuickCheck Hub
           </p>

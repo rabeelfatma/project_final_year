@@ -14,13 +14,18 @@ import {
 
   BookOpen, CheckCircle, Clock, FileUp, Layout,
 
-  Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp, Search,
+  Award, Loader2, Download, Eye, X, FileText, Activity, TrendingUp,
 
-  Sparkles
+  Sparkles, Info, Layers, Folder, CalendarDays, UserRound
 
 } from 'lucide-react';
 
 import studentService from '../../services/studentService';
+import {
+  ACADEMIC_ACCEPT,
+  assertAcademicFile,
+  uploadDurableFile,
+} from '../../services/r2UploadService';
 
 import SidebarControls from '../../components/common/SidebarControls';
 
@@ -38,7 +43,17 @@ import AIChatbot from '../../components/common/AIChatbot';
 
 import MessagePanel from '../../components/common/MessagePanel';
 
+import SearchField from '../../components/ui/SearchField';
+import OverflowMenu from '../../components/ui/OverflowMenu';
+
+import { sortAssignmentsByDueDate } from '../../utils/assignmentSort';
+import {
+  studentActivityState,
+  countActiveStudentAssignments,
+} from '../../utils/studentAssignmentActivity';
+
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
+import FileLink from '../../components/files/FileLink';
 
 
 
@@ -56,9 +71,14 @@ export default function StudentDashboard() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState("all");
+
+  const [assignmentSort, setAssignmentSort] = useState("due-asc");
+
   const [uploadStatus, setUploadStatus] = useState({ id: null, loading: false, success: false });
 
-  const [answerTextDraft, setAnswerTextDraft] = useState("");
+  // Assignment id for which the inline duplicate-submit notice is visible (null = hidden).
+  const [duplicateNoticeId, setDuplicateNoticeId] = useState(null);
 
 
 
@@ -87,26 +107,6 @@ export default function StudentDashboard() {
   const [assignments, setAssignments] = useState([]);
 
   const [checkedResults, setCheckedResults] = useState([]);
-
-  const [selectedResultIds, setSelectedResultIds] = useState([]);
-
-  const [selectedAssignmentSubmissionIds, setSelectedAssignmentSubmissionIds] = useState([]);
-
-  const [deletingAssignments, setDeletingAssignments] = useState(false);
-
-  const [deletingResults, setDeletingResults] = useState(false);
-
-
-
-  const allowedExtensions = [
-
-    'pdf','doc','docx','txt','md','rtf','csv','tsv','json','xml','yaml','yml','xlsx','xls','ods','pptx','ppt','odp','zip','rar','7z','tar','gz',
-
-    'py','ipynb','js','jsx','ts','tsx','cpp','c','h','hpp','java','php','cs','swift','go','rs','kt','kts','sql','html','htm','css','scss','sass','less','vue','svelte','sh','bat','ps1','rb','r','m','mm','dart','lua','pl',
-
-    'jpg','jpeg','png','gif','webp','bmp','svg','heic','heif','tif','tiff','mp4','mkv','webm','mov','avi','wmv','mpeg','mpg','m4v','mp3','wav','ogg','aac','flac','m4a'
-
-  ];
 
 
 
@@ -148,56 +148,108 @@ export default function StudentDashboard() {
 
       if (stats) setStudentData(prev => ({ ...prev, ...stats }));
 
-      if (Array.isArray(asgns)) setAssignments(asgns);
-
-      if (Array.isArray(submissions)) {
-
-        setCheckedResults(submissions
-
-          // Only published results are student-visible (API also nulls unpublished scores).
-          .filter((s) => s.status === 'PUBLISHED' && s.assignment)
-
-          .map((s) => ({
-
-            _id: s.assignment._id,
-
-            title: s.assignment.title,
-
-            subject: s.assignment.subject,
-
-            points: s.assignment.points,
-
-            marks: s.marks ?? s.aiScore,
-
-            aiScore: s.aiScore,
-
-            totalMarks: s.totalMarks || s.assignment.points,
-
-            feedback: s.feedback || s.aiFeedback || '',
-
-            aiFeedback: s.aiFeedback || '',
-
-            aiStrengths: s.aiStrengths || [],
-
-            aiImprovements: s.aiImprovements || [],
-
-            submissionId: s._id,
-
-            originalFileName: s.originalFileName || '',
-
-            status: s.status,
-
-            resultStatus: s.status,
-
-            checkedAt: s.updatedAt || s.createdAt,
-
-            isSubmitted: true,
-
-          })));
-
-        setSelectedResultIds([]);
-
+      const assignmentRows = Array.isArray(asgns) ? asgns : [];
+      const visibleAssignments = assignmentRows.filter((item) => item?.notOpenYet !== true);
+      if (Array.isArray(asgns)) {
+        setAssignments(visibleAssignments);
       }
+
+      let mappedChecked = [];
+      if (Array.isArray(submissions)) {
+        mappedChecked = submissions
+          // Only published result components are student-visible (API redacts unpublished fields).
+          .filter((s) => {
+            if (!s.assignment) return false;
+            return (
+              s.status === "PUBLISHED" ||
+              s.resultStatus === "PUBLISHED" ||
+              s.aiPublished === true ||
+              s.teacherMarksPublished === true ||
+              s.teacherFeedbackPublished === true ||
+              s.aiScore != null ||
+              s.marks != null ||
+              Boolean(String(s.feedback || "").trim()) ||
+              Boolean(String(s.aiFeedback || "").trim())
+            );
+          })
+          .map((s) => {
+            const assignment =
+              s.assignment && typeof s.assignment === "object" ? s.assignment : {};
+            const assignmentId = assignment._id || s.assignment;
+            // Prefer populated assignment fields; fall back to the live assignments list.
+            const fromList = assignmentRows.find(
+              (item) => String(item._id) === String(assignmentId)
+            );
+            const startDate =
+              assignment.startDate || s.startDate || fromList?.startDate || null;
+            const deadline =
+              assignment.deadline || s.deadline || fromList?.deadline || null;
+            const questionName =
+              assignment.originalFileName ||
+              s.assignmentOriginalFileName ||
+              fromList?.assignmentOriginalFileName ||
+              fromList?.originalFileName ||
+              "";
+            const hasFile = Boolean(
+              assignment.hasFile === true ||
+                s.hasFile === true ||
+                fromList?.hasFile === true ||
+                questionName ||
+                assignment.file ||
+                fromList?.file
+            );
+            return {
+              _id: assignmentId,
+              title: assignment.title || fromList?.title || "Assignment",
+              subject: assignment.subject || fromList?.subject || "",
+              points: assignment.points ?? fromList?.points ?? null,
+              startDate,
+              deadline,
+              // Keep AI and Teacher marks separate — never coalesce.
+              marks: s.marks ?? null,
+              aiScore: s.aiScore ?? null,
+              totalMarks: s.totalMarks || assignment.points || fromList?.points || null,
+              feedback: s.feedback || "",
+              aiFeedback: s.aiFeedback || "",
+              aiStrengths: s.aiStrengths || [],
+              aiImprovements: s.aiImprovements || [],
+              aiPublished: s.aiPublished === true,
+              teacherMarksPublished: s.teacherMarksPublished === true,
+              teacherFeedbackPublished: s.teacherFeedbackPublished === true,
+              submissionId: s._id,
+              originalFileName: questionName,
+              assignmentOriginalFileName: questionName || (hasFile ? "assignment" : ""),
+              submissionOriginalFileName:
+                s.originalFileName || s.submissionOriginalFileName || "",
+              hasFile,
+              // Published results remain accessible for question/submission files.
+              canAccessMaterials: true,
+              notOpenYet: false,
+              status: s.status,
+              resultStatus: s.resultStatus || s.status,
+              checkedAt: s.updatedAt || s.createdAt,
+              isSubmitted: true,
+            };
+          });
+
+        setCheckedResults(mappedChecked);
+        setSelectedResultIds([]);
+      }
+
+      setSelectedAsgn((previous) => {
+        if (!previous) return previous;
+        // Checked-result modal: refresh from mapped results so dates/files stay intact.
+        if (previous.submissionId) {
+          const freshChecked = mappedChecked.find(
+            (item) => String(item.submissionId) === String(previous.submissionId)
+          );
+          return freshChecked || previous;
+        }
+        const fresh = visibleAssignments.find(
+          (item) => String(item._id) === String(previous._id)
+        );
+        return fresh || null;
+      });
 
     } catch (err) {
 
@@ -219,25 +271,54 @@ export default function StudentDashboard() {
 
 
 
+  const showAlreadySubmittedNotice = (assignmentId) => {
+    const id = assignmentId?._id || assignmentId;
+    if (!id) return;
+    // One anchored notice on the matching card only — never a banner or global toast.
+    setDuplicateNoticeId(String(id));
+  };
+
+  // Clear when leaving the current dashboard view / tab.
+  useEffect(() => {
+    setDuplicateNoticeId(null);
+  }, [activeTab, shellView]);
+
+  // Auto-dismiss after 3s; clear timer on dismiss, assignment change, or unmount.
+  useEffect(() => {
+    if (!duplicateNoticeId) return undefined;
+    const timer = setTimeout(() => setDuplicateNoticeId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [duplicateNoticeId]);
+
   const handleFileUpload = async (e, asgnId) => {
 
-    const file = e.target.files[0];
+    const input = e.target;
+    const file = input.files?.[0];
 
     if (!file) return;
 
-
-
-    const fileExt = file.name.split('.').pop().toLowerCase();
-
-    if (!allowedExtensions.includes(fileExt)) {
-
-      alert(`Error: .${fileExt} files are not allowed.`);
-
+    const current = assignments.find((item) => String(item._id) === String(asgnId));
+    const alreadySubmitted = Boolean(
+      current &&
+      (current.canSubmit === false ||
+        current.isSubmitted ||
+        current.submissionId ||
+        ["submitted", "published"].includes(String(current.status || "").toLowerCase()))
+    );
+    // Backend does not allow resubmission while a submission exists.
+    if (alreadySubmitted && current?.canSubmit !== true) {
+      input.value = "";
+      showAlreadySubmittedNotice(asgnId);
       return;
-
     }
 
-
+    try {
+      assertAcademicFile(file);
+    } catch (err) {
+      alert(err.message || `Error: file not allowed.`);
+      input.value = "";
+      return;
+    }
 
     if (!localStorage.getItem('token')) {
 
@@ -255,14 +336,63 @@ export default function StudentDashboard() {
 
     const formData = new FormData();
 
-    formData.append('file', file);
-
-
+    try {
+      // Direct-to-R2 for durable submissions (shared bucket locally + on Vercel).
+      const durable = await uploadDurableFile(file, 'submissions');
+      formData.append('storedFileKey', durable.storedFileKey);
+      formData.append('originalFileName', durable.originalFileName || '');
+      formData.append('fileMimeType', durable.fileMimeType || '');
+      formData.append('fileSize', String(durable.fileSize || ''));
+    } catch (uploadErr) {
+      const uploadStatus = uploadErr?.response?.status;
+      const uploadMessage = uploadErr?.response?.data?.message;
+      alert(
+        uploadStatus && uploadStatus < 500 && uploadMessage
+          ? uploadMessage
+          : !uploadErr?.response && uploadErr?.message && !/network|axios|failed to fetch/i.test(uploadErr.message)
+            ? uploadErr.message
+            : 'Unable to upload file. Please try again.'
+      );
+      setUploadStatus({ id: null, loading: false, success: false });
+      input.value = "";
+      return;
+    }
 
     try {
 
-      await studentService.submitAssignment(asgnId, formData);
+      const result = await studentService.submitAssignment(asgnId, formData);
 
+      const submission = result?.submission;
+
+      const submittedPatch = {
+        isSubmitted: true,
+        canSubmit: false,
+        status: 'submitted',
+        availabilityLabel: 'Awaiting evaluation',
+        submissionId: submission?._id || null,
+        // Keep assignment.originalFileName; store the student's upload name separately.
+        submissionOriginalFileName: submission?.originalFileName || '',
+        marks: null,
+        aiScore: null,
+        feedback: '',
+        aiFeedback: '',
+      };
+
+      // Immediate card update from authenticated response; fetchAllData remains source of truth.
+      setAssignments((previous) =>
+        previous.map((item) =>
+          String(item._id) === String(asgnId) ? { ...item, ...submittedPatch } : item
+        )
+      );
+      setSelectedAsgn((previous) =>
+        previous && String(previous._id) === String(asgnId)
+          ? { ...previous, ...submittedPatch }
+          : previous
+      );
+
+      setDuplicateNoticeId((previous) =>
+        previous && String(previous) === String(asgnId) ? null : previous
+      );
       setUploadStatus({ id: asgnId, loading: false, success: true });
 
       await fetchAllData();
@@ -271,64 +401,24 @@ export default function StudentDashboard() {
 
     } catch (err) {
 
-      const errMsg = err.response?.data?.message || "Submission Failed: Check if you are logged in.";
+      const errCode = err.response?.data?.code;
+      const errStatus = err.response?.status;
+      const errMsg = err.response?.data?.message || "";
+      const isDuplicate =
+        errCode === "ALREADY_SUBMITTED" ||
+        /already submitted/i.test(String(errMsg));
 
-      alert(errMsg);
-
-      setUploadStatus({ id: null, loading: false, success: false });
-
-    }
-
-  };
-
-
-
-  const handleTextSubmit = async (asgnId) => {
-
-    const answerText = String(answerTextDraft || "").trim();
-
-    if (!answerText) {
-
-      alert("Enter a short text answer, or upload a file.");
-
-      return;
-
-    }
-
-    if (!localStorage.getItem('token')) {
-
-      alert("Session expired. Please login again.");
-
-      handleLogout();
-
-      return;
-
-    }
-
-    setUploadStatus({ id: asgnId, loading: true, success: false });
-
-    try {
-
-      await studentService.submitAssignment(asgnId, { answerText });
-
-      setAnswerTextDraft("");
-
-      setUploadStatus({ id: asgnId, loading: false, success: true });
-
-      await fetchAllData();
-
-      setSelectedAsgn(null);
-
-      setTimeout(() => setUploadStatus({ id: null, loading: false, success: false }), 3000);
-
-    } catch (err) {
-
-      const errMsg = err.response?.data?.message || "Submission Failed: Check if you are logged in.";
-
-      alert(errMsg);
+      if (isDuplicate) {
+        showAlreadySubmittedNotice(asgnId);
+        await fetchAllData();
+      } else {
+        alert(errStatus && errStatus < 500 && errMsg ? errMsg : "Unable to submit. Please try again.");
+      }
 
       setUploadStatus({ id: null, loading: false, success: false });
 
+    } finally {
+      input.value = "";
     }
 
   };
@@ -340,76 +430,6 @@ export default function StudentDashboard() {
     localStorage.clear();
 
     navigate('/login');
-
-  };
-
-
-
-  const toggleResultSelection = (id) => setSelectedResultIds((prev) =>
-
-    prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-
-  );
-
-
-
-  const toggleAssignmentSubmission = (id) => setSelectedAssignmentSubmissionIds((previous) =>
-
-    previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]
-
-  );
-
-  const handleDeleteSelectedAssignmentSubmissions = async () => {
-
-    if (!selectedAssignmentSubmissionIds.length) return;
-
-    if (!window.confirm(`Delete ${selectedAssignmentSubmissionIds.length} selected submission(s)? This cannot be undone.`)) return;
-
-    setDeletingAssignments(true);
-
-    try {
-
-      await studentService.deleteMySubmissionsBulk(selectedAssignmentSubmissionIds);
-
-      setSelectedAssignmentSubmissionIds([]);
-
-      await fetchAllData();
-
-    } catch (error) {
-
-      alert(error.response?.data?.message || error.message || 'Could not delete selected submissions.');
-
-    } finally { setDeletingAssignments(false); }
-
-  };
-
-
-
-  const handleDeleteSelectedResults = async () => {
-
-    if (!selectedResultIds.length) return;
-
-    if (!window.confirm(`Delete ${selectedResultIds.length} selected submission/result(s)? This cannot be undone.`)) return;
-
-    setDeletingResults(true);
-
-    try {
-
-      await studentService.deleteMySubmissionsBulk(selectedResultIds);
-
-      setSelectedResultIds([]);
-
-      await fetchAllData();
-
-    } catch (error) {
-
-      alert(error.response?.data?.message || error.message || 'Could not delete selected results.');
-
-    } finally {
-
-      setDeletingResults(false);
-
-    }
 
   };
 
@@ -427,7 +447,23 @@ export default function StudentDashboard() {
     ? checkedResults
     : assignments.filter((a) => a.status === 'PUBLISHED');
 
+  const filteredSortedAssignments = sortAssignmentsByDueDate(
+    assignments.filter((asgn) => {
+      const titleOk = String(asgn.title || "").toLowerCase().includes(searchTerm.toLowerCase());
+      if (!titleOk) return false;
+      const status = String(asgn.status || "pending");
+      if (assignmentStatusFilter === "all") return true;
+      if (assignmentStatusFilter === "pending") return status === "pending" || !asgn.status;
+      if (assignmentStatusFilter === "submitted") return status === "submitted" || status === "Submitted";
+      if (assignmentStatusFilter === "PUBLISHED") return status === "PUBLISHED";
+      return true;
+    }),
+    assignmentSort
+  );
 
+  const totalAssignmentCount = assignments.length;
+  // Must match ACTIVE badges on cards (schedule window), not submission status.
+  const activeAssignmentCount = countActiveStudentAssignments(assignments);
 
   const totalVsPendingData = [
 
@@ -451,12 +487,17 @@ export default function StudentDashboard() {
 
 
 
+  const publishedScoreForChart = (item) => {
+    if (item?.teacherMarksPublished === true && item.marks != null) return Number(item.marks);
+    if (item?.aiPublished === true && item.aiScore != null) return Number(item.aiScore);
+    if (item?.marks != null) return Number(item.marks);
+    if (item?.aiScore != null) return Number(item.aiScore);
+    return NaN;
+  };
+
   const realPerformanceData = checkedResults
 
-    .filter((item) => {
-      const score = Number(item.marks ?? item.aiScore);
-      return Number.isFinite(score);
-    })
+    .filter((item) => Number.isFinite(publishedScoreForChart(item)))
 
     .slice()
 
@@ -464,7 +505,7 @@ export default function StudentDashboard() {
 
     .map((item) => ({
       name: item.title || 'Assignment',
-      score: Number(item.marks ?? item.aiScore),
+      score: publishedScoreForChart(item),
       total: Number(item.totalMarks || item.points || 100),
     }));
 
@@ -526,7 +567,7 @@ export default function StudentDashboard() {
             </div>
           </div>
 
-          <nav className="space-y-2 flex-1">
+          <nav className="qc-sidebar-nav space-y-1" aria-label="Student navigation">
 
             <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab === 'Overview'} onClick={() => { setShellView('main'); setActiveTab('Overview'); }} />
 
@@ -553,7 +594,7 @@ export default function StudentDashboard() {
           <SettingsPage role="student" onBack={() => setShellView('main')} />
         ) : (
         <>
-        <header className="mb-6 md:mb-10 flex flex-wrap items-end justify-between gap-4">
+        <header className="qc-page-header qc-student-heading">
             <div>
               <h1 className="qc-page-title">Dashboard</h1>
               <p className="qc-page-subtitle">Track assignments, submissions, and published results.</p>
@@ -568,9 +609,9 @@ export default function StudentDashboard() {
 
         {activeTab === 'Overview' && (
 
-          <div className="space-y-8 animate-in fade-in duration-700">
+          <div className="qc-overview">
 
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
+             <div className="qc-overview__stats qc-student-stats">
 
                 <StatCard label="Assignments" value={totalCount} color="text-sky-400" icon={<FileText size={16}/>} sub="Assigned to you" />
 
@@ -586,17 +627,25 @@ export default function StudentDashboard() {
 
 
 
-             <div className="qc-card">
+             <div className="qc-card qc-overview__panel qc-student-recent min-h-0">
 
-                <h2 className="text-lg font-black uppercase italic text-white flex items-center gap-2 mb-6"><FileUp size={18} className="text-sky-500"/> Recent Assignments</h2>
+                <h2 className="text-base font-semibold flex items-center gap-2 mb-3 shrink-0"><FileUp size={18} className="accent-text"/> Recent Assignments</h2>
 
-                <div className="space-y-4">
+                <div className="qc-overview__list space-y-3">
 
                   {assignments.length > 0 ? (
 
                     assignments.slice(0, 5).map(asgn => (
 
-                      <AssignmentRow key={asgn._id} asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} />
+                      <AssignmentRow
+                        key={asgn._id}
+                        asgn={asgn}
+                        onUpload={handleFileUpload}
+                        onAlreadySubmitted={showAlreadySubmittedNotice}
+                        showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)}
+                        onDismissDuplicate={() => setDuplicateNoticeId(null)}
+                        uploadStatus={uploadStatus}
+                      />
 
                     ))
 
@@ -630,75 +679,79 @@ export default function StudentDashboard() {
 
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-
-                <label className="flex items-center gap-2 text-xs theme-muted">
-
-                  <input type="checkbox" checked={checkedAssignments.length > 0 && checkedAssignments.every((item) => selectedResultIds.includes(item.submissionId || item._id))} onChange={(e) => setSelectedResultIds(e.target.checked ? checkedAssignments.map((item) => item.submissionId || item._id).filter(Boolean) : [])} /> Select all
-
-                </label>
-
-                <button type="button" onClick={handleDeleteSelectedResults} disabled={!selectedResultIds.length || deletingResults} className="flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-40"><X size={14}/>{deletingResults ? 'Deleting…' : `Delete selected (${selectedResultIds.length})`}</button>
-
-              </div>
-
             </div>
 
-            {checkedAssignments.length ? checkedAssignments.map((asgn) => {
+            {checkedAssignments.length ? (
+              <div className="qc-checked-results-list">
+                {checkedAssignments.map((asgn) => {
+                  const total = asgn.totalMarks || asgn.points;
 
-              const total = asgn.totalMarks || asgn.points;
-
-              return (
-
-                <div key={asgn.submissionId || asgn._id} className="theme-card border p-4 sm:p-6 rounded-3xl flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-
-                  <div className="flex items-start gap-3 min-w-0">
-
-                    <input aria-label={`Select ${asgn.title || 'result'}`} type="checkbox" checked={selectedResultIds.includes(asgn.submissionId || asgn._id)} onChange={() => toggleResultSelection(asgn.submissionId || asgn._id)} className="mt-2" />
-
-                    <div className="min-w-0">
-
-                    <h3 className="font-black text-lg break-words">{asgn.title}</h3>
-
-                    <p className="theme-muted text-[10px] uppercase tracking-widest mt-1">{asgn.subject || 'Assignment'} · {asgn.resultStatus || asgn.status}</p>
-
-                    {asgn.checkedAt && <p className="theme-muted text-[10px] mt-2">Checked: {new Date(asgn.checkedAt).toLocaleString()}</p>}
-
-                    </div>
-
-                  </div>
-
-                  <div className="flex items-center gap-4 sm:gap-5 shrink-0">
-
-                    <div className="text-left space-y-2 min-w-0">
-
-                      <div>
-
-                        <p className="theme-muted text-[9px] font-black uppercase">AI Marks</p>
-
-                        <p className="accent-text text-xl font-black">{asgn.aiScore ?? '--'} <span className="theme-muted text-sm">/ {total ?? '--'}</span></p>
-
+                  return (
+                    <article
+                      key={asgn.submissionId || asgn._id}
+                      className="qc-card qc-checked-result-card"
+                    >
+                      <div className="qc-checked-result-card__main">
+                        <div className="qc-assignment-card__doc-icon" aria-hidden="true">
+                          <FileText size={16} />
+                        </div>
+                        <div className="qc-checked-result-card__copy min-w-0">
+                          <h3 className="qc-assignment-card__title">{asgn.title}</h3>
+                          <div className="qc-assignment-card__meta">
+                            <p className="qc-assignment-card__meta-item">
+                              <CalendarDays size={12} aria-hidden="true" /> Start: {formatDateTime(asgn.startDate)}
+                            </p>
+                            <p className="qc-assignment-card__meta-item">
+                              <Clock size={12} aria-hidden="true" /> Due: {formatDateTime(asgn.deadline)}
+                            </p>
+                          </div>
+                          {(asgn.aiPublished === true && asgn.aiScore != null) ||
+                          (asgn.teacherMarksPublished === true && asgn.marks != null) ? (
+                            <div className="qc-checked-result-card__scores">
+                              {asgn.aiPublished === true && asgn.aiScore != null && (
+                                <div>
+                                  <p className="theme-muted text-[9px] font-black uppercase">AI Marks</p>
+                                  <p className="accent-text text-lg font-black">
+                                    {asgn.aiScore}
+                                    <span className="theme-muted text-sm font-semibold"> / {total}</span>
+                                  </p>
+                                </div>
+                              )}
+                              {asgn.teacherMarksPublished === true && asgn.marks != null && (
+                                <div>
+                                  <p className="theme-muted text-[9px] font-black uppercase">Teacher Marks</p>
+                                  <p className="text-lg font-black" style={{ color: "var(--text)" }}>
+                                    {asgn.marks}
+                                    <span className="theme-muted text-sm font-semibold"> / {total}</span>
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
 
-                      <div>
-
-                        <p className="theme-muted text-[9px] font-black uppercase">Teacher Marks</p>
-
-                        <p className="text-xl font-black" style={{color: 'var(--text)'}}>{asgn.marks ?? '--'} <span className="theme-muted text-sm">/ {total ?? '--'}</span></p>
-
+                      <div className="qc-checked-result-card__actions">
+                        <button
+                          type="button"
+                          className="qc-view-file-btn qc-checked-result-card__view-btn"
+                          title="View Result"
+                          aria-label={`View result for ${asgn.title || "assignment"}`}
+                          onClick={() => setSelectedAsgn(asgn)}
+                        >
+                          <Eye size={14} aria-hidden="true" />
+                          View Result
+                        </button>
                       </div>
-
-                    </div>
-
-                    <button onClick={() => setSelectedAsgn(asgn)} className="icon-btn" title="View checked result"><Eye size={17}/></button>
-
-                  </div>
-
-                </div>
-
-              );
-
-            }) : <p className="theme-muted text-sm py-12 text-center theme-card border rounded-3xl">No checked assignments yet.</p>}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="theme-muted text-sm py-12 text-center theme-card border rounded-3xl">
+                No checked assignments yet.
+              </p>
+            )}
 
           </div>
 
@@ -820,51 +873,97 @@ export default function StudentDashboard() {
 
         {activeTab === 'Assignments' && (
 
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="qc-assignment-workspace qc-student-assignments animate-in slide-in-from-bottom-4 duration-500">
 
-             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-
-               <div className="flex bg-slate-900 p-3 rounded-xl border border-slate-800 max-w-sm flex-1">
-
-                 <Search size={18} className="text-slate-500 mr-2"/>
-
-                 <input placeholder="Filter by title..." className="bg-transparent outline-none text-xs w-full text-white" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-
+             <div className="qc-assignment-workspace__header">
+               <div className="qc-assignment-workspace__heading">
+                 <div className="qc-assignment-workspace__title-row">
+                   <FileText size={22} className="qc-assignment-workspace__title-icon" aria-hidden="true" />
+                   <h1 className="qc-page-title">My Assignments</h1>
+                 </div>
+                 <p className="qc-page-subtitle">Open question files, track due dates, and submit your work.</p>
                </div>
-
-               <label className="flex items-center gap-2 text-xs theme-muted">
-
-                 <input type="checkbox" checked={assignments.filter(a => a.submissionId).length > 0 && assignments.filter(a => a.submissionId).every(a => selectedAssignmentSubmissionIds.includes(a.submissionId))} onChange={(e) => setSelectedAssignmentSubmissionIds(e.target.checked ? assignments.filter(a => a.submissionId).map(a => a.submissionId) : [])} />
-
-                 Select all submitted
-
-               </label>
-
-               <button type="button" onClick={handleDeleteSelectedAssignmentSubmissions} disabled={!selectedAssignmentSubmissionIds.length || deletingAssignments} className="rounded-xl bg-red-500 px-4 py-3 text-xs font-bold text-white disabled:opacity-40">
-
-                 {deletingAssignments ? 'Deleting…' : `Delete selected (${selectedAssignmentSubmissionIds.length})`}
-
-               </button>
-
+               <OverflowMenu
+                 label="Manage assignment list"
+                 buttonLabel="Manage"
+                 items={[
+                   {
+                     id: 'sort-due-asc',
+                     label: 'Due date: Earliest first',
+                     onSelect: () => setAssignmentSort('due-asc'),
+                   },
+                   {
+                     id: 'sort-due-desc',
+                     label: 'Due date: Latest first',
+                     onSelect: () => setAssignmentSort('due-desc'),
+                   },
+                   {
+                     id: 'filter-all',
+                     label: 'Filter: All statuses',
+                     onSelect: () => setAssignmentStatusFilter('all'),
+                   },
+                   {
+                     id: 'filter-pending',
+                     label: 'Filter: Pending',
+                     onSelect: () => setAssignmentStatusFilter('pending'),
+                   },
+                   {
+                     id: 'filter-submitted',
+                     label: 'Filter: Submitted',
+                     onSelect: () => setAssignmentStatusFilter('submitted'),
+                   },
+                 ]}
+               />
              </div>
 
-             {assignments.filter(a => a.title?.toLowerCase().includes(searchTerm.toLowerCase())).map(asgn => (
-
-               <div key={asgn._id} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
-
-                 <div className="flex items-start gap-3 min-w-0 flex-1">
-
-                 <input type="checkbox" aria-label={`Select submission for ${asgn.title}`} className="mt-6 shrink-0" disabled={!asgn.submissionId} checked={Boolean(asgn.submissionId && selectedAssignmentSubmissionIds.includes(asgn.submissionId))} onChange={() => asgn.submissionId && toggleAssignmentSubmission(asgn.submissionId)} />
-
-                 <div className="flex-1 min-w-0"><AssignmentRow asgn={asgn} onSelect={setSelectedAsgn} onUpload={handleFileUpload} uploadStatus={uploadStatus} /></div>
-
+             <div className="qc-assignment-summary qc-assignment-summary--student" aria-label="Assignment summary">
+               <div className="qc-assignment-summary__card">
+                 <div className="qc-assignment-summary__icon" aria-hidden="true">
+                   <Layers size={16} />
                  </div>
-
-                 {asgn.submissionId && <button type="button" onClick={async () => { if (!window.confirm(`Delete your submission for "${asgn.title}"?`)) return; try { await studentService.deleteMySubmission(asgn.submissionId); setSelectedAssignmentSubmissionIds(previous => previous.filter(id => id !== asgn.submissionId)); await fetchAllData(); } catch (error) { alert(error.response?.data?.message || error.message || 'Could not delete submission.'); } }} className="sm:mt-5 self-stretch sm:self-auto rounded-lg border border-red-500/40 px-3 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10">Delete</button>}
-
+                 <div>
+                   <p className="qc-assignment-summary__label">Total Assignments</p>
+                   <p className="qc-assignment-summary__value">{totalAssignmentCount}</p>
+                 </div>
                </div>
+               <div className="qc-assignment-summary__card">
+                 <div className="qc-assignment-summary__icon" aria-hidden="true">
+                   <Folder size={16} />
+                 </div>
+                 <div>
+                   <p className="qc-assignment-summary__label">Active Assignments</p>
+                   <p className="qc-assignment-summary__value">{activeAssignmentCount}</p>
+                 </div>
+               </div>
+             </div>
 
-             ))}
+             <div className="qc-assignments-toolbar mb-4">
+               <SearchField
+                 value={searchTerm}
+                 onChange={setSearchTerm}
+                 placeholder="Search by title..."
+                 label="Search by title..."
+               />
+             </div>
+
+             <div className="qc-assignment-list">
+               {filteredSortedAssignments.map((asgn) => (
+                 <AssignmentRow
+                   key={asgn._id}
+                   asgn={asgn}
+                   onUpload={handleFileUpload}
+                   onAlreadySubmitted={showAlreadySubmittedNotice}
+                   showDuplicateNotice={String(duplicateNoticeId) === String(asgn._id)}
+                   onDismissDuplicate={() => setDuplicateNoticeId(null)}
+                   uploadStatus={uploadStatus}
+                 />
+               ))}
+               {filteredSortedAssignments.length === 0 && (
+                 <p className="theme-muted text-sm py-10 text-center qc-card">
+                   No assignments found.
+                 </p>
+               )}
+             </div>
 
           </div>
 
@@ -874,209 +973,267 @@ export default function StudentDashboard() {
 
         {/* ========== ASSIGNMENT DETAIL MODAL ========== */}
 
-        {selectedAsgn && (
+        {selectedAsgn && (() => {
+          const detailStatus = studentStatusLabel(selectedAsgn);
+          const totalMarks = selectedAsgn.totalMarks || selectedAsgn.points || null;
+          // Backend already redacts unpublished scores — never coalesce AI ↔ Teacher.
+          const aiScoreRaw = selectedAsgn.aiScore;
+          const teacherMarksRaw = selectedAsgn.marks;
+          const hasAiScore =
+            aiScoreRaw !== undefined &&
+            aiScoreRaw !== null &&
+            Number.isFinite(Number(aiScoreRaw));
+          const hasTeacherScore =
+            teacherMarksRaw !== undefined &&
+            teacherMarksRaw !== null &&
+            Number.isFinite(Number(teacherMarksRaw));
+          const aiPublished = selectedAsgn.aiPublished === true || hasAiScore;
+          const teacherMarksPublished =
+            selectedAsgn.teacherMarksPublished === true && hasTeacherScore;
+          const aiText = String(selectedAsgn.aiFeedback || "").trim();
+          const strengths = Array.isArray(selectedAsgn.aiStrengths) ? selectedAsgn.aiStrengths : [];
+          const improvements = Array.isArray(selectedAsgn.aiImprovements)
+            ? selectedAsgn.aiImprovements
+            : [];
+          const hasAiFeedbackContent = Boolean(aiText || strengths.length || improvements.length);
+          // AI Feedback from API implies published AI result (unpublished feedback is redacted).
+          const showAiResult = aiPublished || hasAiFeedbackContent;
+          const showAiMarks = showAiResult && hasAiScore;
+          const showTeacherMarksScore = teacherMarksPublished;
+          const showResultsOverview = showAiResult || showTeacherMarksScore;
+          const showAiFeedbackSection = showAiResult;
+          const showTeacherFeedbackSection = showAiResult || showTeacherMarksScore;
+          const teacherFeedbackText =
+            selectedAsgn.teacherFeedbackPublished === true
+              ? String(selectedAsgn.feedback || "").trim()
+              : "";
+          const anyPublishedResult =
+            showAiMarks || showTeacherMarksScore || showAiFeedbackSection || Boolean(teacherFeedbackText);
+          const awaitingEvaluation =
+            (selectedAsgn.isSubmitted || selectedAsgn.submissionId) && !anyPublishedResult;
 
-          <div className="fixed inset-0 bg-[#020617]/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 overflow-y-auto">
+          return (
+          <div className="qc-student-detail-overlay" role="dialog" aria-modal="true" aria-label="Assignment details">
+             <div className="qc-student-detail-modal">
+                <button type="button" onClick={() => setSelectedAsgn(null)} className="qc-student-detail-modal__close" aria-label="Close assignment details"><X size={18}/></button>
 
-             <div className="theme-card border w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 relative max-h-[94dvh] sm:max-h-[90vh] overflow-y-auto my-0 sm:my-auto">
+                <header className="qc-student-detail-modal__header">
+                  <h2 className="qc-student-detail-modal__title">{selectedAsgn.title}</h2>
+                  <span className={`qc-status-badge is-${detailStatus.tone}`}>
+                    {detailStatus.label}
+                  </span>
+                </header>
 
-                <button type="button" onClick={() => { setSelectedAsgn(null); setAnswerTextDraft(""); }} className="absolute top-4 right-4 sm:top-8 sm:right-8 text-slate-500 hover:text-white transition-all p-2" aria-label="Close assignment details"><X size={24}/></button>
-
-                <h2 className="text-xl sm:text-2xl font-black text-white italic uppercase mb-2 pr-10 break-words">{selectedAsgn.title}</h2>
-
-
-
-                {/* Instructions */}
-
-                <p className="text-blue-400 text-[10px] font-bold uppercase mb-6 tracking-widest">
-
-                  Instructions: <span className="text-slate-300 normal-case italic font-medium ml-2 break-words">{selectedAsgn.description || "No instructions provided."}</span>
-
-                </p>
-
-
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
-
-                    {/* Marks */}
-
-                    <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[100px] sm:min-h-[120px]">
-
-                       <p className="text-[8px] uppercase font-black text-blue-500 mb-2">Marks Obtained</p>
-
-                       {/* ✅ STUDENT FIX: Dynamic marks with totalMarks */}
-
-                       <span className="text-[18px] font-black italic leading-tight uppercase tracking-widest">
-
-                         {selectedAsgn.marks !== undefined && selectedAsgn.marks !== null
-
-                           ? `${selectedAsgn.marks} / ${selectedAsgn.totalMarks || selectedAsgn.points || '--'}`
-
-                           : selectedAsgn.isSubmitted
-                             ? "Awaiting evaluation"
-                             : (selectedAsgn.availabilityLabel || "Pending")}
-
-                       </span>
-
-                    </div>
-
-                    {/* Feedback */}
-
-                    <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[100px] sm:min-h-[120px]">
-
-                       <p className="text-[8px] uppercase font-black accent-text mb-2">Teacher Feedback</p>
-
-                       <p className="text-sm text-slate-300 italic leading-relaxed break-words">
-
-                         {selectedAsgn.feedback
-                           || (selectedAsgn.isSubmitted && !selectedAsgn.aiFeedback
-                             ? "Your submission is awaiting evaluation."
-                             : "No teacher feedback yet.")}
-
-                       </p>
-
-                    </div>
-
-                </div>
-
-                {!!(selectedAsgn.aiStrengths?.length || selectedAsgn.aiImprovements?.length) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                    {!!selectedAsgn.aiStrengths?.length && (
-                      <div className="bg-slate-900 p-4 rounded-2xl border border-emerald-500/20">
-                        <p className="text-[8px] uppercase font-black text-emerald-400 mb-2">Strengths</p>
-                        <ul className="list-disc pl-4 text-sm text-slate-300 space-y-1">
-                          {selectedAsgn.aiStrengths.map((item, idx) => <li key={`st-${idx}`}>{item}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                    {!!selectedAsgn.aiImprovements?.length && (
-                      <div className="bg-slate-900 p-4 rounded-2xl border border-sky-500/20">
-                        <p className="text-[8px] uppercase font-black text-sky-400 mb-2">Suggestions</p>
-                        <ul className="list-disc pl-4 text-sm text-slate-300 space-y-1">
-                          {selectedAsgn.aiImprovements.map((item, idx) => <li key={`im-${idx}`}>{item}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-
-
-                {/* ✅ STUDENT FIX: AI Score & AI Feedback section */}
-
-                {(selectedAsgn.aiScore !== undefined && selectedAsgn.aiScore !== null || selectedAsgn.aiFeedback) && (
-
-                  <div className="theme-page border border-sky-500/20 rounded-2xl p-4 sm:p-6 mb-6">
-
-                    <div className="flex items-center gap-2 mb-4">
-
-                      <Sparkles size={14} className="text-sky-400"/>
-
-                      <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest">AI Evaluation</p>
-
-                    </div>
-
-                    <div className="flex items-center gap-3 mb-3">
-
-                      <span className="text-[10px] text-slate-500 font-black uppercase">AI Marks:</span>
-
-                      <span className="text-sky-400 font-black text-lg">
-
-                        {selectedAsgn.aiScore !== undefined ? selectedAsgn.aiScore : '--'}
-
-                        <span className="text-slate-500 text-sm font-bold ml-1">/ {selectedAsgn.totalMarks || selectedAsgn.points || '--'}</span>
-
-                      </span>
-
-                    </div>
-
-                    {selectedAsgn.aiFeedback && (
-
-                      <p className="text-slate-300 text-sm italic leading-relaxed">
-
-                        {selectedAsgn.aiFeedback}
-
+                <div className="qc-student-detail-modal__body">
+                  <section className="qc-student-detail-modal__section" aria-label="Assignment Schedule">
+                    <p className="qc-student-detail-modal__stat-label">Schedule</p>
+                    <div className="qc-student-detail-modal__meta-row">
+                      <p className="qc-assignment-card__meta-item">
+                        <CalendarDays size={12} aria-hidden="true" /> Start: {formatDateTime(selectedAsgn.startDate)}
                       </p>
+                      <p className="qc-assignment-card__meta-item">
+                        <Clock size={12} aria-hidden="true" /> Due: {formatDateTime(selectedAsgn.deadline)}
+                      </p>
+                    </div>
+                  </section>
 
+                  {showResultsOverview ? (
+                    <section className="qc-student-detail-modal__section" aria-label="Results Overview">
+                      <p className="qc-student-detail-modal__stat-label">Results Overview</p>
+                      <div className="qc-student-detail-modal__marks-grid">
+                        {showAiMarks ? (
+                          <div className="qc-student-detail-modal__mark-card">
+                            <p className="qc-student-detail-modal__stat-label">
+                              <Sparkles size={12} aria-hidden="true" /> AI Marks
+                            </p>
+                            <p className="qc-student-detail-modal__stat-value">
+                              {Number(aiScoreRaw)}
+                              {totalMarks != null ? <span className="theme-muted text-sm font-semibold"> / {totalMarks}</span> : null}
+                            </p>
+                          </div>
+                        ) : showAiResult ? (
+                          <div className="qc-student-detail-modal__mark-card">
+                            <p className="qc-student-detail-modal__stat-label">
+                              <Sparkles size={12} aria-hidden="true" /> AI Marks
+                            </p>
+                            <p className="qc-student-detail-modal__stat-text">AI Marks Not Available</p>
+                          </div>
+                        ) : null}
+                        <div className="qc-student-detail-modal__mark-card">
+                          <p className="qc-student-detail-modal__stat-label">
+                            <UserRound size={12} aria-hidden="true" /> Teacher Marks
+                          </p>
+                          {showTeacherMarksScore ? (
+                            <p className="qc-student-detail-modal__stat-value">
+                              {Number(teacherMarksRaw)}
+                              {totalMarks != null ? <span className="theme-muted text-sm font-semibold"> / {totalMarks}</span> : null}
+                            </p>
+                          ) : (
+                            <p className="qc-student-detail-modal__stat-text">
+                              Teacher has not graded yet.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  ) : awaitingEvaluation ? (
+                    <p className="qc-student-detail-modal__hint">Awaiting Evaluation</p>
+                  ) : null}
+
+                  {showAiFeedbackSection ? (
+                    <section className="qc-student-detail-modal__section qc-student-detail-modal__section--ai" aria-label="AI Feedback">
+                      <p className="qc-student-detail-modal__stat-label">
+                        <Sparkles size={12} aria-hidden="true" /> AI Feedback
+                      </p>
+                      {hasAiFeedbackContent ? (
+                        <div className="qc-student-ai-feedback">
+                          {aiText ? (
+                            <p className="qc-student-detail-modal__stat-text qc-student-detail-modal__stat-text--open">{aiText}</p>
+                          ) : (
+                            <p className="qc-student-detail-modal__stat-text">AI Feedback Not Available</p>
+                          )}
+                          {(strengths.length > 0 || improvements.length > 0) && (
+                            <div className="qc-student-ai-feedback__cols">
+                              {strengths.length > 0 && (
+                                <div>
+                                  <p className="qc-student-detail-modal__stat-label">Strengths</p>
+                                  <ul className="qc-student-ai-feedback__list">
+                                    {strengths.map((item, idx) => <li key={`st-${idx}`}>{item}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {improvements.length > 0 && (
+                                <div>
+                                  <p className="qc-student-detail-modal__stat-label">Areas for Improvement</p>
+                                  <ul className="qc-student-ai-feedback__list">
+                                    {improvements.map((item, idx) => <li key={`im-${idx}`}>{item}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="qc-student-detail-modal__stat-text">AI Feedback Not Available</p>
+                      )}
+                    </section>
+                  ) : null}
+
+                  {showTeacherFeedbackSection ? (
+                    <section className="qc-student-detail-modal__section" aria-label="Teacher Feedback">
+                      <p className="qc-student-detail-modal__stat-label">
+                        <UserRound size={12} aria-hidden="true" /> Teacher Feedback
+                      </p>
+                      <p className="qc-student-detail-modal__stat-text qc-student-detail-modal__stat-text--open">
+                        {teacherFeedbackText || "No Teacher Feedback Available"}
+                      </p>
+                    </section>
+                  ) : null}
+
+                  <section className="qc-student-detail-modal__section" aria-label="Question File">
+                    <p className="qc-student-detail-modal__stat-label">Question File</p>
+                    {selectedAsgn.notOpenYet || selectedAsgn.canAccessMaterials === false ? (
+                      <p className="qc-student-detail-modal__hint">Not open yet.</p>
+                    ) : (selectedAsgn.hasFile || selectedAsgn.assignmentOriginalFileName || selectedAsgn.originalFileName) ? (
+                      <div className="qc-student-file-actions">
+                        <div className="qc-student-file-action">
+                          <FileLink
+                            variant="named"
+                            fileName={
+                              selectedAsgn.assignmentOriginalFileName ||
+                              selectedAsgn.originalFileName ||
+                              "assignment"
+                            }
+                            openLabel="View File"
+                            onOpen={async () => {
+                              try {
+                                await openProtectedPreview(
+                                  studentService.previewAssignment(selectedAsgn._id),
+                                  selectedAsgn.assignmentOriginalFileName ||
+                                    selectedAsgn.originalFileName ||
+                                    "assignment",
+                                  { downloadUrl: studentService.downloadAssignment(selectedAsgn._id) }
+                                );
+                              } catch (error) {
+                                alert(error.message);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await downloadProtectedFile(
+                                  studentService.downloadAssignment(selectedAsgn._id),
+                                  `${
+                                    selectedAsgn.assignmentOriginalFileName ||
+                                    selectedAsgn.originalFileName ||
+                                    "assignment"
+                                  }`
+                                );
+                              } catch (error) {
+                                alert(error.message);
+                              }
+                            }}
+                            className="qc-btn qc-btn-secondary"
+                          >
+                            <Download size={14} aria-hidden="true" /> Download File
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="qc-student-detail-modal__stat-text">No question file attached.</p>
                     )}
+                  </section>
 
-                  </div>
-
-                )}
-
-
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewAssignment(selectedAsgn._id), selectedAsgn.originalFileName || 'assignment'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open Instructions</button>
-
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadAssignment(selectedAsgn._id), `${selectedAsgn.originalFileName || "assignment"}`); } catch (error) { alert(error.message); } }} className="py-4 bg-white text-black font-black uppercase text-[10px] rounded-xl hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Download size={16}/> Download Instructions</button>
-
+                  <section className="qc-student-detail-modal__section" aria-label="Student Submission">
+                    <p className="qc-student-detail-modal__stat-label">Student Submission</p>
+                    {selectedAsgn.submissionId ? (
+                      <div className="qc-student-file-actions">
+                        <div className="qc-student-file-action">
+                          <FileLink
+                            variant="named"
+                            fileName={selectedAsgn.submissionOriginalFileName || 'my-submission'}
+                            openLabel="View Submission"
+                            onOpen={async () => {
+                              try {
+                                await openProtectedPreview(
+                                  studentService.previewSubmission(selectedAsgn.submissionId),
+                                  selectedAsgn.submissionOriginalFileName || 'my-submission',
+                                  { downloadUrl: studentService.downloadSubmission(selectedAsgn.submissionId) }
+                                );
+                              } catch (error) {
+                                alert(error.message);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await downloadProtectedFile(
+                                  studentService.downloadSubmission(selectedAsgn.submissionId),
+                                  selectedAsgn.submissionOriginalFileName || "my-submission"
+                                );
+                              } catch (error) {
+                                alert(error.message);
+                              }
+                            }}
+                            className="qc-btn qc-btn-secondary"
+                          >
+                            <Download size={14} aria-hidden="true" /> Download Submission
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="qc-student-detail-modal__stat-text">No submission yet.</p>
+                    )}
+                  </section>
                 </div>
-
-                {!selectedAsgn.isSubmitted && !selectedAsgn.submissionId && selectedAsgn.canSubmit !== false && (
-
-                  <div className="mt-4 space-y-3">
-
-                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500">
-
-                      Short text answer (demo-friendly)
-
-                      <textarea
-
-                        value={answerTextDraft}
-
-                        onChange={(e) => setAnswerTextDraft(e.target.value)}
-
-                        rows={4}
-
-                        maxLength={120000}
-
-                        placeholder="Type a short harmless answer for AI grading…"
-
-                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-200 normal-case font-medium tracking-normal"
-
-                      />
-
-                    </label>
-
-                    <button
-
-                      type="button"
-
-                      disabled={uploadStatus.loading && uploadStatus.id === selectedAsgn._id}
-
-                      onClick={() => handleTextSubmit(selectedAsgn._id)}
-
-                      className="w-full py-4 bg-sky-500 text-black font-black uppercase text-[10px] rounded-xl hover:bg-sky-400 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-
-                    >
-
-                      <FileUp size={16}/>
-
-                      {uploadStatus.loading && uploadStatus.id === selectedAsgn._id ? 'Submitting…' : 'Submit text answer'}
-
-                    </button>
-
-                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest text-center">Or use Upload on the assignment row for a file</p>
-
-                  </div>
-
-                )}
-
-                {selectedAsgn.submissionId && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(studentService.previewSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || 'my-submission'); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Eye size={16}/> Open my file</button>
-
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(studentService.downloadSubmission(selectedAsgn.submissionId), selectedAsgn.originalFileName || "my-submission"); } catch (error) { alert(error.message); } }} className="py-4 border font-black uppercase text-[10px] rounded-xl flex items-center justify-center gap-2"><Download size={16}/> Download my file</button>
-
-                </div>}
-
              </div>
-
           </div>
-
-        )}
+          );
+        })()}
 
         </>
         )}
@@ -1135,54 +1292,180 @@ function StatCard({ label, value, color, icon, sub }) {
 
 
 
-function AssignmentRow({ asgn, onSelect, onUpload, uploadStatus }) {
+function formatDateTime(value) {
+  if (value === undefined || value === null || value === "") return "Not specified";
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Not specified";
+    return date.toLocaleString();
+  } catch {
+    return "Not specified";
+  }
+}
 
-const status = asgn.status?.toLowerCase();
+function meaningfulSubject(subject) {
+  const value = String(subject || "").trim();
+  if (!value) return "";
+  if (/^general$/i.test(value)) return "";
+  return value;
+}
 
-  const isDone = ['submitted','graded','published','ai_graded'].includes(status);
-  const canUpload = !isDone && asgn.canSubmit !== false;
-
-
-
-  return (
-
-    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-5 qc-card !p-4 sm:!p-5 hover:border-[var(--accent)] transition-colors">
-
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-
-          <div className={`p-3 rounded-xl shrink-0 ${isDone ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>
-
-            <FileText size={18}/>
-
-          </div>
-
-          <div className="min-w-0">
-
-             <h4 className="font-semibold text-sm break-words">{asgn.title}</h4>
-
-             <p className="text-xs theme-muted mt-0.5">Due: {asgn.deadline?.split?.('T')?.[0] || (asgn.deadline ? String(asgn.deadline).slice(0, 10) : 'N/A')} · {asgn.availabilityLabel || (isDone ? asgn.status : 'Open')} · Max {asgn.points ?? asgn.totalMarks ?? '--'}</p>
-
-          </div>
-
-        </div>
-
-        <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-
-          <button type="button" onClick={() => onSelect(asgn)} className="p-2.5 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all" aria-label="View assignment"><Eye size={16}/></button>
-
-          <label className={`px-3 py-2 rounded-qc text-xs font-semibold cursor-pointer transition-all ${canUpload ? 'qc-btn-primary' : 'bg-[var(--surface-2)] theme-muted cursor-not-allowed'}`}>
-
-              {uploadStatus.id === asgn._id ? (uploadStatus.loading ? '...' : 'Done') : (canUpload ? 'Upload' : (isDone ? asgn.status : (asgn.availabilityLabel || 'Closed')))}
-
-              {canUpload && <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.xml,.yaml,.yml,.xlsx,.xls,.ods,.pptx,.ppt,.odp,.zip,.rar,.7z,.tar,.gz,.py,.ipynb,.js,.jsx,.ts,.tsx,.cpp,.c,.h,.hpp,.java,.php,.cs,.swift,.go,.rs,.kt,.kts,.sql,.html,.htm,.css,.scss,.sass,.less,.vue,.svelte,.sh,.bat,.ps1,.rb,.r,.m,.mm,.dart,.lua,.pl,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.heic,.heif,.tif,.tiff,.mp4,.mkv,.webm,.mov,.avi,.wmv,.mpeg,.mpg,.m4v,.mp3,.wav,.ogg,.aac,.flac,.m4a" className="hidden" onChange={(e) => onUpload(e, asgn._id)} />}
-
-          </label>
-
-        </div>
-
-    </div>
-
+function studentStatusLabel(asgn) {
+  const status = String(asgn.status || "").toLowerCase();
+  const isSubmitted = Boolean(
+    asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status)
+  );
+  // Never infer publication from saved marks alone — only published flags / status.
+  const isPublished = Boolean(
+    status === "published" ||
+    asgn.resultStatus === "PUBLISHED" ||
+    asgn.aiPublished === true ||
+    asgn.teacherMarksPublished === true ||
+    asgn.teacherFeedbackPublished === true
   );
 
+  // Submission/evaluation badges never use dots.
+  if (isPublished) return { label: "Published", tone: "published", showDot: false };
+  if (isSubmitted) {
+    return { label: "Submitted", tone: "submitted", showDot: false };
+  }
+  if (/^pending$/i.test(status) || !status) {
+    return { label: "Not Submitted", tone: "not-submitted", showDot: false };
+  }
+  return { label: "Not Submitted", tone: "not-submitted", showDot: false };
+}
+
+function AssignmentRow({
+  asgn,
+  onUpload,
+  onAlreadySubmitted,
+  showDuplicateNotice = false,
+  onDismissDuplicate,
+  uploadStatus,
+}) {
+
+  const status = String(asgn.status || "").toLowerCase();
+  const isSubmitted = Boolean(asgn.isSubmitted || asgn.submissionId || ["submitted", "published", "graded", "ai_graded"].includes(status));
+  // Backend canSubmit is authoritative; resubmission is not supported while a submission exists.
+  const canUpload = asgn.canSubmit === true && !isSubmitted;
+  const availability = String(asgn.availabilityLabel || "").trim();
+  const questionFileName =
+    asgn.assignmentOriginalFileName ||
+    asgn.originalFileName ||
+    "assignment";
+  const hasAssignmentFile = Boolean(asgn.hasFile || asgn.file || asgn.assignmentOriginalFileName || asgn.fileUrl);
+  const activityInfo = studentActivityState(asgn);
+  const statusInfo = studentStatusLabel(asgn);
+
+  const actionLabel = (() => {
+    if (uploadStatus.id === asgn._id) {
+      if (uploadStatus.loading) return "Submitting…";
+      if (uploadStatus.success) return "Submitted";
+    }
+    if (canUpload) return "Submit Assignment";
+    return availability || "Closed";
+  })();
+
+  const openAssignmentFile = async () => {
+    if (!hasAssignmentFile) return;
+    try {
+      await openProtectedPreview(
+        studentService.previewAssignment(asgn._id),
+        questionFileName,
+        { downloadUrl: studentService.downloadAssignment(asgn._id) }
+      );
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const duplicateNotice = showDuplicateNotice ? (
+    <div
+      className="qc-assignment-inline-notice"
+      role="status"
+      aria-live="polite"
+      data-testid="qc-already-submitted-inline"
+    >
+      <Info size={14} className="qc-assignment-inline-notice__icon" aria-hidden="true" />
+      <div className="qc-assignment-inline-notice__body">
+        <p className="qc-assignment-inline-notice__title">Already submitted.</p>
+        <p className="qc-assignment-inline-notice__detail">
+          Your submission is saved. You do not need to submit it again.
+        </p>
+      </div>
+      <button
+        type="button"
+        className="qc-assignment-inline-notice__close"
+        aria-label="Dismiss notice"
+        onClick={() => onDismissDuplicate?.()}
+      >
+        <X size={12} aria-hidden="true" />
+      </button>
+    </div>
+  ) : null;
+
+  return (
+    <article className="qc-card qc-assignment-card qc-student-assignment-card">
+      <div className="qc-assignment-card__main qc-student-assignment-card__main">
+        <div className="qc-assignment-card__doc-icon" aria-hidden="true">
+          <FileText size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="qc-assignment-card__title">{asgn.title}</h3>
+          <div className="qc-assignment-card__meta">
+            <p className="qc-assignment-card__meta-item">
+              <CalendarDays size={12} aria-hidden="true" /> Start: {formatDateTime(asgn.startDate)}
+            </p>
+            <p className="qc-assignment-card__meta-item">
+              <Clock size={12} aria-hidden="true" /> Due: {formatDateTime(asgn.deadline)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="qc-assignment-card__aside qc-student-assignment-card__actions">
+        {hasAssignmentFile ? (
+          <button
+            type="button"
+            className="qc-view-file-btn"
+            title="View File"
+            aria-label={`View file for ${asgn.title || "assignment"}`}
+            onClick={openAssignmentFile}
+          >
+            <Eye size={14} aria-hidden="true" />
+            View File
+          </button>
+        ) : null}
+
+        <span className={`qc-status-badge is-${activityInfo.tone}`}>
+          {activityInfo.showDot ? <span className="qc-status-badge__dot" aria-hidden="true" /> : null}
+          {activityInfo.label}
+        </span>
+
+        <span className={`qc-status-badge is-${statusInfo.tone}`}>
+          {statusInfo.showDot ? <span className="qc-status-badge__dot" aria-hidden="true" /> : null}
+          {statusInfo.label}
+        </span>
+
+        {canUpload ? (
+          <label className="qc-btn qc-btn-primary cursor-pointer">
+            {actionLabel}
+            <input
+              type="file"
+              accept={ACADEMIC_ACCEPT}
+              className="hidden"
+              onChange={(e) => onUpload(e, asgn._id)}
+            />
+          </label>
+        ) : isSubmitted ? (
+          <div className="qc-assignment-status-anchor">
+            {duplicateNotice}
+          </div>
+        ) : (
+          <span className="qc-btn qc-btn-secondary opacity-60 pointer-events-none">{actionLabel}</span>
+        )}
+      </div>
+    </article>
+  );
 }
 

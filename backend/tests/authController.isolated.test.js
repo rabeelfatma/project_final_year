@@ -21,6 +21,21 @@ function loadController(userMock) {
     if (request === "../utils/tokenUtils" || request.endsWith(`${path.sep}utils${path.sep}tokenUtils.js`)) {
       return () => "test-jwt-token";
     }
+    if (
+      request === "../services/authRateLimit" ||
+      request.endsWith(`${path.sep}services${path.sep}authRateLimit.js`)
+    ) {
+      return {
+        DEFAULT_WINDOW_MS: 15 * 60 * 1000,
+        assertWithinRateLimit: async () => ({ ok: true }),
+      };
+    }
+    if (
+      request === "../models/AuthRateLimit" ||
+      request.endsWith(`${path.sep}models${path.sep}AuthRateLimit.js`)
+    ) {
+      return {};
+    }
     return originalLoad(request, parent, isMain);
   };
 

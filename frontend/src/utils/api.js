@@ -1,26 +1,23 @@
 import axios from 'axios';
 import { getApiBaseUrl } from './apiBase';
+import { clearAuthSession, getAuthToken } from './authToken';
 
 const api = axios.create({
   baseURL: getApiBaseUrl(),
 });
 
-// Add token automatically
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-
-    // 🔥 FIX: Always ensure headers object exists
     if (!config.headers) {
       config.headers = {};
     }
 
-    if (!token) {
-      console.warn("⚠️ No token found in localStorage");
-    }
-
+    const token = getAuthToken();
     if (token) {
+      // Always set a clean single Bearer header (never duplicate / empty).
       config.headers.Authorization = `Bearer ${token}`;
+    } else if (config.headers.Authorization) {
+      delete config.headers.Authorization;
     }
 
     return config;
@@ -28,11 +25,39 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Debug response errors
+let handlingUnauthorized = false;
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error("❌ API ERROR:", error.response?.data || error.message);
+    const status = error.response?.status;
+    const message = error.response?.data?.message || error.message;
+
+    if (status === 401 && !handlingUnauthorized) {
+      handlingUnauthorized = true;
+      const hadToken = Boolean(getAuthToken());
+      clearAuthSession();
+      // Avoid infinite retry storms — hard navigate once when a session dies.
+      if (hadToken && typeof window !== 'undefined') {
+        const path = window.location.pathname || '';
+        const onAuthPage =
+          path.startsWith('/login') ||
+          path.startsWith('/admin') ||
+          path.startsWith('/signup') ||
+          path.startsWith('/forgot') ||
+          path.startsWith('/reset');
+        if (!onAuthPage) {
+          const toAdmin = path.startsWith('/dashboard/admin');
+          window.location.assign(toAdmin ? '/admin' : '/login');
+        }
+      }
+      window.setTimeout(() => {
+        handlingUnauthorized = false;
+      }, 1500);
+    } else if (status !== 401) {
+      console.error('❌ API ERROR:', message);
+    }
+
     return Promise.reject(error);
   }
 );

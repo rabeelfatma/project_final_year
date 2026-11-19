@@ -4,7 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail, validatePassword } from "../../utils/validators";
+import {
+  emailValidationMessage,
+  passwordValidationMessage,
+  confirmPasswordMessage,
+  PASSWORD_HINT,
+} from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function StudentSignup() {
@@ -13,6 +18,7 @@ export default function StudentSignup() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
     department: "CS",
     program: "Computer Science"
   });
@@ -31,17 +37,13 @@ export default function StudentSignup() {
     setMsg("");
     setRegNo("");
 
-    if (!form.name || !form.email || !form.password) {
-      return setMsg("Name, Email and Password are required ❌");
-    }
-
-    if (!validateEmail(form.email)) {
-      return setMsg("Invalid Email ❌");
-    }
-
-    if (!validatePassword(form.password)) {
-      return setMsg("Weak password ❌");
-    }
+    if (!form.name.trim()) return setMsg("Full name is required.");
+    const emailMessage = emailValidationMessage(form.email);
+    if (emailMessage) return setMsg(emailMessage);
+    const passwordMessage = passwordValidationMessage(form.password);
+    if (passwordMessage) return setMsg(passwordMessage);
+    const confirmMessage = confirmPasswordMessage(form.password, form.confirmPassword);
+    if (confirmMessage) return setMsg(confirmMessage);
 
     const token = localStorage.getItem("token");
     if (!token) {
@@ -71,22 +73,27 @@ export default function StudentSignup() {
 
       if (!res.ok) {
         setLoading(false);
-        return setMsg(data.message || "Failed to register ❌");
+        return setMsg(
+          res.status >= 500
+            ? "Something went wrong. Please try again."
+            : data.message || "Something went wrong. Please try again."
+        );
       }
 
       setRegNo(data.regNo);
-      setMsg("Student Registered Successfully ✅");
+      setMsg("Account created successfully.");
 
       setForm({
         name: "",
         email: "",
         password: "",
+        confirmPassword: "",
         department: "CS",
         program: "Computer Science"
       });
 
     } catch (err) {
-      setMsg("Server connection error ❌");
+      setMsg("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -147,6 +154,15 @@ export default function StudentSignup() {
               {showPassword ? "Hide" : "Show"}
             </span>
           </div>
+          <p className="qc-auth-password-hint">{PASSWORD_HINT}</p>
+          <InputField
+            name="confirmPassword"
+            type={showPassword ? "text" : "password"}
+            placeholder="Confirm Password"
+            value={form.confirmPassword}
+            onChange={handleChange}
+            autoComplete="new-password"
+          />
 
           <div className="flex flex-col gap-1">
             <label className="text-sky-500 text-[10px] font-bold uppercase ml-3">

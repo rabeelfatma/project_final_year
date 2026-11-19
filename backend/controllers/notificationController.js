@@ -4,6 +4,15 @@ const { webpush, publicKey, vapidConfigured } = require("../config/push");
 
 exports.list = async (req, res) => {
   try {
+    // Opportunistic scheduled-assignment notify flush before listing.
+    try {
+      const {
+        flushAssignmentAvailabilityNotifications,
+      } = require("../utils/flushAssignmentAvailabilityNotifications");
+      await flushAssignmentAvailabilityNotifications({ limit: 20 });
+    } catch (_) {
+      /* listing must not fail if flush errors */
+    }
     const rows = await Notification.find({ recipient: req.user._id })
       .sort({ createdAt: -1 })
       .limit(50);

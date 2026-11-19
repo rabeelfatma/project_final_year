@@ -203,6 +203,7 @@ describe("token verify + redirect preserves approval pending", () => {
             },
           };
         },
+        findOne: async () => null,
         findOneAndUpdate(filter, update) {
           if (String(filter._id) !== "u1") {
             return { select() { return Promise.resolve(null); } };

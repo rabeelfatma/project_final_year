@@ -18,6 +18,7 @@ const messageRoutes = require("./routes/messageRoutes");
 const fileRoutes = require("./routes/fileRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const aiChatRoutes = require("./routes/aiChatRoutes");
+const cronRoutes = require("./routes/cronRoutes");
 
 const app = express();
 
@@ -150,6 +151,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/ai-chats", aiChatRoutes);
+app.use("/api/cron", cronRoutes);
 
 /* ===============================
     Same-origin SPA (Vite production build)

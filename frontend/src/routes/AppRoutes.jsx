@@ -27,6 +27,9 @@ import StudentDashboard from "../pages/dashboards/StudentDashboard";
 import TeacherDashboard from "../pages/dashboards/TeacherDashboard";
 import AdminDashboard from "../pages/dashboards/AdminDashboard";
 
+/* DEV harness (tree-shaken from production when unused; gated by import.meta.env.DEV) */
+import ViewerSmokePage from "../pages/dev/ViewerSmokePage";
+
 export default function AppRoutes() {
   return (
     <BrowserRouter>
@@ -115,6 +118,11 @@ export default function AppRoutes() {
             </ProtectedRoute>
           } 
         />
+
+        {/* DEV-only visual viewer harness (excluded from production builds). */}
+        {import.meta.env.DEV ? (
+          <Route path="/dev/viewer-smoke" element={<ViewerSmokePage />} />
+        ) : null}
 
         {/* --- 404 REDIRECT --- */}
         <Route path="*" element={<Navigate to="/" />} />

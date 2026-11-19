@@ -124,7 +124,7 @@ export default function SidebarControls({ role }) {
             setSettingsOpen(false);
             if (next) window.dispatchEvent(new CustomEvent("quickcheck:close-messages"));
           }} className="sidebar-tool">
-            <span className="relative"><Bell size={17}/>{unread > 0 && <span className="notification-badge">{unread > 9 ? "9+" : unread}</span>}</span>
+            <span className="relative"><Bell size={17}/>{unread > 0 && <span className="notification-badge" data-digits={String(unread).length} aria-label={`${unread} unread notifications`}>{unread}</span>}</span>
             <span>Notifications</span>
           </button>
           <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("quickcheck:open-messages"))} className="sidebar-tool">
@@ -140,7 +140,7 @@ export default function SidebarControls({ role }) {
       {notificationsOpen && (
         <div ref={notificationPanelRef} className="sidebar-popover">
           <div className="flex items-center justify-between border-b pb-3 mb-2" style={{borderColor:"var(--border)"}}>
-            <div><b className="text-sm">Notifications</b><p className="text-[10px] theme-muted">{role} account updates</p></div>
+            <div><b className="text-sm">Notifications</b></div>
             <div className="flex items-center gap-3">
               <button className="accent-text text-[10px] flex items-center gap-1" onClick={markAllRead}><CheckCheck size={13}/> Read all</button>
               <button className="text-red-400 text-[10px] font-bold" onClick={clearNotifications} disabled={!notifications.length}>Clear all</button>

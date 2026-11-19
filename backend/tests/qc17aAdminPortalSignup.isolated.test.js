@@ -329,7 +329,8 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
     assert.match(createdPayload.password, /^\$2[aby]?\$/);
     assert.equal(res.body.token, undefined);
     assert.equal(res.body.verificationEmailSent, true);
-    assert.match(res.body.message, /verify your email|Admin approval/i);
+    assert.match(res.body.message, /Account created successfully/i);
+    assert.equal(res.body.status, "pending_verification");
   });
 
   it("student signup request creates pending account without JWT", async () => {
@@ -554,9 +555,25 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
       approvalStatus: "rejected",
       isAllowedLogin: false,
       rejectedAt: new Date(),
+      rejectionReason: null,
       toObject() { return { ...this }; },
     };
     const userMock = {
+      findById() {
+        return {
+          select() {
+            return {
+              lean: async () => ({
+                role: "teacher",
+                approvalStatus: "pending",
+                applicationAttempt: 1,
+                lastSubmittedAt: new Date(),
+                createdAt: new Date(),
+              }),
+            };
+          },
+        };
+      },
       findOneAndUpdate(filter, update) {
         query = { filter, update };
         return {
@@ -569,13 +586,14 @@ describe("QC-17A public signup + approval (isolated mocks)", () => {
     const adminController = loadAdminController(userMock);
     const res = mockRes();
     await adminController.rejectRegistrationRequest(
-      { params: { id: "req1" }, user: { _id: "admin1", role: "admin" } },
+      { params: { id: "req1" }, user: { _id: "admin1", role: "admin" }, body: {} },
       res
     );
     assert.equal(res.statusCode, 200);
     assert.equal(query.filter.approvalStatus, "pending");
     assert.equal(query.update.$set.approvalStatus, "rejected");
     assert.equal(query.update.$set.isAllowedLogin, false);
+    assert.equal(query.update.$push.applicationHistory.decision, "rejected");
   });
 
   it("repeated approve on non-pending returns conflict", async () => {

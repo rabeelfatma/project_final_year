@@ -6,6 +6,9 @@ const ctrl = require("../controllers/messageController");
 
 router.use(protect);
 router.get("/users", ctrl.users);
+router.get("/pins", ctrl.listPins);
+router.put("/pins/:peerId", ctrl.setPin);
+router.put("/conversation-read", ctrl.markConversationRead);
 router.get("/", ctrl.list);
 router.post("/", ctrl.sendText);
 router.post("/voice", upload.single("voice"), ctrl.sendVoice);

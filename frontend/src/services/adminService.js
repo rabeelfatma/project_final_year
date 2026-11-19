@@ -1,14 +1,17 @@
 import axios from 'axios';
 import { getApiBaseUrl } from '../utils/apiBase';
+import { getAuthToken } from '../utils/authToken';
 
 const adminClient = axios.create({
     baseURL: `${getApiBaseUrl()}/admin`,
 });
 
 adminClient.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
+    const token = getAuthToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+    } else if (config.headers?.Authorization) {
+        delete config.headers.Authorization;
     }
     return config;
 });
@@ -92,8 +95,11 @@ const adminService = {
         return response.data;
     },
 
-    rejectRegistrationRequest: async (id) => {
-        const response = await adminClient.post(`/registration-requests/${id}/reject`);
+    rejectRegistrationRequest: async (id, payload = {}) => {
+        const response = await adminClient.post(
+            `/registration-requests/${id}/reject`,
+            payload
+        );
         return response.data;
     },
 };

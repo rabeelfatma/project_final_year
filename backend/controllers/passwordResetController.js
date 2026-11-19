@@ -38,10 +38,12 @@ exports.confirmReset = async (req, res) => {
     const result = await confirmPasswordReset({
       token: req.body?.token,
       newPassword: req.body?.newPassword,
+      confirmPassword: req.body?.confirmPassword,
       ip: clientIp(req),
     });
     return res.status(result.status).json({
       message: result.message,
+      ...(result.code ? { code: result.code } : {}),
     });
   } catch (_) {
     return res.status(503).json({

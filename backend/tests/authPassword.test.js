@@ -21,7 +21,7 @@ describe("authPassword helpers", () => {
   it("rejects short passwords", () => {
     const result = validatePasswordInput("Ab1!");
     assert.equal(result.ok, false);
-    assert.match(result.message, /at least 8/i);
+    assert.match(result.message, /too short/i);
   });
 
   it("rejects passwords missing complexity rules", () => {
@@ -36,6 +36,13 @@ describe("authPassword helpers", () => {
     assert.equal(result.ok, true);
     assert.equal(result.password, "Secure1!");
     assert.ok(MIN_PASSWORD_LENGTH >= 8);
+  });
+
+  it("allows multiple uppercase, lowercase, digits, and special characters", () => {
+    const plain = "AAAbbb123!!!";
+    const result = validatePasswordInput(plain);
+    assert.equal(result.ok, true);
+    assert.equal(result.password, plain);
   });
 
   it("does not enforce complexity on login presence check", () => {

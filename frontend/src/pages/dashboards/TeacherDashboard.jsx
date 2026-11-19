@@ -4,7 +4,9 @@ import {
   Layout, PlusCircle, BookOpen, ClipboardCheck, Users, RotateCcw,
   Loader2, FileUp, X, CheckCircle, TrendingUp, Download,
   ShieldCheck, Clock, Trash2, Edit3, Sparkles, MessageSquare,
-  Send, Eye, AlertCircle, ShieldAlert, FileText
+  Send, Eye, AlertCircle, ShieldAlert, FileText, Archive,
+  Layers, Folder, CalendarDays, Search, ChevronLeft, ChevronRight,
+  ExternalLink, RefreshCw
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -17,15 +19,44 @@ import DashboardNavItem from '../../components/common/DashboardNavItem';
 import DashboardTopBar from '../../components/common/DashboardTopBar';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
+import OverflowMenu from '../../components/ui/OverflowMenu';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import ProfilePage from '../account/ProfilePage';
 import SettingsPage from '../account/SettingsPage';
 import { downloadProtectedFile, openProtectedPreview } from '../../services/fileService';
-import api from '../../utils/api';
+import {
+  ACADEMIC_ACCEPT,
+  assertAcademicFile,
+  uploadDurableFile,
+  appendDurableFields,
+} from '../../services/r2UploadService';
 import {
   normalizeAssignmentId,
   toggleAssignmentSelection,
   isAssignmentSelected,
 } from '../../utils/assignmentSelection';
+import {
+  filterAssignmentsByShelf,
+  shelfAfterArchive,
+  shelfAfterUnarchive,
+} from '../../utils/assignmentShelf';
+import {
+  validateAssignmentFormFields,
+  datetimeLocalToIso,
+  suggestStartDatetimeLocal,
+  utcIsoToKarachiDatetimeLocal,
+  assignmentCreatedMessage,
+} from '../../utils/assignmentFieldValidation';
+import { validateAcademicContent, referenceFileSelectionError } from '../../utils/academicFileContent';
+import { createSubmitLock } from '../../utils/submitLock';
+import {
+  filterSubmissionsForAssignment,
+  toggleSubmissionSelection,
+  selectAllSubmissionIds,
+  clearSelectionOnAssignmentChange,
+  fileTypeFromSubmission,
+  describeNetworkOrApiError,
+} from '../../utils/plagiarismSelection';
 
 function StatCard({ label, value, icon }) {
   const [selected, setSelected] = useState(false);
@@ -34,7 +65,7 @@ function StatCard({ label, value, icon }) {
       type="button"
       onClick={() => setSelected((current) => !current)}
       aria-pressed={selected}
-      className="qc-stat-card relative overflow-hidden"
+      className="qc-stat-card relative"
     >
       <div className="flex justify-between items-start mb-3">
         <div className="p-2 rounded-qc border transition-colors" style={{borderColor: selected ? 'var(--accent)' : 'var(--border)', color: selected ? 'var(--accent)' : 'var(--muted)'}}>{icon}</div>
@@ -89,8 +120,19 @@ export default function TeacherDashboard() {
   const [students, setStudents]                 = useState([]);
   const [submissions, setSubmissions]           = useState([]);
   const [selectedSubmissions, setSelectedSubmissions] = useState([]);
+  const [selectSubmissionsMode, setSelectSubmissionsMode] = useState(false);
+  const [submissionSearch, setSubmissionSearch] = useState('');
+  const [submissionAssignmentFilter, setSubmissionAssignmentFilter] = useState('all');
+  const [submissionStatusFilter, setSubmissionStatusFilter] = useState('all');
+  const [submissionPage, setSubmissionPage] = useState(1);
+  const SUBMISSIONS_PAGE_SIZE = 8;
   const [selectedAssignments, setSelectedAssignments] = useState([]);
+  const [manageAssignments, setManageAssignments] = useState(false);
+  /** Active list = non-archived (active + legacy deactive). Archived = status archived only. */
+  const [assignmentShelf, setAssignmentShelf] = useState('active');
   const [selectedQuestionAssignments, setSelectedQuestionAssignments] = useState([]);
+  /** Shown when AI Evaluate is clicked: Include Question File? Yes / No */
+  const [aiQuestionFilePrompt, setAiQuestionFilePrompt] = useState(null);
   const [aiLoading, setAiLoading]               = useState(false);
   const [isPublishing, setIsPublishing]         = useState(false);
   const [reviewModalOpen, setReviewModalOpen]   = useState(false);
@@ -102,14 +144,34 @@ export default function TeacherDashboard() {
   const [savingEval, setSavingEval]             = useState(false);
   const [reviewContent, setReviewContent]       = useState({ loading: false, text: '', strengths: [], improvements: [] });
   const [checkingPlagiarism, setCheckingPlagiarism] = useState(false);
-  const [plagiarismResults, setPlagiarismResults] = useState([]);
+  const [plagiarismMode, setPlagiarismMode] = useState('external_sources');
+  const [plagiarismProvider, setPlagiarismProvider] = useState(null);
+  const [plagiarismAssignmentId, setPlagiarismAssignmentId] = useState('');
+  const [plagiarismSelectedIds, setPlagiarismSelectedIds] = useState([]);
+  const [plagiarismAssignmentsList, setPlagiarismAssignmentsList] = useState([]);
+  const [plagiarismSubmissionsList, setPlagiarismSubmissionsList] = useState([]);
+  const [plagiarismDataLoading, setPlagiarismDataLoading] = useState(false);
+  const [plagiarismDataError, setPlagiarismDataError] = useState('');
+  const [similarityChecks, setSimilarityChecks] = useState([]);
+  const [similarityLoading, setSimilarityLoading] = useState(false);
+  const [similarityError, setSimilarityError] = useState('');
+  const [similarityDetailId, setSimilarityDetailId] = useState(null);
   const [activePieIndex, setActivePieIndex]     = useState(null);
   const [form, setForm] = useState({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
+  /** Original ISO dates while editing — used so unchanged past start/deadline are not blocked. */
+  const [editingBaseline, setEditingBaseline] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+  const [savingAssignment, setSavingAssignment] = useState(false);
+  const [confirmState, setConfirmState] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const assignmentSubmitLock = useRef(createSubmitLock());
+  const archiveActionLock = useRef(createSubmitLock());
 
   // ── Fetch ─────────────────────────────────────────────────
-  const fetchAllData = async () => {
+  // silent: refresh lists without the full-page loading gate (status archive/restore).
+  const fetchAllData = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [sData, aData, subData, stData] = await Promise.all([
         teacherService.getOverviewStats().catch(() => null),
         teacherService.getMyAssignments().catch(() => []),
@@ -136,55 +198,162 @@ export default function TeacherDashboard() {
     } catch (err) {
       console.error('Dashboard Load Error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => { fetchAllData(); }, []);
 
-  // Auto-deactivate overdue
+  // Legacy display helper: mark overdue non-archived rows as deactive in UI only.
+  // Never auto-archive, and never rewrite archived status.
+  // Empty deps: do not rebind on every assignments change (that raced with Archive UI updates).
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      setAssignments(prev => prev.map(asgn =>
-        new Date(asgn.deadline) < now && asgn.status !== 'deactive'
-          ? { ...asgn, status: 'deactive' }
-          : asgn
-      ));
+      setAssignments((prev) => prev.map((asgn) => {
+        if (asgn.status === 'archived' || asgn.status === 'deactive') return asgn;
+        if (new Date(asgn.deadline) < now) return { ...asgn, status: 'deactive' };
+        return asgn;
+      }));
     }, 60000);
     return () => clearInterval(interval);
-  }, [assignments]);
+  }, []);
 
   // ── Selection ─────────────────────────────────────────────
   const toggleSelect = (id) => {
-    setSelectedSubmissions(prev => {
-      if (prev.includes(id)) return prev.filter(x => x !== id);
-      if (prev.length >= 40) { alert('⚠️ Maximum 40 students can be selected at once.'); return prev; }
+    setSelectedSubmissions((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 40) {
+        alert('Maximum 40 students can be selected at once.');
+        return prev;
+      }
       return [...prev, id];
     });
   };
 
-  const handleSelectAll = (checked) => {
+  const submissionStatusBucket = (status) => {
+    if (status === 'PUBLISHED') return 'published';
+    if (status === 'AI_GRADED') return 'ai_graded';
+    if (status === 'AI_PROCESSING') return 'ai_processing';
+    if (['graded', 'GRADED', 'Graded', 'REVIEWED'].includes(status)) return 'graded';
+    return 'awaiting';
+  };
+
+  const filteredSubmissions = submissions.filter((sub) => {
+    const q = submissionSearch.trim().toLowerCase();
+    if (q) {
+      const hay = [
+        sub.student?.name,
+        sub.student?.registrationNumber,
+        sub.student?.email,
+        sub.assignment?.title,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (submissionAssignmentFilter !== 'all') {
+      if (String(sub.assignment?._id || '') !== String(submissionAssignmentFilter)) return false;
+    }
+    if (submissionStatusFilter !== 'all') {
+      if (submissionStatusBucket(sub.status) !== submissionStatusFilter) return false;
+    }
+    return true;
+  });
+
+  const submissionAssignmentOptions = (() => {
+    const map = new Map();
+    for (const sub of submissions) {
+      const id = sub.assignment?._id;
+      if (!id) continue;
+      const key = String(id);
+      if (!map.has(key)) {
+        map.set(key, sub.assignment?.title || 'Untitled');
+      }
+    }
+    return [...map.entries()].map(([id, title]) => ({ id, title }));
+  })();
+
+  const submissionTotalPages = Math.max(1, Math.ceil(filteredSubmissions.length / SUBMISSIONS_PAGE_SIZE));
+  const safeSubmissionPage = Math.min(submissionPage, submissionTotalPages);
+  const pagedSubmissions = filteredSubmissions.slice(
+    (safeSubmissionPage - 1) * SUBMISSIONS_PAGE_SIZE,
+    safeSubmissionPage * SUBMISSIONS_PAGE_SIZE
+  );
+
+  const handleSelectAllSubmissions = (checked) => {
     if (checked) {
-      const first40 = submissions.slice(0, 40).map(s => s._id);
+      const first40 = filteredSubmissions.slice(0, 40).map((s) => s._id);
       setSelectedSubmissions(first40);
-      if (submissions.length > 40) alert('Only first 40 students selected due to limit.');
+      if (filteredSubmissions.length > 40) alert('Only first 40 students selected due to limit.');
     } else {
       setSelectedSubmissions([]);
     }
   };
 
+  const clearSubmissionSelection = () => {
+    setSelectedSubmissions([]);
+    setSelectedQuestionAssignments([]);
+    setSelectSubmissionsMode(false);
+    setAiQuestionFilePrompt(null);
+  };
+
+  const questionAssignmentIdsForSelection = () => {
+    const ids = [];
+    for (const sub of submissions) {
+      if (!selectedSubmissions.includes(sub._id)) continue;
+      if (sub.assignment?.file && sub.assignment?._id) {
+        ids.push(String(sub.assignment._id));
+      }
+    }
+    return [...new Set(ids)];
+  };
+
+  const eligiblePublishSubmissionIds = () =>
+    submissions
+      .filter((sub) => {
+        if (sub.status === 'PUBLISHED') return false;
+        const hasTeacher =
+          sub.marks !== null &&
+          sub.marks !== undefined &&
+          Number.isFinite(Number(sub.marks)) &&
+          Number(sub.marks) >= 0;
+        const hasAi =
+          sub.aiScore !== null &&
+          sub.aiScore !== undefined &&
+          Number.isFinite(Number(sub.aiScore)) &&
+          Number(sub.aiScore) >= 0;
+        return hasTeacher || hasAi;
+      })
+      .map((sub) => sub._id);
+
   // ── AI Evaluation ─────────────────────────────────────────
-  const handleAiEvaluation = async () => {
-    if (selectedSubmissions.length === 0) return;
-    if (!aiInstructions.trim()) return alert('Please provide grading instructions first.');
+  const handleAiEvaluation = () => {
+    if (!aiInstructions.trim()) {
+      alert('Please provide grading instructions first.');
+      return;
+    }
+    if (selectedSubmissions.length === 0) {
+      alert(
+        'Select at least one submission before AI Evaluate.\n\nDouble-click a row to enter selection mode, then choose the submissions to grade.'
+      );
+      return;
+    }
+    setAiQuestionFilePrompt({ open: true });
+  };
+
+  const runAiEvaluation = async (includeQuestionFiles) => {
+    const includeIds = includeQuestionFiles ? questionAssignmentIdsForSelection() : [];
+    setSelectedQuestionAssignments(includeIds);
+    setAiQuestionFilePrompt(null);
     try {
       setAiLoading(true);
       const result = await teacherService.evaluateWithAiBulk({
         submissionIds: selectedSubmissions,
         teacherInstructions: aiInstructions,
         referenceFiles: multimediaFiles,
-        includeQuestionAssignmentIds: selectedQuestionAssignments,
+        includeQuestionAssignmentIds: includeIds,
       });
       if (Array.isArray(result?.failed) && result.failed.length) {
         alert(`AI evaluation completed with ${result.failed.length} failed file(s).\n\n` + result.failed.map((item) => `${item.fileName || item.submissionId || 'File'}: ${item.message || item.error || 'Evaluation failed'}`).join('\n'));
@@ -195,7 +364,7 @@ export default function TeacherDashboard() {
       } else {
         alert("✅ AI Grading Completed. Publish results to release scores and feedback to students.");
       }
-      setSelectedSubmissions([]);
+      clearSubmissionSelection();
       fetchAllData();
     } catch (err) {
       alert('AI grading failed. Please try again or check the server connection.');
@@ -206,17 +375,34 @@ export default function TeacherDashboard() {
 
   // ── Publish Bulk ──────────────────────────────────────────
   const handlePublishBulk = async () => {
-    if (selectedSubmissions.length === 0) return;
+    const ids =
+      selectedSubmissions.length > 0
+        ? selectedSubmissions
+        : eligiblePublishSubmissionIds();
+
+    if (!ids.length) {
+      alert(
+        'No eligible submissions to publish.\n\nA submission needs AI marks or Teacher marks, and must not already be published. Students only see published results.'
+      );
+      return;
+    }
+
+    const usingSelection = selectedSubmissions.length > 0;
+    const confirmMsg = usingSelection
+      ? `Publish marks for ${ids.length} selected submission(s)? Students will see these results.`
+      : `No rows selected. Publish marks for ${ids.length} eligible reviewed/graded submission(s)? Students will see these results.`;
+    if (!window.confirm(confirmMsg)) return;
+
     try {
       setIsPublishing(true);
-      const result = await teacherService.publishBulkResults({ submissionIds: selectedSubmissions });
+      const result = await teacherService.publishBulkResults({ submissionIds: ids });
       const published = Number(result?.published);
       alert(
         Number.isFinite(published)
           ? `✅ Successfully published ${published} result(s) to students!`
           : '✅ Publish request completed.'
       );
-      setSelectedSubmissions([]);
+      clearSubmissionSelection();
       fetchAllData();
     } catch (err) {
       alert('❌ Failed to publish results.');
@@ -225,21 +411,330 @@ export default function TeacherDashboard() {
     }
   };
 
-  // ── Plagiarism check ─────────────────────────────────────
+  // ── Turnitin-ready plagiarism ─────────────────────────────
+  const plagiarismAssignments = (plagiarismAssignmentsList.length
+    ? plagiarismAssignmentsList
+    : assignments
+  ).filter((asgn) => normalizeAssignmentId(asgn._id));
+
+  const plagiarismSubmissionsForAssignment = filterSubmissionsForAssignment(
+    plagiarismSubmissionsList.length ? plagiarismSubmissionsList : submissions,
+    plagiarismAssignmentId
+  );
+
+  const formatPlagiarismDate = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const similarityStatusLabel = (status) => {
+    switch (status) {
+      case 'provider_not_connected':
+        return 'Provider Not Connected';
+      case 'queued':
+        return 'Queued';
+      case 'processing':
+        return 'Processing';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed';
+      default:
+        return status ? String(status).replace(/_/g, ' ') : 'Unknown';
+    }
+  };
+
+  const similarityStatusClass = (status) => {
+    switch (status) {
+      case 'provider_not_connected':
+        return 'bg-amber-500/15 text-amber-300 border border-amber-500/30';
+      case 'queued':
+        return 'bg-slate-500/15 text-slate-300 border border-slate-500/30';
+      case 'processing':
+        return 'bg-sky-500/15 text-sky-300 border border-sky-500/30';
+      case 'completed':
+        return 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+      case 'failed':
+        return 'bg-red-500/15 text-red-300 border border-red-500/30';
+      default:
+        return 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
+    }
+  };
+
+  const describePlagiarismApiError = (err, fallback) => {
+    const status = err?.response?.status;
+    if (!err?.response) {
+      return describeNetworkOrApiError(err, fallback);
+    }
+    const apiMessage = err?.response?.data?.message || err?.response?.data?.code;
+    if (status === 404) {
+      return (
+        apiMessage ||
+        'Plagiarism API routes were not found on this backend (404). Restart the local API with APP_RUNTIME_MODE=full after the latest plagiarism routes are loaded, or deploy the backend update. This is not a Turnitin score.'
+      );
+    }
+    return apiMessage || err?.message || fallback;
+  };
+
+  /**
+   * Dedicated plagiarism workspace load — same teacher APIs as Dashboard,
+   * but does NOT swallow Network Errors into an empty "no assignments" state.
+   */
+  const loadPlagiarismWorkspace = async () => {
+    setPlagiarismDataLoading(true);
+    setPlagiarismDataError('');
+    try {
+      const [aData, subData] = await Promise.all([
+        teacherService.getMyAssignments(),
+        teacherService.getRecentSubmissions(),
+      ]);
+      const safeAssignments = Array.isArray(aData) ? aData : [];
+      const safeSubmissions = Array.isArray(subData) ? subData : [];
+      setPlagiarismAssignmentsList(safeAssignments);
+      setPlagiarismSubmissionsList(safeSubmissions);
+      // Keep dashboard lists in sync when plagiarism refresh succeeds.
+      setAssignments(safeAssignments);
+      setSubmissions(safeSubmissions);
+    } catch (err) {
+      const message = describePlagiarismApiError(
+        err,
+        'Unable to load teacher assignments and submissions.'
+      );
+      setPlagiarismDataError(message);
+      // Do not clear existing lists on transient refresh failure if we already have data.
+      if (!plagiarismAssignmentsList.length && !assignments.length) {
+        setPlagiarismAssignmentsList([]);
+        setPlagiarismSubmissionsList([]);
+      }
+    } finally {
+      setPlagiarismDataLoading(false);
+    }
+  };
+
+  const loadSimilarityHub = async ({ preserveError = false } = {}) => {
+    setSimilarityLoading(true);
+    if (!preserveError) setSimilarityError('');
+    try {
+      const [providerResult, checksResult] = await Promise.all([
+        teacherService.getPlagiarismProviderStatus().then(
+          (data) => ({ ok: true, data }),
+          (err) => ({ ok: false, err })
+        ),
+        teacherService.listSimilarityChecks().then(
+          (data) => ({ ok: true, data }),
+          (err) => ({ ok: false, err })
+        ),
+      ]);
+
+      if (providerResult.ok) {
+        setPlagiarismProvider(providerResult.data);
+      } else {
+        const status = providerResult.err?.response?.status;
+        const networkDown = !providerResult.err?.response;
+        setPlagiarismProvider({
+          connected: false,
+          status: status === 404 ? 'api_unavailable' : 'provider_not_connected',
+          apiUnavailable: status === 404 || networkDown,
+          message: describePlagiarismApiError(
+            providerResult.err,
+            'Unable to read plagiarism provider status.'
+          ),
+        });
+        // Network / unexpected errors: one clear banner. Skip duplicate for 404/503 provider cases.
+        if (!networkDown && status !== 404 && status !== 503 && !preserveError) {
+          setSimilarityError(
+            describePlagiarismApiError(
+              providerResult.err,
+              'Unable to read plagiarism provider status.'
+            )
+          );
+        } else if (networkDown && !preserveError) {
+          // Provider strip already shows Network Error — avoid a second identical red banner.
+        }
+      }
+
+      if (checksResult.ok) {
+        setSimilarityChecks(
+          Array.isArray(checksResult.data?.checks) ? checksResult.data.checks : []
+        );
+        if (checksResult.data?.provider && providerResult.ok) {
+          setPlagiarismProvider(checksResult.data.provider);
+        }
+      } else {
+        setSimilarityChecks([]);
+        const status = checksResult.err?.response?.status;
+        const networkDown = !checksResult.err?.response;
+        if (!networkDown && status !== 404 && !preserveError) {
+          setSimilarityError(
+            describePlagiarismApiError(
+              checksResult.err,
+              'Unable to load plagiarism check history.'
+            )
+          );
+        }
+      }
+    } catch (err) {
+      if (!preserveError) {
+        setSimilarityError(
+          describePlagiarismApiError(err, 'Unable to load Plagiarism hub.')
+        );
+      }
+      setSimilarityChecks([]);
+    } finally {
+      setSimilarityLoading(false);
+    }
+  };
+
+  const openPlagiarismTab = () => {
+    setShellView('main');
+    setActiveTab('plagiarism');
+    loadPlagiarismWorkspace();
+    loadSimilarityHub();
+  };
+
+  const togglePlagiarismSubmission = (id) => {
+    setPlagiarismSelectedIds((prev) => toggleSubmissionSelection(prev, id));
+  };
+
+  const handlePlagiarismSelectAll = () => {
+    const ids = selectAllSubmissionIds(plagiarismSubmissionsForAssignment);
+    const allSelected =
+      ids.length > 0 && ids.every((id) => plagiarismSelectedIds.map(String).includes(String(id)));
+    setPlagiarismSelectedIds(allSelected ? [] : ids);
+  };
+
+  const handlePlagiarismClearSelection = () => {
+    setPlagiarismSelectedIds([]);
+  };
+
+  const handlePlagiarismAssignmentChange = (assignmentId) => {
+    const next = clearSelectionOnAssignmentChange(assignmentId);
+    setPlagiarismAssignmentId(next.assignmentId);
+    setPlagiarismSelectedIds(next.selectedIds);
+    setSimilarityError('');
+  };
+
   const handlePlagiarismCheck = async () => {
-    if (selectedSubmissions.length === 0) {
-      alert('Select at least one submission first.');
+    if (!plagiarismAssignmentId) {
+      alert('Select one assignment, then choose student submissions to check.');
+      return;
+    }
+    const submissionIds = plagiarismSelectedIds;
+    if (!submissionIds.length) {
+      alert(
+        'Select at least one student submission for the chosen assignment before Check Plagiarism.'
+      );
+      return;
+    }
+    // Guard: never send IDs outside the active assignment filter.
+    const allowed = new Set(
+      plagiarismSubmissionsForAssignment.map((sub) => String(sub._id))
+    );
+    const scopedIds = submissionIds.filter((id) => allowed.has(String(id)));
+    if (scopedIds.length !== submissionIds.length) {
+      setSimilarityError(
+        'Selection included submissions from another assignment. Selection was reset — please reselect.'
+      );
+      setPlagiarismSelectedIds([]);
+      return;
+    }
+    let pendingError = '';
+    try {
+      setCheckingPlagiarism(true);
+      setSimilarityError('');
+      const result = await teacherService.createSimilarityChecks({
+        submissionIds: scopedIds,
+        assignmentId: plagiarismAssignmentId,
+        mode: plagiarismMode,
+      });
+      const checks = Array.isArray(result?.checks) ? result.checks : [];
+      if (result?.provider) setPlagiarismProvider(result.provider);
+      if (checks.length) {
+        setSimilarityChecks((prev) => {
+          const byId = new Map(checks.map((row) => [String(row._id), row]));
+          const rest = (prev || []).filter((row) => !byId.has(String(row._id)));
+          return [...checks, ...rest];
+        });
+      }
+      if (result?.code === 'PROVIDER_NOT_CONNECTED') {
+        pendingError = '';
+        if (result?.provider) setPlagiarismProvider(result.provider);
+        else {
+          setPlagiarismProvider((prev) => ({
+            ...(prev || {}),
+            connected: false,
+            status: 'provider_not_connected',
+            message:
+              result?.message ||
+              'Turnitin is not configured. No similarity percentage was generated.',
+          }));
+        }
+      } else if (result?.httpStatus === 404) {
+        pendingError = describePlagiarismApiError(
+          { response: { status: 404, data: result } },
+          'Plagiarism check endpoint was not found (404).'
+        );
+      } else if (result?.thrown && result?.code !== 'PROVIDER_NOT_CONNECTED') {
+        pendingError = result?.message || 'Plagiarism check failed.';
+      }
+      await loadSimilarityHub({ preserveError: true });
+      if (pendingError) setSimilarityError(pendingError);
+    } catch (err) {
+      setSimilarityError(
+        describePlagiarismApiError(err, 'Plagiarism check failed.')
+      );
+    } finally {
+      setCheckingPlagiarism(false);
+    }
+  };
+
+  const handleOpenProviderReport = async (check) => {
+    if (!check?.reportAvailable || check.status !== 'completed') {
+      alert('No provider report is available for this check yet.');
       return;
     }
     try {
-      setCheckingPlagiarism(true);
-      const { data } = await api.post('/plagiarism/check', { submissionIds: selectedSubmissions });
-      setPlagiarismResults(Array.isArray(data?.results) ? data.results : []);
-      setActiveTab('plagiarism');
+      const result = await teacherService.getSimilarityReport(check._id);
+      if (result?.thrown || !result?.success) {
+        alert(result?.message || 'Provider report is not available.');
+        return;
+      }
+      const openUrl = result?.report?.openUrl || result?.report?.downloadUrl;
+      if (openUrl) {
+        window.open(openUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      alert(
+        'Report metadata is available from the provider, but no open/download URL was returned yet. Official Turnitin report links will appear here once API wiring is complete.'
+      );
     } catch (err) {
-      alert('❌ Plagiarism check failed: ' + (err.response?.data?.message || err.message));
-    } finally {
-      setCheckingPlagiarism(false);
+      alert(err.response?.data?.message || err.message || 'Unable to open provider report.');
+    }
+  };
+
+  const handleRefreshSimilarityCheck = async (checkId) => {
+    try {
+      const result = await teacherService.refreshSimilarityCheck(checkId);
+      if (result?.check) {
+        setSimilarityChecks((prev) =>
+          prev.map((row) => (String(row._id) === String(checkId) ? result.check : row))
+        );
+      }
+      if (result?.thrown || result?.code === 'PROVIDER_NOT_CONNECTED') {
+        setSimilarityError(
+          result?.message || 'Turnitin provider is not connected.'
+        );
+      }
+    } catch (err) {
+      setSimilarityError(err.response?.data?.message || err.message || 'Refresh failed.');
     }
   };
 
@@ -274,20 +769,41 @@ export default function TeacherDashboard() {
     }
   };
 
-  const handleSaveEvaluation = async (publish = false) => {
+  const handleSaveEvaluation = async () => {
+    if (savingEval) return;
     if (manualScore === '' || manualScore === null || manualScore === undefined) {
       alert('Please enter Teacher Marks. AI Marks remain separate and will not be copied into this field.');
       return;
     }
+    const maxMarks = Number(selectedReview?.totalMarks || selectedReview?.assignment?.points);
+    const marksNum = Number(manualScore);
+    if (!Number.isFinite(marksNum) || marksNum < 0) {
+      alert('Teacher Marks must be a valid non-negative number.');
+      return;
+    }
+    if (Number.isFinite(maxMarks) && marksNum > maxMarks) {
+      alert(`Teacher Marks cannot exceed the maximum of ${maxMarks}.`);
+      return;
+    }
     try {
       setSavingEval(true);
-      await teacherService.updateFinalGrade(selectedReview._id, {
-        marks:    manualScore,
+      const response = await teacherService.updateFinalGrade(selectedReview._id, {
+        marks:    marksNum,
         feedback: teacherNote,
-        status:   publish ? 'PUBLISHED' : 'graded',
+        status:   'graded',
       });
-      alert(publish ? '✅ Published!' : '✅ Saved!');
-      setReviewModalOpen(false);
+      const saved = response?.data || response;
+      // Keep Review Evaluation open after Save Teacher Grade so publish actions remain available.
+      setSelectedReview((prev) => (prev ? {
+        ...prev,
+        ...(saved && typeof saved === 'object' ? saved : {}),
+        marks: marksNum,
+        feedback: teacherNote,
+        status: prev.status === 'PUBLISHED' ? 'PUBLISHED' : 'graded',
+      } : prev));
+      setManualScore(String(marksNum));
+      setTeacherNote(teacherNote);
+      alert('✅ Teacher grade saved.');
       fetchAllData();
     } catch (err) {
       console.error('Save Evaluation Error:', err?.response?.data || err.message);
@@ -297,18 +813,45 @@ export default function TeacherDashboard() {
     }
   };
 
+  const applyPublishStateToReview = (result) => {
+    const detail = Array.isArray(result?.details)
+      ? result.details.find((row) => String(row.id) === String(selectedReview?._id))
+      : null;
+    const components = detail?.components || [];
+    setSelectedReview((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, status: 'PUBLISHED' };
+      if (result?.scope === 'ai' || components.includes('AI Result')) {
+        next.aiPublished = true;
+      }
+      if (components.includes('Teacher Marks')) next.teacherMarksPublished = true;
+      if (components.includes('Teacher Feedback')) next.teacherFeedbackPublished = true;
+      return next;
+    });
+    return components;
+  };
+
   const handlePublishAiResult = async () => {
+    if (savingEval) return;
     if (selectedReview?.aiScore == null || !Number.isFinite(Number(selectedReview.aiScore))) {
-      alert('No AI marks available to publish. Run AI grading first, or enter Teacher Marks.');
+      alert('No AI marks available to publish. Run AI grading first.');
       return;
     }
     try {
       setSavingEval(true);
       const result = await teacherService.publishBulkResults({
         submissionIds: [selectedReview._id],
+        scope: 'ai',
       });
-      alert(`✅ Published ${Number(result?.published) || 1} AI result(s) to the student.`);
-      setReviewModalOpen(false);
+      const components = applyPublishStateToReview(result);
+      if (Number(result?.published) > 0) {
+        alert('✅ AI Result published to the student (AI Marks + AI Feedback only).');
+      } else {
+        alert(components.length || selectedReview.aiPublished
+          ? 'AI Result was already published.'
+          : (result?.details?.[0]?.reason || 'Nothing new to publish.'));
+      }
+      // Keep modal open for further Teacher publication actions.
       fetchAllData();
     } catch (err) {
       alert('❌ Failed to publish AI result: ' + (err?.response?.data?.message || err.message));
@@ -317,18 +860,94 @@ export default function TeacherDashboard() {
     }
   };
 
+  const handlePublishAvailableResults = async () => {
+    if (savingEval) return;
+    const maxMarks = Number(selectedReview?.totalMarks || selectedReview?.assignment?.points);
+    const marksRaw = manualScore;
+    const hasMarksInput = marksRaw !== '' && marksRaw !== null && marksRaw !== undefined;
+    const marksNum = Number(marksRaw);
+    const hasValidMarks = hasMarksInput && Number.isFinite(marksNum) && marksNum >= 0 &&
+      (!Number.isFinite(maxMarks) || marksNum <= maxMarks);
+    const feedbackText = String(teacherNote || '');
+    const hasFeedback = feedbackText.trim().length > 0;
+    const hasAi = selectedReview?.aiScore != null && Number.isFinite(Number(selectedReview.aiScore));
+
+    if (hasMarksInput && !hasValidMarks) {
+      alert(
+        Number.isFinite(maxMarks) && marksNum > maxMarks
+          ? `Teacher Marks cannot exceed the maximum of ${maxMarks}.`
+          : 'Teacher Marks must be a valid non-negative number.'
+      );
+      return;
+    }
+
+    if (!hasAi && !hasValidMarks && !hasFeedback &&
+        !(selectedReview?.marks != null && Number.isFinite(Number(selectedReview.marks))) &&
+        !String(selectedReview?.feedback || '').trim()) {
+      alert('Nothing to publish. Run AI grading or enter Teacher Marks/Feedback first.');
+      return;
+    }
+
+    try {
+      setSavingEval(true);
+      // Persist optional Teacher fields first without publishing.
+      if (hasValidMarks || hasFeedback) {
+        const payload = { status: 'graded', feedback: feedbackText };
+        if (hasValidMarks) payload.marks = marksNum;
+        const response = await teacherService.updateFinalGrade(selectedReview._id, payload);
+        const saved = response?.data || response;
+        setSelectedReview((prev) => (prev ? {
+          ...prev,
+          ...(saved && typeof saved === 'object' ? saved : {}),
+          marks: hasValidMarks ? marksNum : prev.marks,
+          feedback: feedbackText,
+        } : prev));
+        if (hasValidMarks) setManualScore(String(marksNum));
+      }
+
+      const result = await teacherService.publishBulkResults({
+        submissionIds: [selectedReview._id],
+        scope: 'full',
+      });
+      const components = applyPublishStateToReview(result);
+      if (Number(result?.published) > 0) {
+        alert(`✅ Published to student: ${components.join(', ') || 'available results'}.`);
+      } else {
+        alert(result?.details?.[0]?.reason || 'All available results were already published.');
+      }
+      // Keep modal open unless Teacher closes manually.
+      fetchAllData();
+    } catch (err) {
+      alert('❌ Failed to publish: ' + (err?.response?.data?.message || err.message));
+    } finally {
+      setSavingEval(false);
+    }
+  };
+
   // ── File handlers ─────────────────────────────────────────
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  const handleFileChange = async (e) => {
+    const selected = e.target.files;
+    const multipleError = referenceFileSelectionError(selected);
+    if (multipleError) {
+      alert(multipleError);
+      e.target.value = null;
+      setFormErrors((prev) => ({ ...prev, file: multipleError }));
+      return;
+    }
+    const file = selected?.[0];
     if (!file) return;
-    const allowed = [
-      'pdf','doc','docx','txt','md','rtf','csv','tsv','json','xml','yaml','yml','xlsx','xls','ods','pptx','ppt','odp','zip','rar','7z','tar','gz',
-      'py','ipynb','js','jsx','ts','tsx','cpp','c','h','hpp','java','php','cs','swift','go','rs','kt','kts','sql','html','htm','css','scss','sass','less','vue','svelte','sh','bat','ps1','rb','r','m','mm','dart','lua','pl',
-      'jpg','jpeg','png','gif','webp','bmp','svg','heic','heif','tif','tiff','mp4','mkv','webm','mov','avi','wmv','mpeg','mpg','m4v','mp3','wav','ogg','aac','flac','m4a'
-    ];
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (!allowed.includes(ext)) { alert('❌ File extension not allowed!'); e.target.value = null; return; }
+    try {
+      assertAcademicFile(file);
+      const head = new Uint8Array(await file.slice(0, 512).arrayBuffer());
+      const content = validateAcademicContent(file.name, head);
+      if (!content.ok) throw new Error(content.message);
+    } catch (err) {
+      alert(err.message || 'File not allowed.');
+      e.target.value = null;
+      return;
+    }
     setForm({ ...form, file });
+    setFormErrors((prev) => ({ ...prev, file: undefined }));
   };
 
   const handleMultimediaChange = (e) => {
@@ -339,11 +958,282 @@ export default function TeacherDashboard() {
 
   const handleStatusToggle = async (id, currentStatus) => {
     try {
+      // Preserve legacy Active/Deactive for non-archived rows only.
+      if (currentStatus === 'archived') return;
       const newStatus = currentStatus === 'active' ? 'deactive' : 'active';
       await teacherService.updateAssignmentStatus(id, { status: newStatus });
       fetchAllData();
     } catch { alert('❌ Failed to change status.'); }
   };
+
+  const applyArchivedIdsLocally = (archivedIds) => {
+    const idSet = new Set((archivedIds || []).map(normalizeAssignmentId).filter(Boolean));
+    if (!idSet.size) return;
+    setAssignments((prev) =>
+      prev.map((asgn) =>
+        idSet.has(normalizeAssignmentId(asgn._id))
+          ? { ...asgn, status: 'archived' }
+          : asgn
+      )
+    );
+  };
+
+  const applyUnarchivedIdsLocally = (unarchivedIds) => {
+    const idSet = new Set((unarchivedIds || []).map(normalizeAssignmentId).filter(Boolean));
+    if (!idSet.size) return;
+    setAssignments((prev) =>
+      prev.map((asgn) =>
+        idSet.has(normalizeAssignmentId(asgn._id))
+          ? { ...asgn, status: 'active' }
+          : asgn
+      )
+    );
+  };
+
+  const closeConfirm = () => {
+    if (confirmBusy) return;
+    setConfirmState(null);
+  };
+
+  const runConfirm = async () => {
+    if (!confirmState?.onConfirm) return;
+    if (!archiveActionLock.current.tryBegin()) return;
+    setConfirmBusy(true);
+    try {
+      await confirmState.onConfirm();
+      setConfirmState(null);
+    } finally {
+      setConfirmBusy(false);
+      archiveActionLock.current.end();
+    }
+  };
+
+  const handleArchiveAssignment = (id) => {
+    const assignmentId = normalizeAssignmentId(id);
+    const asgn = assignments.find((item) => normalizeAssignmentId(item._id) === assignmentId);
+    if (!asgn || asgn.status === 'archived') return;
+    setConfirmState({
+      title: 'Archive assignment?',
+      description:
+        'This assignment will move out of Active and will no longer be available to students for new access or submissions. Existing files, submissions, marks and feedback are kept.',
+      detail: asgn?.title || 'Selected assignment',
+      confirmLabel: 'Archive',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const updated = await teacherService.updateAssignmentStatus(assignmentId, { status: 'archived' });
+          if (String(updated?.status || '').toLowerCase() !== 'archived') {
+            throw new Error('Server did not archive this assignment.');
+          }
+          setAssignmentShelf(shelfAfterArchive());
+          setSelectedAssignments((prev) =>
+            prev.filter((value) => normalizeAssignmentId(value) !== assignmentId)
+          );
+          applyArchivedIdsLocally([assignmentId]);
+          await fetchAllData({ silent: true });
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not archive assignment.');
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleUnarchiveAssignment = (id) => {
+    const assignmentId = normalizeAssignmentId(id);
+    const asgn = assignments.find((item) => normalizeAssignmentId(item._id) === assignmentId);
+    if (!asgn || asgn.status !== 'archived') return;
+    setConfirmState({
+      title: 'Unarchive assignment?',
+      description:
+        'This assignment will return to Active with its original title, attachments, dates, marks and submissions preserved. Start and due dates are not changed. If the due date has already passed, students still cannot submit.',
+      detail: asgn?.title || 'Selected assignment',
+      confirmLabel: 'Unarchive',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const beforeStart = asgn.startDate;
+          const beforeDeadline = asgn.deadline;
+          const updated = await teacherService.updateAssignmentStatus(assignmentId, { status: 'active' });
+          if (String(updated?.status || '').toLowerCase() !== 'active') {
+            throw new Error('Server did not unarchive this assignment.');
+          }
+          // Dates must remain unchanged after unarchive.
+          if (
+            beforeStart && updated?.startDate &&
+            new Date(beforeStart).getTime() !== new Date(updated.startDate).getTime()
+          ) {
+            throw new Error('Unarchive unexpectedly changed the start date.');
+          }
+          if (
+            beforeDeadline && updated?.deadline &&
+            new Date(beforeDeadline).getTime() !== new Date(updated.deadline).getTime()
+          ) {
+            throw new Error('Unarchive unexpectedly changed the due date.');
+          }
+          setAssignmentShelf(shelfAfterUnarchive());
+          setSelectedAssignments([]);
+          applyUnarchivedIdsLocally([assignmentId]);
+          await fetchAllData({ silent: true });
+        } catch (error) {
+          const message =
+            error.response?.data?.message ||
+            error.message ||
+            'Could not unarchive assignment.';
+          // Rule 2 / other errors: stay on Archived, no success toast, lists refreshed.
+          alert(message);
+          await fetchAllData({ silent: true });
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleArchiveSelectedAssignments = () => {
+    const selectedActiveIds = selectedAssignments
+      .map(normalizeAssignmentId)
+      .filter(Boolean)
+      .filter((id) => {
+        const row = assignments.find((asgn) => normalizeAssignmentId(asgn._id) === id);
+        return row && row.status !== 'archived';
+      });
+    if (!selectedActiveIds.length) {
+      alert('Select at least one active assignment to archive.');
+      return;
+    }
+    setConfirmState({
+      title: 'Archive selected assignments?',
+      description: `Archive ${selectedActiveIds.length} selected assignment(s)? They will leave Active and become unavailable to students for new submissions. Files, submissions and grades are kept.`,
+      confirmLabel: 'Archive selected',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const result = await teacherService.archiveAssignmentsBulk(selectedActiveIds);
+          applyArchivedIdsLocally(result?.archivedIds || selectedActiveIds);
+          setSelectedAssignments([]);
+          setAssignmentShelf(shelfAfterArchive());
+          await fetchAllData({ silent: true });
+          if (result?.failed?.length) {
+            alert(result.message || `Archived ${result.archived || 0}. ${result.failed.length} could not be archived.`);
+          }
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not archive selected assignments.');
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleUnarchiveSelectedAssignments = () => {
+    const selectedArchivedIds = selectedAssignments
+      .map(normalizeAssignmentId)
+      .filter(Boolean)
+      .filter((id) => {
+        const row = assignments.find((asgn) => normalizeAssignmentId(asgn._id) === id);
+        return row && row.status === 'archived';
+      });
+    if (!selectedArchivedIds.length) {
+      alert('Select at least one archived assignment to unarchive.');
+      return;
+    }
+    setConfirmState({
+      title: 'Unarchive selected assignments?',
+      description: `Return ${selectedArchivedIds.length} selected assignment(s) to Active? Original dates stay the same. Past due dates do not reopen submissions.`,
+      confirmLabel: 'Unarchive selected',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const result = await teacherService.unarchiveAssignmentsBulk(selectedArchivedIds);
+          const restoredIds = Array.isArray(result?.unarchivedIds) ? result.unarchivedIds : [];
+          applyUnarchivedIdsLocally(restoredIds);
+          setSelectedAssignments([]);
+          if (restoredIds.length > 0) {
+            setAssignmentShelf(shelfAfterUnarchive());
+          }
+          await fetchAllData({ silent: true });
+          if (result?.failed?.length) {
+            const titleConflict = (result.failed || []).find((f) => f.reason === 'title conflict');
+            alert(
+              titleConflict?.message ||
+                result.message ||
+                `Unarchived ${result.unarchived || 0}. ${result.failed.length} could not be unarchived.`
+            );
+          }
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not unarchive selected assignments.');
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleArchiveAllAssignments = () => {
+    const activeOwned = assignments.filter((asgn) => asgn.status !== 'archived');
+    if (!activeOwned.length) {
+      alert('No active assignments to archive.');
+      return;
+    }
+    setConfirmState({
+      title: 'Archive all active assignments?',
+      description: `Archive all ${activeOwned.length} active assignment(s)? Students will lose new access/submissions. Files, submissions and grades are kept.`,
+      confirmLabel: 'Archive all',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const result = await teacherService.archiveAllAssignments();
+          applyArchivedIdsLocally(result?.archivedIds || activeOwned.map((a) => a._id));
+          setSelectedAssignments([]);
+          setAssignmentShelf(shelfAfterArchive());
+          await fetchAllData({ silent: true });
+          if (result?.failed?.length) {
+            alert(result.message || `Archived ${result.archived || 0}. Some items could not be archived.`);
+          }
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not archive all assignments.');
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleUnarchiveAllAssignments = () => {
+    const archivedOwned = assignments.filter((asgn) => asgn.status === 'archived');
+    if (!archivedOwned.length) {
+      alert('No archived assignments to unarchive.');
+      return;
+    }
+    setConfirmState({
+      title: 'Unarchive all archived assignments?',
+      description: `Return all ${archivedOwned.length} archived assignment(s) to Active? Original start and due dates are preserved. Past due dates do not reopen submissions.`,
+      confirmLabel: 'Unarchive all',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const result = await teacherService.unarchiveAllAssignments();
+          const restoredIds = Array.isArray(result?.unarchivedIds) ? result.unarchivedIds : [];
+          applyUnarchivedIdsLocally(restoredIds);
+          setSelectedAssignments([]);
+          if (restoredIds.length > 0) {
+            setAssignmentShelf(shelfAfterUnarchive());
+          }
+          await fetchAllData({ silent: true });
+          if (result?.failed?.length) {
+            const titleConflict = (result.failed || []).find((f) => f.reason === 'title conflict');
+            alert(
+              titleConflict?.message ||
+                result.message ||
+                `Unarchived ${result.unarchived || 0}. Some items could not be unarchived.`
+            );
+          }
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not unarchive all assignments.');
+          throw error;
+        }
+      },
+    });
+  };
+
+  const visibleAssignments = filterAssignmentsByShelf(assignments, assignmentShelf);
 
   const describeDeleteError = (error) => {
     const status = error?.response?.status;
@@ -362,75 +1252,170 @@ export default function TeacherDashboard() {
     return error.response?.data?.message || error.message || 'Failed to delete.';
   };
 
-  const handleDeleteAssignment = async (id) => {
-    if (!window.confirm('Delete this assignment?')) return;
-    try {
-      await teacherService.deleteAssignment(normalizeAssignmentId(id));
-      setSelectedAssignments((prev) =>
-        prev.filter((value) => normalizeAssignmentId(value) !== normalizeAssignmentId(id))
-      );
-      fetchAllData();
-    } catch (error) {
-      alert(describeDeleteError(error));
+  const handleDeleteAssignment = (id) => {
+    const assignmentId = normalizeAssignmentId(id);
+    const asgn = assignments.find((item) => normalizeAssignmentId(item._id) === assignmentId);
+    setConfirmState({
+      title: 'Delete assignment?',
+      description: 'This permanently removes the assignment. This action cannot be undone.',
+      detail: asgn?.title || 'Selected assignment',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await teacherService.deleteAssignment(assignmentId);
+          setSelectedAssignments((prev) =>
+            prev.filter((value) => normalizeAssignmentId(value) !== assignmentId)
+          );
+          await fetchAllData();
+        } catch (error) {
+          alert(describeDeleteError(error));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleDeleteSelectedAssignments = () => {
+    if (!selectedAssignments.length) return;
+    setConfirmState({
+      title: 'Delete selected assignments?',
+      description: `Permanently delete ${selectedAssignments.length} selected assignment(s)? This cannot be undone.`,
+      confirmLabel: 'Delete selected',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          const ids = selectedAssignments.map(normalizeAssignmentId).filter(Boolean);
+          await teacherService.deleteAssignmentsBulk(ids);
+          setSelectedAssignments([]);
+          await fetchAllData();
+        } catch (error) {
+          alert(describeDeleteError(error));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const handleDeleteAllVisibleAssignments = () => {
+    const ids = visibleAssignments.map((asgn) => normalizeAssignmentId(asgn._id)).filter(Boolean);
+    if (!ids.length) {
+      alert(assignmentShelf === 'archived' ? 'No archived assignments to delete.' : 'No active assignments to delete.');
+      return;
     }
+    setConfirmState({
+      title: 'Delete all assignments on this shelf?',
+      description: `Permanently delete all ${ids.length} ${assignmentShelf} assignment(s)? This cannot be undone.`,
+      confirmLabel: 'Delete all',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await teacherService.deleteAssignmentsBulk(ids);
+          setSelectedAssignments([]);
+          await fetchAllData();
+        } catch (error) {
+          alert(describeDeleteError(error));
+          throw error;
+        }
+      },
+    });
   };
 
-  const handleDeleteSelectedAssignments = async () => {
-    if (!selectedAssignments.length || !window.confirm(`Delete ${selectedAssignments.length} selected assignments?`)) return;
-    try {
-      const ids = selectedAssignments.map(normalizeAssignmentId).filter(Boolean);
-      await teacherService.deleteAssignmentsBulk(ids);
-      setSelectedAssignments([]);
-      fetchAllData();
-    } catch (error) {
-      alert(describeDeleteError(error));
-    }
+  const handleResetSubmissionGrade = (id) => {
+    setConfirmState({
+      title: 'Reset this grade?',
+      description: 'Clear marks, feedback, and grading status so this submission can be graded again. The uploaded file is kept.',
+      confirmLabel: 'Reset grade',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          await teacherService.resetSubmissionGrade(id);
+          setReviewModalOpen(false);
+          await fetchAllData();
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not reset grading.');
+          throw error;
+        }
+      },
+    });
   };
 
-  const handleResetSubmissionGrade = async (id) => {
-    if (!window.confirm('Reset marks, feedback and grading status for this existing submission so it can be graded again?')) return;
-    try {
-      await teacherService.resetSubmissionGrade(id);
-      setReviewModalOpen(false);
-      await fetchAllData();
-    } catch (error) {
-      alert(error.response?.data?.message || error.message || 'Could not reset grading.');
-    }
+  const handleDeleteSubmission = (id) => {
+    setConfirmState({
+      title: 'Delete submission?',
+      description: 'Permanently delete this student submission? This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await teacherService.deleteSubmission(id);
+          setSelectedSubmissions((prev) => prev.filter((x) => x !== id));
+          await fetchAllData();
+        } catch (error) {
+          alert(error.response?.data?.message || 'Failed to delete submission.');
+          throw error;
+        }
+      },
+    });
   };
 
-  const handleDeleteSubmission = async (id) => {
-    if (!window.confirm('Delete this submission?')) return;
-    try { await teacherService.deleteSubmission(id); setSelectedSubmissions((prev) => prev.filter((x) => x !== id)); fetchAllData(); }
-    catch { alert('❌ Failed to delete submission.'); }
-  };
-
-  const handleResetSelectedGrades = async () => {
+  const handleResetSelectedGrades = () => {
     if (!selectedSubmissions.length) return;
-    if (!window.confirm(`Reset grades for ${selectedSubmissions.length} selected submission(s)? Files and submissions will be kept.`)) return;
-    try {
-      await teacherService.resetSubmissionGradesBulk(selectedSubmissions);
-      setSelectedReview(null);
-      setReviewModalOpen(false);
-      setSelectedSubmissions([]);
-      await fetchAllData();
-      alert('Selected grades have been reset.');
-    } catch (error) {
-      alert(error.response?.data?.message || error.message || 'Could not reset selected grades.');
-    }
+    setConfirmState({
+      title: 'Reset All Grades?',
+      description: `Reset grades for ${selectedSubmissions.length} selected submission(s)? AI scores, teacher marks and feedback will be cleared. Submitted files are kept. This does not delete submissions.`,
+      confirmLabel: 'Reset All Grades',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          await teacherService.resetSubmissionGradesBulk(selectedSubmissions);
+          setSelectedReview(null);
+          setReviewModalOpen(false);
+          clearSubmissionSelection();
+          await fetchAllData();
+        } catch (error) {
+          alert(error.response?.data?.message || error.message || 'Could not reset selected grades.');
+          throw error;
+        }
+      },
+    });
   };
 
-  const handleDeleteSelectedSubmissions = async () => {
-    if (!selectedSubmissions.length || !window.confirm(`Delete ${selectedSubmissions.length} selected submissions?`)) return;
-    try { await teacherService.deleteSubmissionsBulk(selectedSubmissions); setSelectedSubmissions([]); fetchAllData(); }
-    catch { alert('❌ Failed to delete selected submissions.'); }
+  const handleDeleteSelectedSubmissions = () => {
+    if (!selectedSubmissions.length) return;
+    setConfirmState({
+      title: 'Delete Selected submissions?',
+      description: `Permanently delete ${selectedSubmissions.length} selected submission(s)? This cannot be undone. Grades are removed with the submission — this is not a grade reset.`,
+      confirmLabel: 'Delete Selected',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await teacherService.deleteSubmissionsBulk(selectedSubmissions);
+          clearSubmissionSelection();
+          await fetchAllData();
+        } catch (error) {
+          alert(error.response?.data?.message || 'Failed to delete selected submissions.');
+          throw error;
+        }
+      },
+    });
   };
 
   const handleEditSetup = (asgn) => {
     setEditingId(asgn._id);
+    setFormErrors({});
+    const startLocal = asgn.startDate ? utcIsoToKarachiDatetimeLocal(asgn.startDate) : '';
+    const deadlineLocal = asgn.deadline ? utcIsoToKarachiDatetimeLocal(asgn.deadline) : '';
+    setEditingBaseline({
+      startDate: asgn.startDate || null,
+      deadline: asgn.deadline || null,
+      startDateLocal: startLocal,
+      deadlineLocal,
+    });
     setForm({
       title:       asgn.title,
-      startDate:   asgn.startDate ? asgn.startDate.slice(0, 16) : '',
-      deadline:    asgn.deadline  ? asgn.deadline.slice(0, 16)  : '',
+      startDate:   startLocal,
+      deadline:    deadlineLocal,
       description: asgn.description || '',
       points: asgn.points ?? '',
       file: null,
@@ -440,35 +1425,150 @@ export default function TeacherDashboard() {
     setActiveTab('create');
   };
 
+  const handleCancelCreate = () => {
+    if (savingAssignment || assignmentSubmitLock.current.pending) return;
+    setForm({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
+    setFormErrors({});
+    setEditingBaseline(null);
+    setEditingId(null);
+    setActiveTab('assignments');
+  };
+
   const handleCreateOrUpdate = async (e) => {
     e.preventDefault();
-    if (!form.title || !String(form.description || '').trim() || !form.startDate || !form.deadline || !form.points || Number(form.points) <= 0) {
-      return alert('Title, academic instructions, Start Date, Deadline, and Total Marks are mandatory.');
+    if (savingAssignment || !assignmentSubmitLock.current.tryBegin()) return;
+
+    // Keep original UTC ISO when the teacher did not change datetime-local fields
+    // so edit-save does not shift timezone via slice(0,16) round-trip.
+    const startUnchanged =
+      Boolean(editingId) &&
+      form.startDate === editingBaseline?.startDateLocal;
+    const deadlineUnchanged =
+      Boolean(editingId) &&
+      form.deadline === editingBaseline?.deadlineLocal;
+    const startIso = startUnchanged
+      ? editingBaseline.startDate
+      : datetimeLocalToIso(form.startDate);
+    const deadlineIso = deadlineUnchanged
+      ? editingBaseline.deadline
+      : datetimeLocalToIso(form.deadline);
+    const validationOptions = editingId
+      ? {
+          mode: 'update',
+          existing: {
+            startDate: editingBaseline?.startDate || null,
+            deadline: editingBaseline?.deadline || null,
+          },
+        }
+      : { mode: 'create' };
+
+    // Early UX check (fresh Date.now — not form-open time). Backend remains authoritative.
+    const validatedEarly = validateAssignmentFormFields(
+      {
+        ...form,
+        startDate: startIso || form.startDate,
+        deadline: deadlineIso || form.deadline,
+      },
+      validationOptions
+    );
+    if (!validatedEarly.ok) {
+      assignmentSubmitLock.current.end();
+      setFormErrors(validatedEarly.errors || {});
+      return;
     }
-    if (new Date(form.deadline) < new Date(form.startDate)) {
-      return alert('Deadline must be on or after the start date.');
+
+    // Create requires a newly selected reference file; update may keep existingFileName.
+    const hasReferenceFile = Boolean(form.file) || Boolean(editingId && form.existingFileName);
+    if (!editingId && !form.file) {
+      assignmentSubmitLock.current.end();
+      setFormErrors((prev) => ({
+        ...prev,
+        file: 'Upload a reference file.',
+      }));
+      return;
     }
+    if (editingId && !hasReferenceFile) {
+      assignmentSubmitLock.current.end();
+      setFormErrors((prev) => ({
+        ...prev,
+        file: 'Upload a reference file.',
+      }));
+      return;
+    }
+
+    setFormErrors({});
+    setSavingAssignment(true);
     try {
       const formData = new FormData();
-      formData.append('title',       form.title);
-      formData.append('startDate',   new Date(form.startDate).toISOString());
-      formData.append('deadline',    new Date(form.deadline).toISOString());
-      formData.append('description', form.description || '');
-      formData.append('points', String(form.points));
-      if (form.file) formData.append('file', form.file);
+      formData.append('title', validatedEarly.values.title);
+      formData.append('description', validatedEarly.values.description);
+      formData.append('points', String(validatedEarly.values.points));
+      formData.append('startDate', startIso);
+      formData.append('deadline', deadlineIso);
+
+      // Create: sign the selected schedule BEFORE the slow R2 upload.
+      // The token stops date tampering. The server still re-checks that the
+      // start and due instants are strictly in the future when the assignment is saved.
+      if (!editingId) {
+        const intent = await teacherService.createScheduleIntent({
+          startDate: startIso,
+          deadline: deadlineIso,
+        });
+        if (!intent?.scheduleIntentToken) {
+          throw new Error('Unable to save assignment. Please try again.');
+        }
+        formData.append('scheduleIntentToken', intent.scheduleIntentToken);
+      }
+
+      // Durable assignment files go direct-to-R2 (presigned) so local + Vercel
+      // share the same private bucket and bypass serverless body limits.
+      if (form.file) {
+        const durable = await uploadDurableFile(form.file, 'assignments');
+        appendDurableFields(formData, durable);
+      }
 
       if (editingId) {
         await teacherService.updateAssignment(editingId, formData);
-        alert('✅ Updated!');
+        alert('Assignment updated successfully.');
       } else {
         await teacherService.createAssignment(formData);
-        alert('✅ Uploaded!');
+        alert(assignmentCreatedMessage(startIso));
       }
       setForm({ title: '', startDate: '', deadline: '', description: '', points: '', file: null, existingFileName: '', existingFileId: '' });
+      setFormErrors({});
+      setEditingBaseline(null);
       setEditingId(null);
       setActiveTab('assignments');
       fetchAllData();
-    } catch { alert('❌ Operation failed.'); }
+    } catch (err) {
+      const status = err?.response?.status;
+      const code = err?.response?.data?.code;
+      const apiErrors = err?.response?.data?.errors;
+      if (status === 409 || code === 'ASSIGNMENT_DUPLICATE') {
+        const duplicateMessage = 'Assignment already exists.';
+        setFormErrors((prev) => ({
+          ...prev,
+          ...(apiErrors && typeof apiErrors === 'object' ? apiErrors : null),
+          title: duplicateMessage,
+        }));
+        // Keep form values and selected/uploaded file on expected duplicate conflict.
+        alert(duplicateMessage);
+        return;
+      }
+      if (apiErrors && typeof apiErrors === 'object') {
+        setFormErrors(apiErrors);
+      }
+      const apiMessage = err?.response?.data?.message;
+      const validationMessage =
+        status >= 400 && status < 500 && typeof apiMessage === 'string' && apiMessage
+          ? apiMessage
+          : '';
+      // Keep form + file on schedule/validation failures from the authoritative backend.
+      alert(validationMessage || 'Unable to save assignment. Please try again.');
+    } finally {
+      assignmentSubmitLock.current.end();
+      setSavingAssignment(false);
+    }
   };
 
   const chartData = [
@@ -497,6 +1597,10 @@ export default function TeacherDashboard() {
   };
 
   const openMainTab = (tab) => {
+    if (tab === 'plagiarism') {
+      openPlagiarismTab();
+      return;
+    }
     setShellView('main');
     setActiveTab(tab);
     if (tab !== 'create') setEditingId(null);
@@ -507,7 +1611,7 @@ export default function TeacherDashboard() {
       : activeTab === 'create' ? (editingId ? 'Edit Assignment' : 'Create Assignment')
       : activeTab === 'assignments' ? 'My Assignments'
       : activeTab === 'submissions' ? 'Submissions'
-      : activeTab === 'plagiarism' ? 'Similarity'
+      : activeTab === 'plagiarism' ? 'Plagiarism'
       : 'Students';
 
   const pageTitle =
@@ -517,6 +1621,7 @@ export default function TeacherDashboard() {
 
   // ─── Render ────────────────────────────────────────────────
   return (
+    <>
     <DashboardNavShell
       widthClass="w-64"
       desktopMode="flow"
@@ -539,12 +1644,12 @@ export default function TeacherDashboard() {
               <span className="qc-sidebar-brand__role">Teacher</span>
             </div>
           </div>
-          <nav className="space-y-1" aria-label="Teacher navigation">
+          <nav className="qc-sidebar-nav space-y-1" aria-label="Teacher navigation">
             <DashboardNavItem icon={<Layout size={18}/>} label="Overview" active={shellView === 'main' && activeTab==='dashboard'} onClick={() => openMainTab('dashboard')} />
             <DashboardNavItem icon={<PlusCircle size={18}/>} label={editingId ? 'Edit Assignment' : 'Create Assignment'} active={shellView === 'main' && activeTab==='create'} onClick={() => { setShellView('main'); setActiveTab('create'); }} />
             <DashboardNavItem icon={<BookOpen size={18}/>} label="My Assignments" active={shellView === 'main' && activeTab==='assignments'} onClick={() => openMainTab('assignments')} />
             <DashboardNavItem icon={<ClipboardCheck size={18}/>} label="Submissions" active={shellView === 'main' && activeTab==='submissions'} onClick={() => openMainTab('submissions')} />
-            <DashboardNavItem icon={<ShieldAlert size={18}/>} label="Similarity" active={shellView === 'main' && activeTab==='plagiarism'} onClick={() => openMainTab('plagiarism')} />
+            <DashboardNavItem icon={<ShieldAlert size={18}/>} label="Plagiarism" active={shellView === 'main' && activeTab==='plagiarism'} onClick={() => openMainTab('plagiarism')} />
             <DashboardNavItem icon={<Users size={18}/>} label="Students" active={shellView === 'main' && activeTab==='students'} onClick={() => openMainTab('students')} />
           </nav>
           <SidebarControls />
@@ -558,23 +1663,23 @@ export default function TeacherDashboard() {
         ) : (
         <>
         {activeTab === 'dashboard' && (
-          <div>
+          <div className="qc-overview">
             <div className="qc-page-header">
               <div>
                 <h2 className="qc-page-title">Teacher Dashboard</h2>
                 <p className="qc-page-subtitle">Live analytics and classroom performance.</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="qc-overview__stats grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard label="Total Assignments" value={stats.totalCreated} icon={<BookOpen size={16}/>}/>
               <StatCard label="Total Students" value={stats.totalStudents} icon={<Users size={16}/>}/>
               <StatCard label="Pending Graded" value={stats.pendingCount} icon={<Clock size={16}/>}/>
               <StatCard label="Successful Graded" value={stats.completedCount} icon={<CheckCircle size={16}/>}/>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
-              <div className="lg:col-span-2 qc-card">
-                <h3 className="font-semibold mb-5 flex items-center gap-2"><TrendingUp className="accent-text" size={18}/> Activity Insights</h3>
-                <div style={{ width:'100%', height:300 }}>
+            <div className="qc-overview__charts qc-overview__charts--split">
+              <div className="lg:col-span-1 qc-card qc-overview__panel">
+                <h3 className="font-semibold mb-2 flex items-center gap-2"><TrendingUp className="accent-text" size={18}/> Activity Insights</h3>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -587,9 +1692,9 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              <div className="qc-card flex flex-col items-center justify-center">
+              <div className="qc-card qc-overview__panel items-center">
                 <h3 className="font-semibold mb-1">Grading Progress</h3>
-                <p className="theme-muted text-xs mb-4">Click a slice for details</p>
+                <p className="theme-muted text-xs mb-2 shrink-0">Click a slice for details</p>
 
                 {activePieIndex !== null && (
                   <div className={`mb-4 px-6 py-3 rounded-2xl border text-center ${activePieIndex === 0 ? 'accent-soft' : 'accent-soft'}`}>
@@ -598,12 +1703,12 @@ export default function TeacherDashboard() {
                   </div>
                 )}
 
-                <div style={{ width:'100%', minWidth:0, height:220, minHeight:220 }}>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={pieData}
-                        innerRadius={55} outerRadius={75} paddingAngle={8} dataKey="value"
+                        innerRadius="46%" outerRadius="68%" paddingAngle={6} dataKey="value"
                         onClick={(_, index) => setActivePieIndex(activePieIndex === index ? null : index)}
                         style={{ cursor: 'pointer' }}
                       >
@@ -614,7 +1719,7 @@ export default function TeacherDashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex gap-4 mt-4">
+                <div className="flex gap-4 mt-2 shrink-0">
                   <LegendItem color="bg-slate-500"   label="Pending"/>
                   <LegendItem color="bg-emerald-500" label="Graded"/>
                 </div>
@@ -625,362 +1730,1257 @@ export default function TeacherDashboard() {
 
         {/* ══ CREATE TAB ══ */}
         {activeTab === 'create' && (
-          <div className="max-w-3xl">
+          <div className="qc-create-form">
             <div className="qc-page-header">
               <div>
                 <h2 className="qc-page-title">{editingId ? 'Update Assignment' : 'New Assignment'}</h2>
                 <p className="qc-page-subtitle">Define the task, deadline, and supporting materials.</p>
               </div>
             </div>
-            <form onSubmit={handleCreateOrUpdate} className="qc-card space-y-5 sm:space-y-6">
-              <div>
-                <label className="qc-label">Assignment Title</label>
-                <input type="text" className="qc-input" value={form.title} onChange={e => setForm({...form, title:e.target.value})} placeholder="e.g. System Design Analysis"/>
+            <form onSubmit={handleCreateOrUpdate} className="qc-card qc-create-form__body">
+              <div className="qc-create-form__field">
+                <label className="qc-label">Assignment Title <span className="text-red-400" aria-hidden="true">*</span></label>
+                <input type="text" className="qc-input" value={form.title} onChange={e => { setForm({...form, title:e.target.value}); setFormErrors((prev) => ({ ...prev, title: undefined })); }} placeholder="e.g. System Design Analysis" maxLength={100} aria-required="true" aria-invalid={Boolean(formErrors.title)}/>
+                {formErrors.title ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.title}</p> : null}
               </div>
-              <div>
-                <label className="qc-label">Total Marks</label>
-                <input type="number" min="1" className="qc-input" value={form.points} onChange={e => setForm({...form, points:e.target.value})} placeholder="e.g. 30" />
-                <p className="text-[9px] text-slate-500 mt-2">Students will see their score as obtained / this total only after grading.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <label className="qc-label">Start Date</label>
-                  <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => setForm({...form, startDate:e.target.value})}/>
+
+              <div className="qc-create-form__meta">
+                <div className="qc-create-form__field">
+                  <label className="qc-label">Total Marks <span className="text-red-400" aria-hidden="true">*</span></label>
+                  <input type="number" min="1" max="100" step="1" className="qc-input" value={form.points} onChange={e => { setForm({...form, points:e.target.value}); setFormErrors((prev) => ({ ...prev, points: undefined })); }} placeholder="e.g. 30" aria-required="true" aria-invalid={Boolean(formErrors.points)}/>
+                  {formErrors.points ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.points}</p> : null}
                 </div>
-                <div>
-                  <label className="qc-label">Deadline Date</label>
-                  <input type="datetime-local" className="qc-input" value={form.deadline} onChange={e => setForm({...form, deadline:e.target.value})}/>
-                </div>
-              </div>
-              <div>
-                <label className="qc-label">Description</label>
-                <textarea className="qc-input !h-36 resize-none" value={form.description} onChange={e => setForm({...form, description:e.target.value})} placeholder="Instructions..."/>
-              </div>
-              <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 sm:p-10 text-center cursor-pointer hover:bg-sky-500/5 transition-all" onClick={() => fileInputRef.current.click()}>
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange}/>
-                {form.file ? (
-                  <div className="flex items-center justify-center gap-3 text-sky-400 font-bold text-sm">
-                    <CheckCircle size={24}/> {form.file.name}
-                    <X className="text-slate-500 hover:text-white" onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
-                  </div>
-                ) : form.existingFileName ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <CheckCircle size={28} className="accent-text"/>
-                    <p className="font-bold text-sm">Current file: {form.existingFileName}</p>
-                    <div className="flex gap-3 text-[10px] font-black uppercase">
-                      <button type="button" className="accent-text" onClick={async (e) => { e.stopPropagation(); try { await openProtectedPreview(teacherService.previewAssignment(form.existingFileId), form.existingFileName); } catch (err) { alert(err.message); } }}>Preview current</button>
-                      <span className="theme-muted">Click this box to replace it</span>
+                <div className="qc-create-form__field">
+                  <label className="qc-label">Start date and time <span className="text-red-400" aria-hidden="true">*</span></label>
+                  <input type="datetime-local" className="qc-input" value={form.startDate} onChange={e => { setForm({...form, startDate:e.target.value}); setFormErrors((prev) => ({ ...prev, startDate: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.startDate)}/>
+                  {formErrors.startDate ? (
+                    <div className="mt-1.5 space-y-1.5">
+                      <p className="text-red-400 text-[11px] font-semibold" role="alert">{formErrors.startDate}</p>
+                      <button
+                        type="button"
+                        className="text-[10px] font-black uppercase tracking-widest accent-text hover:underline"
+                        onClick={() => {
+                          setForm((prev) => ({
+                            ...prev,
+                            startDate: suggestStartDatetimeLocal(Date.now(), 5 * 60 * 1000),
+                          }));
+                          setFormErrors((prev) => ({ ...prev, startDate: undefined }));
+                        }}
+                      >
+                        Set start to 5 minutes from now
+                      </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <FileUp size={32} className="text-slate-600"/>
-                    <p className="text-white font-bold text-sm">Upload Reference File</p>
-                  </div>
-                )}
+                  ) : null}
+                </div>
+                <div className="qc-create-form__field">
+                  <label className="qc-label">Due date and time <span className="text-red-400" aria-hidden="true">*</span></label>
+                  <input type="datetime-local" className="qc-input" value={form.deadline} onChange={e => { setForm({...form, deadline:e.target.value}); setFormErrors((prev) => ({ ...prev, deadline: undefined })); }} aria-required="true" aria-invalid={Boolean(formErrors.deadline)}/>
+                  {formErrors.deadline ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.deadline}</p> : null}
+                </div>
               </div>
-              <button type="submit" className="qc-btn qc-btn-primary qc-btn-block !py-3.5">
-                {editingId ? 'Update Assignment' : 'Upload Assignment'}
-              </button>
+              <p className="qc-create-form__hint">Whole marks from 1 to 100. Dates and times use Asia/Karachi.</p>
+
+              <div className="qc-create-form__field">
+                <label className="qc-label">Reference File <span className="text-red-400" aria-hidden="true">*</span></label>
+                <div className={`qc-create-form__file ${formErrors.file ? 'is-invalid' : ''}`} onClick={() => fileInputRef.current.click()} role="button" tabIndex={0} aria-invalid={Boolean(formErrors.file)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}>
+                  <input type="file" ref={fileInputRef} className="hidden" accept={ACADEMIC_ACCEPT} onChange={handleFileChange}/>
+                  {form.file ? (
+                    <div className="qc-create-form__file-row">
+                      <CheckCircle size={18} className="accent-text shrink-0"/>
+                      <span className="qc-create-form__file-name">{form.file.name}</span>
+                      <X className="text-slate-500 hover:text-white shrink-0" size={16} onClick={e => { e.stopPropagation(); setForm({...form, file:null}); }}/>
+                    </div>
+                  ) : form.existingFileName ? (
+                    <div className="qc-create-form__file-stack">
+                      <div className="qc-create-form__file-row">
+                        <CheckCircle size={18} className="accent-text shrink-0"/>
+                        <span className="qc-create-form__file-name">Current file: {form.existingFileName}</span>
+                      </div>
+                      <div className="qc-create-form__file-actions">
+                        <button type="button" className="accent-text" onClick={async (e) => { e.stopPropagation(); try { await openProtectedPreview(teacherService.previewAssignment(form.existingFileId), form.existingFileName, { downloadUrl: teacherService.downloadAssignment(form.existingFileId) }); } catch (err) { alert(err.message); } }}>Preview current</button>
+                        <span className="theme-muted">Click this box to replace it</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="qc-create-form__file-row">
+                      <FileUp size={16} className="text-slate-500 shrink-0" aria-hidden="true"/>
+                      <span className="qc-create-form__file-title">Upload Reference File</span>
+                      <span className="qc-create-form__file-hint">Required for new assignments</span>
+                    </div>
+                  )}
+                </div>
+                {formErrors.file ? <p className="text-red-400 text-[11px] mt-1.5 font-semibold" role="alert">{formErrors.file}</p> : null}
+              </div>
+
+              <div className="qc-create-form__actions">
+                <button type="button" className="qc-btn qc-btn-secondary" onClick={handleCancelCreate} disabled={savingAssignment}>
+                  Cancel
+                </button>
+                <button type="submit" className="qc-btn qc-btn-primary" disabled={savingAssignment} aria-busy={savingAssignment}>
+                  {savingAssignment ? (editingId ? 'Updating…' : 'Uploading…') : (editingId ? 'Update Assignment' : 'Upload Assignment')}
+                </button>
+              </div>
             </form>
           </div>
         )}
 
         {/* ══ ASSIGNMENTS TAB ══ */}
         {activeTab === 'assignments' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
-              <h1 className="qc-page-title">My Assignments</h1>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-[10px] font-black uppercase theme-muted flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={
-                      assignments.length > 0 &&
-                      assignments.every((a) => isAssignmentSelected(selectedAssignments, a._id))
-                    }
-                    onChange={(e) =>
-                      setSelectedAssignments(
-                        e.target.checked
-                          ? assignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
-                          : []
-                      )
-                    }
-                  />
-                  Select all
-                </label>
-                {selectedAssignments.length > 0 && <button type="button" onClick={handleDeleteSelectedAssignments} className="bg-red-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase"><Trash2 size={13} className="inline mr-1"/> Delete selected</button>}
+          <div className="qc-assignment-workspace animate-in fade-in duration-500">
+            <div className="qc-assignment-workspace__header">
+              <div className="qc-assignment-workspace__heading">
+                <div className="qc-assignment-workspace__title-row">
+                  <FileText size={22} className="qc-assignment-workspace__title-icon" aria-hidden="true" />
+                  <h1 className="qc-page-title">Assignment Workspace</h1>
+                </div>
+                <p className="qc-page-subtitle">Manage your assignments</p>
+              </div>
+              <div className="qc-list-toolbar">
+                <OverflowMenu
+                  label="Manage assignments"
+                  buttonLabel="Manage"
+                  items={[
+                    assignmentShelf === 'active'
+                      ? {
+                          id: 'archive-all-assignments',
+                          label: 'Archive All Active',
+                          icon: <Archive size={14} />,
+                          disabled: !assignments.some((a) => a.status !== 'archived'),
+                          onSelect: handleArchiveAllAssignments,
+                        }
+                      : {
+                          id: 'unarchive-all-assignments',
+                          label: 'Restore All Archived',
+                          icon: <RotateCcw size={14} />,
+                          disabled: !assignments.some((a) => a.status === 'archived'),
+                          onSelect: handleUnarchiveAllAssignments,
+                        },
+                    {
+                      id: 'delete-all-assignments',
+                      label: 'Delete All',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      disabled: !visibleAssignments.length,
+                      onSelect: handleDeleteAllVisibleAssignments,
+                    },
+                  ]}
+                />
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-4">
-              {assignments.map((asgn) => {
-                const isOverdue = new Date(asgn.deadline) < new Date();
-                const displayStatus = isOverdue ? 'deactive' : (asgn.status || 'active');
+
+            <div className="qc-assignment-summary" aria-label="Assignment summary">
+              <div className="qc-assignment-summary__card">
+                <div className="qc-assignment-summary__icon" aria-hidden="true">
+                  <Layers size={16} />
+                </div>
+                <div>
+                  <p className="qc-assignment-summary__label">Total Assignments</p>
+                  <p className="qc-assignment-summary__value">{assignments.length}</p>
+                </div>
+              </div>
+              <div className="qc-assignment-summary__card">
+                <div className="qc-assignment-summary__icon" aria-hidden="true">
+                  <Folder size={16} />
+                </div>
+                <div>
+                  <p className="qc-assignment-summary__label">Active Assignments</p>
+                  <p className="qc-assignment-summary__value">
+                    {assignments.filter((a) => a.status !== 'archived').length}
+                  </p>
+                </div>
+              </div>
+              <div className="qc-assignment-summary__card">
+                <div className="qc-assignment-summary__icon" aria-hidden="true">
+                  <Archive size={16} />
+                </div>
+                <div>
+                  <p className="qc-assignment-summary__label">Archived Assignments</p>
+                  <p className="qc-assignment-summary__value">
+                    {assignments.filter((a) => a.status === 'archived').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="qc-segmented mb-4" role="tablist" aria-label="Assignment shelf">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={assignmentShelf === 'active'}
+                className={`qc-segmented__item ${assignmentShelf === 'active' ? 'is-active' : ''}`}
+                onClick={() => {
+                  setAssignmentShelf('active');
+                  setSelectedAssignments([]);
+                  setManageAssignments(false);
+                }}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={assignmentShelf === 'archived'}
+                className={`qc-segmented__item ${assignmentShelf === 'archived' ? 'is-active' : ''}`}
+                onClick={() => {
+                  setAssignmentShelf('archived');
+                  setSelectedAssignments([]);
+                  setManageAssignments(false);
+                }}
+              >
+                Archived
+              </button>
+            </div>
+
+            {manageAssignments && (() => {
+              const allVisibleSelected =
+                visibleAssignments.length > 0 &&
+                visibleAssignments.every((a) => isAssignmentSelected(selectedAssignments, a._id));
+              const hasSelection = selectedAssignments.length > 0;
+              const archiveLabel = allVisibleSelected ? 'Archive All' : 'Archive Selected';
+              const restoreLabel = allVisibleSelected ? 'Restore All' : 'Restore Selected';
+              const deleteLabel = allVisibleSelected ? 'Delete All' : 'Delete Selected';
+              return (
+              <div className="qc-selection-bar mb-4" role="status" aria-live="polite">
+                <div className="qc-selection-bar__left">
+                  <span className="qc-selection-bar__count">
+                    {selectedAssignments.length} selected
+                  </span>
+                  <label className="qc-selection-bar__select-all">
+                    <input
+                      type="checkbox"
+                      className="qc-check"
+                      checked={allVisibleSelected}
+                      onChange={(e) =>
+                        setSelectedAssignments(
+                          e.target.checked
+                            ? visibleAssignments.map((a) => normalizeAssignmentId(a._id)).filter(Boolean)
+                            : []
+                        )
+                      }
+                    />
+                    Select All
+                  </label>
+                </div>
+                <div className="qc-selection-bar__actions">
+                  {hasSelection && assignmentShelf === 'active' && (
+                    <button
+                      type="button"
+                      onClick={
+                        allVisibleSelected
+                          ? handleArchiveAllAssignments
+                          : handleArchiveSelectedAssignments
+                      }
+                      disabled={confirmBusy}
+                      className="qc-chat-toolbar-btn"
+                    >
+                      <Archive size={13} aria-hidden="true" /> {archiveLabel}
+                    </button>
+                  )}
+                  {hasSelection && assignmentShelf === 'archived' && (
+                    <button
+                      type="button"
+                      onClick={
+                        allVisibleSelected
+                          ? handleUnarchiveAllAssignments
+                          : handleUnarchiveSelectedAssignments
+                      }
+                      disabled={confirmBusy}
+                      className="qc-chat-toolbar-btn"
+                    >
+                      <RotateCcw size={13} aria-hidden="true" /> {restoreLabel}
+                    </button>
+                  )}
+                  {hasSelection && (
+                    <button
+                      type="button"
+                      onClick={
+                        allVisibleSelected
+                          ? handleDeleteAllVisibleAssignments
+                          : handleDeleteSelectedAssignments
+                      }
+                      disabled={confirmBusy}
+                      className="qc-chat-toolbar-btn danger"
+                    >
+                      <Trash2 size={13} aria-hidden="true" /> {deleteLabel}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="qc-selection-exit"
+                    title="Exit selection"
+                    aria-label="Exit selection mode"
+                    onClick={() => {
+                      setManageAssignments(false);
+                      setSelectedAssignments([]);
+                    }}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              );
+            })()}
+
+            <div className="qc-assignment-list">
+              {visibleAssignments.map((asgn) => {
+                const isArchived = asgn.status === 'archived';
+                const isOverdue = !isArchived && new Date(asgn.deadline) < new Date();
+                const isInactive = !isArchived && (asgn.status === 'deactive' || isOverdue);
                 const assignmentId = normalizeAssignmentId(asgn._id);
+                const statusLabel = isArchived ? 'ARCHIVED' : (isInactive ? 'INACTIVE' : 'ACTIVE');
+                const statusClass = isArchived ? 'archived' : (isInactive ? 'inactive' : 'active');
+                const overflowItems = isArchived
+                  ? [{
+                      id: `edit-assignment-${assignmentId}`,
+                      label: 'Edit',
+                      icon: <Edit3 size={14} />,
+                      onSelect: () => handleEditSetup(asgn),
+                    }, {
+                      id: `unarchive-assignment-${assignmentId}`,
+                      label: 'Unarchive',
+                      icon: <RotateCcw size={14} />,
+                      onSelect: () => handleUnarchiveAssignment(asgn._id),
+                    }, {
+                      id: `delete-assignment-${assignmentId}`,
+                      label: 'Delete',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => handleDeleteAssignment(asgn._id),
+                    }]
+                  : [{
+                      id: `edit-assignment-${assignmentId}`,
+                      label: 'Edit',
+                      icon: <Edit3 size={14} />,
+                      onSelect: () => handleEditSetup(asgn),
+                    }, {
+                      id: `archive-assignment-${assignmentId}`,
+                      label: 'Archive',
+                      icon: <Archive size={14} />,
+                      onSelect: () => handleArchiveAssignment(asgn._id),
+                    }, {
+                      id: `delete-assignment-${assignmentId}`,
+                      label: 'Delete',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => handleDeleteAssignment(asgn._id),
+                    }];
+                const selected = isAssignmentSelected(selectedAssignments, assignmentId);
                 return (
-                  // ✅ FIX: key uses _id instead of index
-                  <div key={assignmentId || asgn._id} className="qc-card flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center hover:border-sky-500/30 transition-all">
-                    <div className="flex items-start sm:items-center gap-4 flex-1 min-w-0">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select assignment ${asgn.title || assignmentId}`}
-                        checked={isAssignmentSelected(selectedAssignments, assignmentId)}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={() =>
-                          setSelectedAssignments((prev) =>
-                            toggleAssignmentSelection(prev, assignmentId)
-                          )
-                        }
-                      />
-                      <div className="flex-1 min-w-0">
-                      <h3 className="text-white font-bold text-base sm:text-lg break-words">{asgn.title}</h3>
-                      <div className="flex flex-col gap-1 mt-2">
-                        <p className="text-slate-500 text-[10px] uppercase tracking-widest font-black flex items-center gap-1">
-                          <Clock size={12}/> Created: {new Date(asgn.createdAt).toLocaleString()}
-                        </p>
-                        <p className={`text-[10px] uppercase tracking-widest font-black flex items-center gap-1 ${isOverdue ? 'text-red-400' : 'text-slate-500'}`}>
-                          <Clock size={12}/> Deadline: {new Date(asgn.deadline).toLocaleString()}
-                        </p>
+                  <article
+                    key={assignmentId || asgn._id}
+                    className={`qc-card qc-assignment-card ${selected ? 'is-selected' : ''} ${manageAssignments ? 'is-selecting' : ''}`}
+                    onDoubleClick={(event) => {
+                      if (event.target?.closest?.('button, a, input, label, .qc-file-link, .qc-view-file-btn, .qc-overflow-menu')) return;
+                      event.preventDefault();
+                      if (!manageAssignments) setManageAssignments(true);
+                      setSelectedAssignments((prev) => {
+                        if (isAssignmentSelected(prev, assignmentId)) return prev;
+                        return toggleAssignmentSelection(prev, assignmentId);
+                      });
+                    }}
+                  >
+                    <div className="qc-assignment-card__main">
+                      {manageAssignments && (
+                        <input
+                          type="checkbox"
+                          className="qc-check"
+                          aria-label={`Select assignment ${asgn.title || assignmentId}`}
+                          checked={selected}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() =>
+                            setSelectedAssignments((prev) =>
+                              toggleAssignmentSelection(prev, assignmentId)
+                            )
+                          }
+                        />
+                      )}
+                      <div className="qc-assignment-card__doc-icon" aria-hidden="true">
+                        <FileText size={16} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="qc-assignment-card__title">{asgn.title}</h3>
+                        <div className="qc-assignment-card__meta">
+                          <p className="qc-assignment-card__meta-item">
+                            <CalendarDays size={12} aria-hidden="true"/> Start: {asgn.startDate ? new Date(asgn.startDate).toLocaleString() : '—'}
+                          </p>
+                          <p className={`qc-assignment-card__meta-item ${isOverdue ? 'is-danger' : ''}`}>
+                            <Clock size={12} aria-hidden="true"/> Due: {asgn.deadline ? new Date(asgn.deadline).toLocaleString() : '—'}
+                          </p>
+                        </div>
                       </div>
                     </div>
+                    <div className="qc-assignment-card__aside" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                      {asgn.file ? (
+                        <button
+                          type="button"
+                          className="qc-view-file-btn"
+                          title="View File"
+                          aria-label={`View file for ${asgn.title || 'assignment'}`}
+                          onClick={async (event) => {
+                            event.stopPropagation();
+                            try {
+                              await openProtectedPreview(
+                                teacherService.previewAssignment(asgn._id),
+                                asgn.originalFileName || 'assignment',
+                                { downloadUrl: teacherService.downloadAssignment(asgn._id) }
+                              );
+                            } catch (e) {
+                              alert(e.message);
+                            }
+                          }}
+                        >
+                          <Eye size={14} aria-hidden="true" />
+                          View File
+                        </button>
+                      ) : null}
+                      <span className={`qc-status-badge is-${statusClass}`}>
+                        <span className="qc-status-badge__dot" aria-hidden="true" />
+                        {statusLabel}
+                      </span>
+                      <OverflowMenu
+                        label={`More actions for ${asgn.title || 'assignment'}`}
+                        items={overflowItems}
+                      />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
-                      {asgn.file && <button type="button" onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(asgn._id), asgn.originalFileName || 'assignment');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Open inside browser"><Eye size={18}/></button>}
-                      {asgn.file && <button type="button" onClick={async()=>{try{await downloadProtectedFile(teacherService.downloadAssignment(asgn._id),asgn.originalFileName||"assignment");}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-sky-400" title="Download original reference file"><Download size={18}/></button>}
-                      <button type="button" onClick={() => handleEditSetup(asgn)} className="p-2 text-slate-400 hover:text-sky-400"><Edit3 size={18}/></button>
-                      <button type="button" onClick={() => handleDeleteAssignment(asgn._id)} className="p-2 text-slate-400 hover:text-red-400"><Trash2 size={18}/></button>
-                      <button type="button" onClick={() => handleStatusToggle(asgn._id, displayStatus)} className={`px-4 sm:px-6 py-2 rounded-lg text-[10px] font-black uppercase border tracking-widest transition-all ${displayStatus==='deactive' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-sky-500/10 text-sky-500 border-sky-500/20 hover:bg-sky-500 hover:text-white'} ${isOverdue ? 'cursor-not-allowed opacity-70' : ''}`}>
-                        {displayStatus === 'deactive' ? 'Deactive' : 'Active'}
-                      </button>
-                    </div>
-                  </div>
+                  </article>
                 );
               })}
-              {assignments.length === 0 && <NoDataMessage icon={<BookOpen size={40}/>} message="No assignments found."/>}
+              {visibleAssignments.length === 0 && (
+                <NoDataMessage
+                  icon={<BookOpen size={40}/>}
+                  message={assignmentShelf === 'archived' ? 'No archived assignments.' : 'No active assignments found.'}
+                />
+              )}
             </div>
           </div>
         )}
 
         {/* ══ SUBMISSIONS TAB ══ */}
         {activeTab === 'submissions' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col gap-6 mb-8">
-              <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4">
-                <div>
+          <div className="qc-submissions-page">
+            <header className="qc-submissions-header">
+              <div className="qc-submissions-header__copy">
+                <div className="qc-submissions-header__title-row">
+                  <ClipboardCheck size={22} className="qc-submissions-header__icon" aria-hidden="true" />
                   <h1 className="qc-page-title">Submissions</h1>
-                  <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">
-                    Selected: <span className={selectedSubmissions.length >= 40 ? 'text-red-500' : 'text-sky-500'}>{selectedSubmissions.length}</span> / 40
-                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2 sm:gap-3">
-                  {selectedSubmissions.length > 0 && (
-                    <>
-                      <button type="button" onClick={handleAiEvaluation} disabled={aiLoading} className="bg-sky-500 hover:bg-sky-400 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-sky-500/20">
-                        {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
-                        AI Evaluate
-                      </button>
-                      <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism} className="bg-sky-500 hover:bg-sky-400 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all">
-                        {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>}
-                        Check Plagiarism
-                      </button>
-                      <button type="button" onClick={handlePublishBulk} disabled={isPublishing} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20">
-                        {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
-                        Publish Marks
-                      </button>
-                      <button type="button" onClick={handleResetSelectedGrades} className="bg-slate-600 hover:bg-slate-500 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><RotateCcw size={14}/> Reset grades</button>
-                      <button type="button" onClick={handleDeleteSelectedSubmissions} className="bg-red-500 hover:bg-red-400 text-white px-4 sm:px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2"><Trash2 size={14}/> Delete selected</button>
-                    </>
-                  )}
+                <p className="qc-page-subtitle">
+                  Review, evaluate, and publish student submissions.
+                </p>
+              </div>
+              <div className="qc-submissions-toolbar">
+                <button
+                  type="button"
+                  onClick={handleAiEvaluation}
+                  disabled={aiLoading}
+                  className="qc-btn qc-btn-primary"
+                >
+                  {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
+                  AI Evaluate
+                </button>
+                <button
+                  type="button"
+                  onClick={openPlagiarismTab}
+                  className="qc-btn qc-btn-primary"
+                >
+                  <ShieldAlert size={14}/>
+                  Check Plagiarism
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePublishBulk}
+                  disabled={isPublishing}
+                  className="qc-btn qc-btn-primary"
+                >
+                  {isPublishing ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>}
+                  Publish Marks
+                </button>
+              </div>
+            </header>
+
+            {selectSubmissionsMode && (
+              <div className="qc-selection-bar" role="status" aria-live="polite">
+                <div className="qc-selection-bar__left">
+                  <label className="qc-selection-bar__select-all">
+                    <input
+                      type="checkbox"
+                      className="qc-check"
+                      aria-label="Select all filtered submissions"
+                      checked={
+                        filteredSubmissions.slice(0, 40).length > 0 &&
+                        selectedSubmissions.length === filteredSubmissions.slice(0, 40).length
+                      }
+                      onChange={(e) => handleSelectAllSubmissions(e.target.checked)}
+                    />
+                    Select All
+                  </label>
+                  <span className="qc-selection-bar__count">
+                    <span className={selectedSubmissions.length >= 40 ? 'text-red-500' : 'accent-text'}>
+                      {selectedSubmissions.length}
+                    </span>
+                    {' '}selected
+                  </span>
+                </div>
+                <div className="qc-selection-bar__actions">
+                  <button
+                    type="button"
+                    className="qc-btn qc-btn-secondary"
+                    onClick={handleResetSelectedGrades}
+                    disabled={!selectedSubmissions.length}
+                  >
+                    <RotateCcw size={14} aria-hidden="true" /> Reset All Grades
+                  </button>
+                  <button
+                    type="button"
+                    className="qc-btn qc-btn-danger"
+                    onClick={handleDeleteSelectedSubmissions}
+                    disabled={!selectedSubmissions.length}
+                  >
+                    <Trash2 size={14} aria-hidden="true" /> Delete Selected
+                  </button>
+                  <button type="button" className="qc-btn qc-btn-ghost" onClick={clearSubmissionSelection}>
+                    Clear
+                  </button>
                 </div>
               </div>
+            )}
 
-              {/* Grading Instructions */}
-              <div className="qc-card flex flex-col gap-4">
-                <div className="flex items-center gap-2 text-sky-400 font-black text-[10px] uppercase tracking-widest">
-                  <MessageSquare size={14}/> Grading Instructions for AI
+            <section className="qc-submissions-ai-panel" aria-label="AI grading controls">
+              <div className="qc-submissions-ai-panel__instructions">
+                <div className="qc-submissions-ai-panel__label">
+                  <MessageSquare size={14} aria-hidden="true" /> Grading Instructions for AI
                 </div>
                 <textarea
                   value={aiInstructions}
-                  onChange={e => setAiInstructions(e.target.value)}
-                  className="w-full theme-input border rounded-xl p-4 text-sm h-20 resize-none outline-none"
+                  onChange={(e) => setAiInstructions(e.target.value)}
+                  className="qc-submissions-ai-panel__textarea theme-input"
                   placeholder="Example: Evaluate out of 30 marks. Check correctness, completeness and clarity."
                 />
-                {/* Reference file attach */}
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 pt-2 border-t border-slate-800">
-                  <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest shrink-0">
-                    <FileUp size={14}/> Attach Reference File (Optional)
-                  </div>
-                  <div
-                    className="flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg theme-page border border-slate-700 hover:border-sky-500/50 transition-all min-w-0"
-                    onClick={() => multimediaInputRef.current.click()}
-                  >
-                    <input type="file" ref={multimediaInputRef} className="hidden" accept="*/*" multiple onChange={handleMultimediaChange}/>
-                    {multimediaFiles.length ? (
-                      <div className="flex items-center gap-2 text-sky-400 text-[10px] font-bold min-w-0">
-                        <CheckCircle size={12}/>
-                        <span className="max-w-[min(220px,50vw)] truncate">{multimediaFiles.length} file(s) selected</span>
-                        <X size={12} className="text-slate-500 hover:text-white shrink-0" onClick={e => { e.stopPropagation(); setMultimediaFiles([]); if (multimediaInputRef.current) multimediaInputRef.current.value = null; }}/>
-                      </div>
-                    ) : (
-                      <span className="text-slate-500 text-[10px] font-bold">Choose reference files</span>
-                    )}
-                  </div>
+              </div>
+              <div className="qc-submissions-ai-panel__files">
+                <div className="qc-submissions-ai-panel__label qc-submissions-ai-panel__label--muted">
+                  <FileUp size={14} aria-hidden="true" /> Reference Files (Optional)
+                </div>
+                <div
+                  className="qc-submissions-choose-files"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => multimediaInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      multimediaInputRef.current?.click();
+                    }
+                  }}
+                >
+                  <input
+                    type="file"
+                    ref={multimediaInputRef}
+                    className="hidden"
+                    accept="*/*"
+                    multiple
+                    onChange={handleMultimediaChange}
+                  />
+                  {multimediaFiles.length ? (
+                    <span className="qc-submissions-choose-files__selected">
+                      <CheckCircle size={12} aria-hidden="true" />
+                      <span className="truncate">{multimediaFiles.length} file(s) selected</span>
+                      <button
+                        type="button"
+                        className="qc-submissions-choose-files__clear"
+                        aria-label="Clear reference files"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMultimediaFiles([]);
+                          if (multimediaInputRef.current) multimediaInputRef.current.value = null;
+                        }}
+                      >
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    </span>
+                  ) : (
+                    <span>Choose Files</span>
+                  )}
                 </div>
               </div>
+            </section>
+
+            <div className="qc-submissions-filters" role="search" aria-label="Filter submissions">
+              <label className="qc-search-field qc-submissions-filters__search">
+                <Search size={14} className="qc-search-field__icon" aria-hidden="true" />
+                <span className="sr-only">Search by student or assignment</span>
+                <input
+                  type="search"
+                  value={submissionSearch}
+                  onChange={(e) => {
+                    setSubmissionSearch(e.target.value);
+                    setSubmissionPage(1);
+                  }}
+                  placeholder="Search by student or assignment"
+                  className="qc-search-field__input"
+                />
+              </label>
+              <select
+                className="qc-submissions-filter-select"
+                value={submissionAssignmentFilter}
+                aria-label="Filter by assignment"
+                onChange={(e) => {
+                  setSubmissionAssignmentFilter(e.target.value);
+                  setSubmissionPage(1);
+                }}
+              >
+                <option value="all">All Assignments</option>
+                {submissionAssignmentOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.title}</option>
+                ))}
+              </select>
+              <select
+                className="qc-submissions-filter-select"
+                value={submissionStatusFilter}
+                aria-label="Filter by status"
+                onChange={(e) => {
+                  setSubmissionStatusFilter(e.target.value);
+                  setSubmissionPage(1);
+                }}
+              >
+                <option value="all">All Statuses</option>
+                <option value="awaiting">Awaiting Evaluation</option>
+                <option value="ai_processing">AI Processing</option>
+                <option value="ai_graded">AI Graded</option>
+                <option value="graded">Graded</option>
+                <option value="published">Published</option>
+              </select>
             </div>
 
-            {/* Submissions Table */}
-            <div className="qc-table-wrap">
-              <div className="max-h-[600px] overflow-auto">
-                <table className="w-full min-w-[900px] text-left border-collapse">
-                  <thead className="theme-page sticky top-0 z-10 text-[10px] font-black uppercase text-slate-500 tracking-widest border-b border-slate-800">
-                    <tr>
-                      <th className="p-5 w-12 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedSubmissions.length > 0 && selectedSubmissions.length === submissions.slice(0, 40).length}
-                          onChange={e => handleSelectAll(e.target.checked)}
-                          className="w-4 h-4 rounded border-slate-800 theme-page accent-sky-500"
-                        />
-                      </th>
-                      <th className="p-5">Student</th>
-                      <th className="p-5">Assignment</th>
-                      <th className="p-5">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            aria-label="Select all question files for AI"
-                            title="Select/deselect all available question files for AI"
-                            checked={submissions.filter((item) => item.assignment?.file).length > 0 && submissions.filter((item) => item.assignment?.file).every((item) => selectedQuestionAssignments.includes(String(item.assignment._id)))}
-                            onChange={(e) => {
-                              const available = [...new Set(submissions.filter((item) => item.assignment?.file).map((item) => String(item.assignment._id)))];
-                              setSelectedQuestionAssignments(e.target.checked ? available : []);
-                            }}
-                            className="w-4 h-4 accent-sky-500"
-                          />
-                          <span>Question file (optional for AI)</span>
-                        </div>
-                      </th>
-                      <th className="p-5">Score (AI / Final)</th>
-                      <th className="p-5">Status</th>
-                      <th className="p-5 text-center">Review</th>
-                      <th className="p-5 text-center">Delete</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {submissions.map((sub) => (
-                      // ✅ FIX 1: key={sub._id} instead of key={i} — fixes React re-render bug
-                      <tr key={sub._id} className={`hover:bg-white/5 transition-colors ${selectedSubmissions.includes(sub._id) ? 'bg-sky-500/5' : ''}`}>
-                        <td className="p-5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedSubmissions.includes(sub._id)}
-                            onChange={() => toggleSelect(sub._id)}
-                            className="w-4 h-4 rounded border-slate-800 theme-page accent-sky-500"
-                          />
-                        </td>
-
-                        {/* ✅ FIX 2: Clean student name + regNo logic */}
-                        <td className="p-5">
-                          <p className="font-bold text-white text-sm">
-                            {sub.student?.name || 'Unknown'}
+            <div className="qc-submissions-card">
+              <table className={`qc-submissions-table${selectSubmissionsMode ? ' is-selecting' : ''}`}>
+                <colgroup>
+                  {selectSubmissionsMode ? <col className="qc-submissions-col-check" /> : null}
+                  <col className="qc-submissions-col-student" />
+                  <col className="qc-submissions-col-assignment" />
+                  <col className="qc-submissions-col-qfile" />
+                  <col className="qc-submissions-col-solution" />
+                  <col className="qc-submissions-col-score" />
+                  <col className="qc-submissions-col-status" />
+                  <col className="qc-submissions-col-review" />
+                  <col className="qc-submissions-col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {selectSubmissionsMode && <th className="text-center" aria-label="Selection" />}
+                    <th>Student</th>
+                    <th>Assignment</th>
+                    <th>Question File</th>
+                    <th>Submission (Solution)</th>
+                    <th>Score</th>
+                    <th>Status</th>
+                    <th className="text-center">Review</th>
+                    <th className="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedSubmissions.map((sub) => {
+                    const maxPts = sub.totalMarks || sub.assignment?.points || '--';
+                    const hasQuestionFile = Boolean(sub.assignment?.file && sub.assignment?._id);
+                    const hasSolutionFile = Boolean(sub.file || sub.originalFileName);
+                    const statusTone =
+                      sub.status === 'PUBLISHED' ? 'is-published' :
+                      sub.status === 'AI_GRADED' ? 'is-evaluated' :
+                      sub.status === 'AI_PROCESSING' ? 'is-awaiting' :
+                      ['graded', 'GRADED', 'Graded', 'REVIEWED'].includes(sub.status) ? 'is-graded' :
+                      'is-awaiting';
+                    const statusLabel =
+                      sub.status === 'AI_PROCESSING' ? 'AI PROCESSING' :
+                      sub.status === 'AI_GRADED' ? 'AI GRADED' :
+                      sub.status === 'PUBLISHED' ? 'PUBLISHED' :
+                      ['graded', 'GRADED', 'Graded', 'REVIEWED'].includes(sub.status) ? 'GRADED' :
+                      'AWAITING EVALUATION';
+                    return (
+                      <tr
+                        key={sub._id}
+                        className={`qc-submissions-row${selectedSubmissions.includes(sub._id) ? ' is-selected' : ''}`}
+                        onDoubleClick={(event) => {
+                          if (event.target?.closest?.('button, a, input, label, .qc-file-link, .qc-file-named, .qc-view-file-btn, .qc-overflow-menu, .qc-overflow-trigger')) return;
+                          if (!selectSubmissionsMode) setSelectSubmissionsMode(true);
+                          toggleSelect(sub._id);
+                        }}
+                      >
+                        {selectSubmissionsMode && (
+                          <td className="text-center">
+                            <input
+                              type="checkbox"
+                              className="qc-check"
+                              aria-label={`Select submission from ${sub.student?.name || 'student'}`}
+                              checked={selectedSubmissions.includes(sub._id)}
+                              onChange={() => toggleSelect(sub._id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </td>
+                        )}
+                        <td>
+                          <p className="qc-submissions-student-name">{sub.student?.name || 'Unknown'}</p>
+                          <p className="qc-submissions-student-reg">
+                            {sub.student?.registrationNumber || 'Not assigned'}
                           </p>
-                          <p className="text-[10px] text-sky-500 font-black tracking-widest uppercase">
-                            Reg No: {sub.student?.registrationNumber || 'Not assigned'}
-                          </p>
-                          <p className="text-[10px] text-slate-400 mt-1 break-all">
-                            {sub.student?.email || 'Email not available'}
-                          </p>
                         </td>
-
-                        {/* ✅ FIX 4: Clean assignment title */}
-                        <td className="p-5 text-slate-400 text-sm">
-                          {sub.assignment?.title || 'Untitled'}
-                        </td>
-                        <td className="p-5">
-                          {sub.assignment?.file ? <div className="flex items-center gap-2">
-                            <input type="checkbox" checked={selectedQuestionAssignments.includes(String(sub.assignment._id))} onChange={() => setSelectedQuestionAssignments((prev) => prev.includes(String(sub.assignment._id)) ? prev.filter((x) => x !== String(sub.assignment._id)) : [...prev, String(sub.assignment._id)])}/>
-                            <button type="button" className="accent-text text-[10px] font-black uppercase" onClick={async()=>{try{await openProtectedPreview(teacherService.previewAssignment(sub.assignment._id),sub.assignment.originalFileName||'question');}catch(e){alert(e.message);}}}>Open question</button>
-                          </div> : <span className="theme-muted text-[10px]">No file</span>}
-                        </td>
-
-                        {/* Scores are hidden until teacher/AI has actually checked the submission */}
-                        <td className="p-5">
-                          {['graded','GRADED','PUBLISHED','AI_GRADED','Graded'].includes(sub.status) ? (
-                            <div className="flex flex-col items-start gap-1 min-w-0 whitespace-nowrap">
-                              <span className="text-xs font-black accent-text">AI Marks: {sub.aiScore != null ? `${sub.aiScore}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
-                              <span className="text-xs font-black" style={{color: 'var(--text)'}}>Teacher Marks: {sub.marks != null ? `${sub.marks}/${sub.totalMarks || sub.assignment?.points || '--'}` : `--/${sub.totalMarks || sub.assignment?.points || '--'}`}</span>
-                            </div>
-                          ) : sub.status === 'AI_PROCESSING' ? (
-                            <span className="theme-muted text-[10px] font-black uppercase">AI grading…</span>
-                          ) : <span className="theme-muted text-[10px] font-black uppercase">Not graded</span>}
-                        </td>
-
-                        {/* Status badge */}
-                        <td className="p-5">
-                          <span className={`px-2 py-1 rounded text-[10px] font-black ${
-                            sub.status === 'PUBLISHED'                            ? 'bg-emerald-500/20 text-emerald-500' :
-                            sub.status === 'AI_GRADED'                            ? 'bg-sky-500/20 text-sky-400'        :
-                            sub.status === 'AI_PROCESSING'                        ? 'bg-sky-500/20 text-sky-400'        :
-                            ['graded','GRADED'].includes(sub.status)              ? 'bg-sky-500/20 text-sky-400'        :
-                            sub.status === 'submitted'                            ? 'bg-slate-500/20 text-slate-400'    :
-                                                                                    'bg-slate-500/20 text-slate-400'
-                          }`}>
-                            {sub.status === 'AI_PROCESSING'            ? 'AI PROCESSING' :
-                             sub.status === 'AI_GRADED'                ? 'AI GRADED / REVIEW' :
-                             sub.status === 'PUBLISHED'                ? 'PUBLISHED' :
-                             ['graded','GRADED'].includes(sub.status)  ? 'TEACHER REVIEWED' :
-                             sub.status === 'submitted'                ? 'SUBMITTED' : 'NOT GRADED'}
+                        <td>
+                          <span className="qc-submissions-assignment-title" title={sub.assignment?.title || 'Untitled'}>
+                            {sub.assignment?.title || 'Untitled'}
                           </span>
                         </td>
-
-                        {/* Eye button — always visible */}
-                        <td className="p-5 text-center">
-                          <button onClick={() => openReviewModal(sub)} className="p-2 text-slate-400 hover:text-sky-400 transition-colors" title="Review Evaluation"><Eye size={18}/></button>
-                          <button onClick={async()=>{try{await openProtectedPreview(teacherService.previewSubmission(sub._id),sub.originalFileName||'submission');}catch(e){alert(e.message);}}} className="p-2 text-slate-400 hover:text-emerald-400" title="Open submitted file"><FileText size={17}/></button>
+                        <td>
+                          {hasQuestionFile ? (
+                            <button
+                              type="button"
+                              className="qc-view-file-btn"
+                              title="View Question"
+                              aria-label={`View question file for ${sub.assignment?.title || 'assignment'}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await openProtectedPreview(
+                                    teacherService.previewAssignment(sub.assignment._id),
+                                    sub.assignment.originalFileName || 'question',
+                                    {
+                                      downloadUrl: teacherService.downloadAssignment(sub.assignment._id),
+                                      downloadLabel: 'Download File',
+                                    }
+                                  );
+                                } catch (err) {
+                                  alert(err.message);
+                                }
+                              }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            >
+                              <Eye size={13} aria-hidden="true" />
+                              View Question
+                            </button>
+                          ) : (
+                            <span className="qc-file-unavailable">Not Available</span>
+                          )}
                         </td>
-                        <td className="p-5 text-center"><button onClick={() => handleDeleteSubmission(sub._id)} className="p-2 text-red-400 hover:text-red-300" title="Delete submission"><Trash2 size={17}/></button></td>
+                        <td>
+                          {hasSolutionFile ? (
+                            <button
+                              type="button"
+                              className="qc-view-file-btn"
+                              title="View Solution"
+                              aria-label={`View solution from ${sub.student?.name || 'student'}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await openProtectedPreview(
+                                    teacherService.previewSubmission(sub._id),
+                                    sub.originalFileName || 'student-submission',
+                                    {
+                                      downloadUrl: teacherService.downloadSubmission(sub._id),
+                                      downloadLabel: 'Download Submission',
+                                    }
+                                  );
+                                } catch (err) {
+                                  alert(err.message);
+                                }
+                              }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            >
+                              <Eye size={13} aria-hidden="true" />
+                              View Solution
+                            </button>
+                          ) : (
+                            <span className="qc-file-unavailable">Not Available</span>
+                          )}
+                        </td>
+                        <td>
+                          {sub.status === 'AI_PROCESSING' ? (
+                            <span className="qc-submissions-score-muted">AI grading…</span>
+                          ) : (
+                            <div className="qc-submissions-score">
+                              <span className="accent-text">
+                                AI: {sub.aiScore != null && Number.isFinite(Number(sub.aiScore)) ? `${sub.aiScore}/${maxPts}` : `—/${maxPts}`}
+                              </span>
+                              <span>
+                                Teacher: {sub.marks != null && Number.isFinite(Number(sub.marks)) ? `${sub.marks}/${maxPts}` : `—/${maxPts}`}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`qc-status-badge qc-submissions-status ${statusTone}`}>
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openReviewModal(sub); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            className="qc-icon-btn"
+                            title="Review Evaluation"
+                            aria-label="Review evaluation"
+                          >
+                            <Eye size={16} />
+                          </button>
+                        </td>
+                        <td className="text-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                          <OverflowMenu
+                            label={`Actions for submission ${sub.student?.name || sub._id}`}
+                            items={[{
+                              id: `reset-submission-${sub._id}`,
+                              label: 'Reset Grade',
+                              icon: <RotateCcw size={14} />,
+                              onSelect: () => handleResetSubmissionGrade(sub._id),
+                            }, {
+                              id: `delete-submission-${sub._id}`,
+                              label: 'Delete submission',
+                              danger: true,
+                              icon: <Trash2 size={14} />,
+                              onSelect: () => handleDeleteSubmission(sub._id),
+                            }]}
+                          />
+                        </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {submissions.length === 0 && <NoDataMessage icon={<ClipboardCheck size={40}/>} message="No student submissions yet."/>}
+                    );
+                  })}
+                </tbody>
+              </table>
+              {submissions.length === 0 && (
+                <NoDataMessage icon={<ClipboardCheck size={40}/>} message="No student submissions yet." />
+              )}
+              {submissions.length > 0 && filteredSubmissions.length === 0 && (
+                <NoDataMessage icon={<Search size={40}/>} message="No submissions match your search or filters." />
+              )}
+              {filteredSubmissions.length > 0 && (
+                <div className="qc-submissions-pagination">
+                  <p className="qc-submissions-pagination__meta">
+                    Showing {(safeSubmissionPage - 1) * SUBMISSIONS_PAGE_SIZE + 1}
+                    –
+                    {Math.min(safeSubmissionPage * SUBMISSIONS_PAGE_SIZE, filteredSubmissions.length)}
+                    {' '}of {filteredSubmissions.length}
+                  </p>
+                  <div className="qc-submissions-pagination__controls">
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-ghost"
+                      disabled={safeSubmissionPage <= 1}
+                      onClick={() => setSubmissionPage((p) => Math.max(1, p - 1))}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft size={14} aria-hidden="true" /> Prev
+                    </button>
+                    <span className="qc-submissions-pagination__page">
+                      {safeSubmissionPage} / {submissionTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="qc-btn qc-btn-ghost"
+                      disabled={safeSubmissionPage >= submissionTotalPages}
+                      onClick={() => setSubmissionPage((p) => Math.min(submissionTotalPages, p + 1))}
+                      aria-label="Next page"
+                    >
+                      Next <ChevronRight size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ══ PLAGIARISM TAB ══ */}
+        {/* ══ PLAGIARISM / TURNITIN-READY TAB ══ */}
         {activeTab === 'plagiarism' && (
-          <div className="animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+          <div className="animate-in fade-in duration-500 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="qc-page-title">Plagiarism Check</h1>
-                <p className="text-slate-500 text-xs max-w-2xl">Local similarity checking compares extracted text from submissions of the same assignment. It is an indicator for teacher review, not an automatic misconduct decision.</p>
+                <h1 className="qc-page-title">Plagiarism Checker</h1>
+                <p className="qc-page-subtitle max-w-2xl">
+                  Select one assignment, choose student submissions, then run a Turnitin-ready check. Scores appear only when the provider returns them.
+                </p>
               </div>
-              <button type="button" onClick={handlePlagiarismCheck} disabled={checkingPlagiarism || selectedSubmissions.length === 0} className="bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase flex items-center gap-2 shrink-0 self-start">
-                {checkingPlagiarism ? <Loader2 size={14} className="animate-spin"/> : <ShieldAlert size={14}/>} Run Check
+              <button
+                type="button"
+                onClick={() => {
+                  loadPlagiarismWorkspace();
+                  loadSimilarityHub();
+                }}
+                disabled={similarityLoading || plagiarismDataLoading}
+                className="qc-btn qc-btn-secondary shrink-0 self-start"
+              >
+                {(similarityLoading || plagiarismDataLoading) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                Refresh
               </button>
             </div>
-            <div className="qc-table-wrap">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left">
-                  <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                    <tr><th className="p-5">Student</th><th className="p-5">Assignment</th><th className="p-5">Highest Similarity</th><th className="p-5">Compared With</th><th className="p-5">Status</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {plagiarismResults.map((row) => (
-                      <tr key={String(row.submissionId)}>
-                        <td className="p-5 text-sm font-bold text-white">{row.student}</td>
-                        <td className="p-5 text-sm text-slate-400">{row.assignment}</td>
-                        <td className="p-5 text-sm font-black">{row.similarity}%</td>
-                        <td className="p-5 text-sm text-slate-400">{row.comparedWith ? `${row.comparedWith.student} (${row.comparedWith.similarity}%)` : 'No comparable submission'}</td>
-                        <td className="p-5"><span className={`px-2 py-1 rounded text-[10px] font-black ${row.status === 'HIGH' ? 'bg-red-500/20 text-red-400' : row.status === 'REVIEW' ? 'bg-slate-500/20 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{row.status}</span></td>
-                      </tr>
+
+            <div
+              className={`rounded-xl border px-4 py-3 text-xs ${
+                plagiarismProvider?.connected
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                  : plagiarismProvider?.apiUnavailable
+                    ? 'border-slate-500/35 bg-slate-500/10 text-slate-200'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+              }`}
+              role="status"
+            >
+              <p className="font-black uppercase tracking-widest text-[10px] mb-1">
+                {plagiarismProvider?.connected
+                  ? 'Provider Connected'
+                  : plagiarismProvider?.apiUnavailable
+                    ? 'Plagiarism API Unavailable'
+                    : 'Provider Not Connected'}
+              </p>
+              <p className="leading-relaxed opacity-90">
+                {plagiarismProvider?.message ||
+                  'Turnitin is not configured on the server. No similarity score is generated without official API credentials.'}
+              </p>
+            </div>
+
+            {plagiarismDataError ? (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200" role="alert">
+                {plagiarismDataError}
+              </div>
+            ) : null}
+
+            {similarityError && similarityError !== plagiarismDataError ? (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200" role="alert">
+                {similarityError}
+              </div>
+            ) : null}
+
+            <div className="rounded-xl border border-[var(--border)] p-4 space-y-4">
+              <div className="flex flex-col xl:flex-row xl:items-end gap-3">
+                <label className="flex-1 min-w-0 block">
+                  <span className="block text-[10px] font-black uppercase tracking-widest theme-muted mb-2">Assignment</span>
+                  <select
+                    className="theme-input w-full text-sm"
+                    value={plagiarismAssignmentId}
+                    onChange={(e) => handlePlagiarismAssignmentChange(e.target.value)}
+                    disabled={plagiarismDataLoading || Boolean(plagiarismDataError && !plagiarismAssignments.length)}
+                  >
+                    <option value="">
+                      {plagiarismDataLoading ? 'Loading assignments…' : 'Select an assignment…'}
+                    </option>
+                    {plagiarismAssignments.map((asgn) => (
+                      <option key={String(asgn._id)} value={String(asgn._id)}>
+                        {asgn.title || 'Untitled assignment'}
+                        {asgn.status === 'archived' ? ' (Archived)' : ''}
+                      </option>
                     ))}
-                    {plagiarismResults.length === 0 && <tr><td colSpan="5" className="p-16 text-center text-slate-500 text-xs">Select submissions in the Submissions tab and run a plagiarism check.</td></tr>}
-                  </tbody>
-                </table>
+                  </select>
+                </label>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismMode === 'external_sources' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
+                    <input
+                      type="radio"
+                      name="plagiarismMode"
+                      checked={plagiarismMode === 'external_sources'}
+                      onChange={() => setPlagiarismMode('external_sources')}
+                    />
+                    External Sources
+                  </label>
+                  <label className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${plagiarismMode === 'student_paper_repository' ? 'border-[var(--accent)] text-white' : 'border-[var(--border)] theme-muted'}`}>
+                    <input
+                      type="radio"
+                      name="plagiarismMode"
+                      checked={plagiarismMode === 'student_paper_repository'}
+                      onChange={() => setPlagiarismMode('student_paper_repository')}
+                    />
+                    Student Paper Repository
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePlagiarismCheck}
+                  disabled={
+                    checkingPlagiarism ||
+                    !plagiarismAssignmentId ||
+                    plagiarismSelectedIds.length === 0
+                  }
+                  className="qc-btn qc-btn-primary shrink-0"
+                >
+                  {checkingPlagiarism ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+                  {plagiarismSelectedIds.length
+                    ? `Check Plagiarism (${plagiarismSelectedIds.length})`
+                    : 'Check Plagiarism'}
+                </button>
+              </div>
+              {plagiarismMode === 'student_paper_repository' ? (
+                <p className="text-[11px] theme-muted">
+                  Student Paper Repository requires institutional Turnitin repository configuration and consent. Papers are not auto-deposited.
+                </p>
+              ) : null}
+
+              {plagiarismDataLoading ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  <Loader2 size={16} className="inline animate-spin mr-2" />
+                  Loading your assignments and submissions…
+                </div>
+              ) : plagiarismDataError && !plagiarismAssignments.length ? (
+                <div className="rounded-lg border border-dashed border-red-500/30 px-4 py-8 text-center text-xs text-red-200">
+                  Assignments could not be loaded. Fix the API connection above, then press Refresh.
+                </div>
+              ) : !plagiarismAssignments.length ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  No assignments created yet. Create an assignment from Create Assignment first.
+                </div>
+              ) : !plagiarismAssignmentId ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  Select an assignment to view its student submissions.
+                </div>
+              ) : plagiarismSubmissionsForAssignment.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs theme-muted">
+                  This assignment has no student submissions yet.
+                </div>
+              ) : (
+                <div className="qc-table-wrap">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border)]">
+                    <p className="text-[11px] theme-muted">
+                      {plagiarismSelectedIds.length} file{plagiarismSelectedIds.length === 1 ? '' : 's'} selected
+                      {' · '}
+                      {plagiarismSubmissionsForAssignment.length} submission{plagiarismSubmissionsForAssignment.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="qc-btn qc-btn-ghost text-[10px]"
+                        onClick={handlePlagiarismSelectAll}
+                      >
+                        {plagiarismSubmissionsForAssignment.every((sub) =>
+                          plagiarismSelectedIds.map(String).includes(String(sub._id))
+                        )
+                          ? 'Clear All'
+                          : 'Select All'}
+                      </button>
+                      <button
+                        type="button"
+                        className="qc-btn qc-btn-ghost text-[10px]"
+                        onClick={handlePlagiarismClearSelection}
+                        disabled={!plagiarismSelectedIds.length}
+                      >
+                        Clear Selection
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] text-left">
+                      <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
+                        <tr>
+                          <th className="p-3 w-12 text-center">
+                            <input
+                              type="checkbox"
+                              checked={
+                                plagiarismSubmissionsForAssignment.length > 0 &&
+                                plagiarismSubmissionsForAssignment.every((sub) =>
+                                  plagiarismSelectedIds.map(String).includes(String(sub._id))
+                                )
+                              }
+                              onChange={handlePlagiarismSelectAll}
+                              aria-label="Select all submissions"
+                            />
+                          </th>
+                          <th className="p-3">Student</th>
+                          <th className="p-3">Email / Reg</th>
+                          <th className="p-3">Original File</th>
+                          <th className="p-3">Type</th>
+                          <th className="p-3">Submitted</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {plagiarismSubmissionsForAssignment.map((sub) => {
+                          const checked = plagiarismSelectedIds.map(String).includes(String(sub._id));
+                          const secondary =
+                            sub.student?.registrationNumber ||
+                            sub.student?.email ||
+                            sub.registrationNumber ||
+                            sub.email ||
+                            '—';
+                          return (
+                            <tr key={String(sub._id)} className={checked ? 'bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]' : ''}>
+                              <td className="p-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => togglePlagiarismSubmission(sub._id)}
+                                  aria-label={`Select submission from ${sub.student?.name || 'student'}`}
+                                />
+                              </td>
+                              <td className="p-3 text-sm font-bold text-white">
+                                {sub.student?.name || sub.studentName || 'Student'}
+                              </td>
+                              <td className="p-3 text-xs text-slate-400 break-all">
+                                {secondary}
+                              </td>
+                              <td className="p-3 text-sm text-slate-400 break-all">
+                                {sub.originalFileName || 'Untitled file'}
+                              </td>
+                              <td className="p-3 text-xs font-bold text-slate-300 whitespace-nowrap">
+                                {fileTypeFromSubmission(sub)}
+                              </td>
+                              <td className="p-3 text-sm text-slate-400 whitespace-nowrap">
+                                {formatPlagiarismDate(sub.submittedAt || sub.createdAt)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h2 className="text-sm font-bold text-white mb-3">Check history</h2>
+              <div className="qc-table-wrap">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left">
+                    <thead className="theme-page text-[10px] font-black uppercase text-slate-500 tracking-widest">
+                      <tr>
+                        <th className="p-4">Student</th>
+                        <th className="p-4">Assignment</th>
+                        <th className="p-4">Mode</th>
+                        <th className="p-4">Similarity</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4">Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {similarityLoading && (
+                        <tr>
+                          <td colSpan="6" className="p-12 text-center text-slate-500 text-xs">
+                            <Loader2 size={18} className="inline animate-spin mr-2" />
+                            Loading check history…
+                          </td>
+                        </tr>
+                      )}
+                      {!similarityLoading && similarityChecks.map((row) => {
+                        const detailOpen = String(similarityDetailId) === String(row._id);
+                        const modeLabel =
+                          row.mode === 'student_paper_repository'
+                            ? 'Student Paper Repository'
+                            : 'External Sources';
+                        const showPercent =
+                          row.status === 'completed' &&
+                          row.similarityPercent !== null &&
+                          row.similarityPercent !== undefined;
+                        return (
+                          <React.Fragment key={String(row._id)}>
+                            <tr>
+                              <td className="p-4 text-sm font-bold text-white">
+                                {row.student?.name || 'Student'}
+                              </td>
+                              <td className="p-4 text-sm text-slate-400">
+                                {row.assignmentTitle || 'Assignment'}
+                              </td>
+                              <td className="p-4 text-xs text-slate-400">{modeLabel}</td>
+                              <td className="p-4 text-sm font-black">
+                                {showPercent ? `${row.similarityPercent}%` : '—'}
+                              </td>
+                              <td className="p-4">
+                                <span className={`inline-flex px-2 py-1 rounded text-[10px] font-black ${similarityStatusClass(row.status)}`}>
+                                  {similarityStatusLabel(row.status)}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="qc-btn qc-btn-ghost text-[10px]"
+                                    onClick={() =>
+                                      setSimilarityDetailId(detailOpen ? null : row._id)
+                                    }
+                                  >
+                                    {detailOpen ? 'Hide' : 'Details'}
+                                  </button>
+                                  {(row.status === 'queued' || row.status === 'processing') && (
+                                    <button
+                                      type="button"
+                                      className="qc-btn qc-btn-ghost text-[10px]"
+                                      onClick={() => handleRefreshSimilarityCheck(row._id)}
+                                    >
+                                      Refresh
+                                    </button>
+                                  )}
+                                  {row.status === 'completed' && row.reportAvailable && (
+                                    <button
+                                      type="button"
+                                      className="qc-btn qc-btn-secondary text-[10px]"
+                                      onClick={() => handleOpenProviderReport(row)}
+                                    >
+                                      <ExternalLink size={12} /> Open Report
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {detailOpen && (
+                              <tr>
+                                <td colSpan="6" className="px-4 pb-4">
+                                  <div className="rounded-xl border border-[var(--border)] p-4 space-y-3 text-xs">
+                                    {row.errorMessage && (
+                                      <p className="text-amber-200">{row.errorMessage}</p>
+                                    )}
+                                    {row.status === 'completed' && showPercent && (
+                                      <p className="text-white font-bold">
+                                        Provider similarity: {row.similarityPercent}%
+                                      </p>
+                                    )}
+                                    {row.status === 'completed' && Array.isArray(row.matchedSources) && row.matchedSources.length > 0 ? (
+                                      <div>
+                                        <p className="font-black uppercase tracking-widest text-[10px] theme-muted mb-2">Matched sources</p>
+                                        <ul className="space-y-2">
+                                          {row.matchedSources.map((source, idx) => (
+                                            <li key={`${row._id}-src-${idx}`} className="theme-muted">
+                                              <span className="text-white font-semibold">{source.title || 'Source'}</span>
+                                              {source.percent != null ? ` — ${source.percent}%` : ''}
+                                              {source.url ? (
+                                                <span className="block break-all opacity-80">{source.url}</span>
+                                              ) : null}
+                                              {source.detail ? (
+                                                <span className="block opacity-80">{source.detail}</span>
+                                              ) : null}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    ) : row.status === 'completed' ? (
+                                      <p className="theme-muted">No matched sources were supplied by the provider for this check.</p>
+                                    ) : null}
+                                    {row.status === 'completed' && Array.isArray(row.highlightedPassages) && row.highlightedPassages.length > 0 && (
+                                      <div>
+                                        <p className="font-black uppercase tracking-widest text-[10px] theme-muted mb-2">Highlighted passages</p>
+                                        <ul className="space-y-2">
+                                          {row.highlightedPassages.map((passage, idx) => (
+                                            <li key={`${row._id}-pass-${idx}`} className="rounded-lg border border-[var(--border)] px-3 py-2 text-slate-300">
+                                              <p className="italic">&ldquo;{passage.text}&rdquo;</p>
+                                              {passage.sourceTitle ? (
+                                                <p className="mt-1 theme-muted">Source: {passage.sourceTitle}</p>
+                                              ) : null}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {row.status !== 'completed' && !row.errorMessage && (
+                                      <p className="theme-muted">
+                                        Waiting for the Turnitin provider. Local peer-comparison scores are never shown here.
+                                      </p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                      {!similarityLoading && similarityChecks.length === 0 && (
+                        <tr>
+                          <td colSpan="6" className="p-12 text-center text-slate-500 text-xs">
+                            No plagiarism checks yet. Select submissions above and run Check Plagiarism.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -993,16 +2993,16 @@ export default function TeacherDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {students.map((st) => (
                 // ✅ FIX: key uses _id instead of index
-                <div key={st._id} className="qc-card flex items-center gap-4 hover:border-sky-50 transition-all group">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-800 to-[#020617] flex items-center justify-center text-sky-500 font-black text-xl border border-slate-800 shadow-xl">
-                    {(st.name || st.studentName)?.charAt(0).toUpperCase()}
+                <div key={st._id} className="qc-card qc-student-dir-card flex items-center gap-4 transition-all group">
+                  <div className="qc-student-avatar" aria-hidden="true">
+                    {(st.name || st.studentName)?.charAt(0).toUpperCase() || '?'}
                   </div>
-                  <div className="flex-1">
-                    <h4 className="text-white font-bold text-sm group-hover:text-sky-400">{st.name || st.studentName}</h4>
-                    <p className="text-[10px] text-sky-500 font-black tracking-widest uppercase">
-                      Roll / Reg No: {st.registrationNumber || st.regNo || st.studentRegNo || 'Not assigned'}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-white font-bold text-sm truncate">{st.name || st.studentName}</h4>
+                    <p className="text-[10px] theme-muted font-bold tracking-widest uppercase mt-1">
+                      Reg No: {st.registrationNumber || st.regNo || st.studentRegNo || 'Not assigned'}
                     </p>
-                    <p className="text-[11px] text-slate-400 break-all mt-1">
+                    <p className="text-[11px] theme-muted break-all mt-1">
                       {st.email || 'Email not available'}
                     </p>
                   </div>
@@ -1019,142 +3019,270 @@ export default function TeacherDashboard() {
 
       {/* ══ REVIEW MODAL ══ */}
       {reviewModalOpen && selectedReview && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
-          <div className="theme-card border w-full max-w-2xl rounded-t-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 max-h-[94dvh] sm:max-h-[90vh] flex flex-col my-0 sm:my-auto">
-
-            <div className="p-4 sm:p-8 border-b border-slate-800 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 theme-surface shrink-0">
-              <div className="min-w-0">
-                <h2 className="text-white font-black text-lg sm:text-xl tracking-tighter uppercase">Review Evaluation</h2>
-                <p className="text-sky-500 text-[10px] font-black uppercase tracking-widest break-words">
-                 {selectedReview.student?.name || selectedReview.studentName || 'Unknown'}
-
-               {/* ✅ FIXED: Safe regNo fallback */}
-              {(selectedReview.student?.registrationNumber || selectedReview.studentRegNo) && (
-            <span className="ml-2 text-slate-500">
-            — {selectedReview.student?.registrationNumber || selectedReview.studentRegNo}
-              </span>
-                )}
+        <div className="qc-modal-backdrop qc-modal-backdrop--elevated" role="presentation">
+          <div className="qc-review-modal" role="dialog" aria-modal="true" aria-label="Review evaluation">
+            <header className="qc-review-modal__header">
+              <div className="qc-review-modal__heading min-w-0">
+                <h2 className="qc-review-modal__title">Review Evaluation</h2>
+                <p className="qc-review-modal__student">
+                  {selectedReview.student?.name || selectedReview.studentName || 'Unknown'}
                 </p>
-                <div className="mt-3 flex flex-wrap gap-3 sm:gap-4">
-                  <button type="button" onClick={async () => { try { await openProtectedPreview(teacherService.previewSubmission(selectedReview._id), selectedReview.originalFileName || 'student-submission'); } catch (error) { alert(error.message); } }} className="text-[10px] font-black uppercase accent-text flex items-center gap-2"><Eye size={14}/> Open file</button>
-                  <button type="button" onClick={async () => { try { await downloadProtectedFile(teacherService.downloadSubmission(selectedReview._id), selectedReview.originalFileName || 'student-submission'); } catch (error) { alert(error.message); } }} className="text-[10px] font-black uppercase accent-text flex items-center gap-2"><Download size={14}/> Download file</button>
+                <p className="qc-review-modal__reg">
+                  Registration No:{' '}
+                  {selectedReview.student?.registrationNumber || selectedReview.studentRegNo || 'Not assigned'}
+                </p>
+              </div>
+              <div className="qc-review-modal__header-actions">
+                <button
+                  type="button"
+                  onClick={() => handleResetSubmissionGrade(selectedReview._id)}
+                  className="qc-btn qc-btn-secondary"
+                  title="Clear current grading to allow regrading"
+                >
+                  <RotateCcw size={14} aria-hidden="true" /> Reset Grade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewModalOpen(false)}
+                  className="qc-icon-btn"
+                  aria-label="Close review dialog"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </header>
+
+            <div className="qc-review-modal__body">
+              <section className="qc-review-modal__block">
+                <h3 className="qc-review-modal__label">Student Submission</h3>
+                <div className="qc-review-modal__file-row">
+                  {(selectedReview.file || selectedReview.originalFileName) ? (
+                    <button
+                      type="button"
+                      className="qc-view-file-btn"
+                      title="View Solution"
+                      aria-label="View submitted solution file"
+                      onClick={async () => {
+                        try {
+                          await openProtectedPreview(
+                            teacherService.previewSubmission(selectedReview._id),
+                            selectedReview.originalFileName || 'student-submission',
+                            {
+                              downloadUrl: teacherService.downloadSubmission(selectedReview._id),
+                              downloadLabel: 'Download Submission',
+                            }
+                          );
+                        } catch (error) {
+                          alert(error.message);
+                        }
+                      }}
+                    >
+                      <Eye size={14} aria-hidden="true" />
+                      View Solution
+                    </button>
+                  ) : (
+                    <span className="qc-file-unavailable">Not Available</span>
+                  )}
+                  {(selectedReview.file || selectedReview.originalFileName) ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await downloadProtectedFile(
+                            teacherService.downloadSubmission(selectedReview._id),
+                            selectedReview.originalFileName || 'student-submission'
+                          );
+                        } catch (error) {
+                          alert(error.message);
+                        }
+                      }}
+                      className="qc-btn qc-btn-secondary"
+                    >
+                      <Download size={14} aria-hidden="true" /> Download Submission
+                    </button>
+                  ) : null}
                 </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
-              <button type="button" onClick={() => handleResetSubmissionGrade(selectedReview._id)} className="rounded-lg border border-slate-500/40 px-3 py-2 text-[9px] font-black uppercase text-slate-400 hover:bg-slate-500/10" title="Clear current grading to allow regrading">Reset grade</button>
-              <button type="button" onClick={() => setReviewModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white" aria-label="Close review dialog">
-                <X size={24}/>
-              </button>
-              </div>
-            </div>
+              </section>
 
-            <div className="p-4 sm:p-8 overflow-y-auto space-y-6 min-h-0 flex-1">
-              <div className="theme-page p-4 sm:p-6 rounded-2xl border border-slate-800">
-                <h4 className="text-slate-500 font-black text-[10px] uppercase tracking-widest mb-3">Student answer</h4>
-                {reviewContent.loading ? (
-                  <p className="text-slate-400 text-sm">Loading submission text…</p>
-                ) : (
-                  <pre className="text-white text-sm leading-relaxed whitespace-pre-wrap break-words font-sans max-h-48 overflow-y-auto">
-                    {reviewContent.text || 'No readable text found. Open or download the file if this was a binary upload.'}
-                  </pre>
-                )}
-              </div>
-
-              {/* AI Feedback */}
-              <div className="theme-page p-4 sm:p-6 rounded-2xl border border-slate-800">
-                <h4 className="text-slate-500 font-black text-[10px] uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Sparkles size={14} className="text-sky-500"/> AI Feedback
-                </h4>
-                <p className="text-white text-sm leading-relaxed italic break-words">
-                  {selectedReview.aiFeedback || 'No AI feedback available yet'}
-                </p>
-                {!!reviewContent.strengths?.length && (
-                  <div className="mt-4">
-                    <p className="text-[9px] font-black uppercase text-emerald-400 mb-1">Strengths</p>
-                    <ul className="list-disc pl-5 text-sm text-slate-200 space-y-1">
-                      {reviewContent.strengths.map((item, idx) => <li key={`s-${idx}`}>{item}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {!!reviewContent.improvements?.length && (
-                  <div className="mt-4">
-                    <p className="text-[9px] font-black uppercase text-amber-400 mb-1">Improvements</p>
-                    <ul className="list-disc pl-5 text-sm text-slate-200 space-y-1">
-                      {reviewContent.improvements.map((item, idx) => <li key={`i-${idx}`}>{item}</li>)}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              {/* Scores */}
-              <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Maximum marks: {selectedReview.totalMarks || selectedReview.assignment?.points || 'Not set'}</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="theme-page p-4 rounded-2xl border border-slate-800 text-center">
-                  <p className="theme-muted font-black text-[10px] uppercase tracking-widest mb-1">AI Marks</p>
-                  <p className="text-2xl font-black text-sky-500">
-                    {selectedReview.aiScore ?? '--'}
-                    <span className="text-sm text-slate-500 font-bold ml-1">{selectedReview.aiScore != null ? `/ ${selectedReview.totalMarks || selectedReview.assignment?.points || '--'}` : ''}</span>
+              <section className="qc-review-modal__block qc-review-modal__block--ai">
+                <h3 className="qc-review-modal__label flex items-center gap-1.5">
+                  <Sparkles size={12} className="text-sky-500" aria-hidden="true" /> AI Feedback
+                </h3>
+                <div className="qc-review-modal__ai-scroll">
+                  <p className="qc-review-modal__ai-summary">
+                    {selectedReview.aiFeedback || 'No AI feedback available yet.'}
                   </p>
+                  <div className="qc-review-modal__ai-cols">
+                    <div>
+                      <h4 className="qc-review-modal__sublabel is-strength">Strengths</h4>
+                      {reviewContent.strengths?.length ? (
+                        <ul className="qc-review-modal__bullets">
+                          {reviewContent.strengths.map((item, idx) => (
+                            <li key={`s-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="theme-muted text-xs m-0">No strengths listed.</p>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="qc-review-modal__sublabel is-improve">Improvements</h4>
+                      {reviewContent.improvements?.length ? (
+                        <ul className="qc-review-modal__bullets">
+                          {reviewContent.improvements.map((item, idx) => (
+                            <li key={`i-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="theme-muted text-xs m-0">No improvements listed.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="theme-page p-4 rounded-2xl border border-emerald-500/30 text-center">
-                  <p className="theme-muted font-black text-[10px] uppercase tracking-widest mb-1">Teacher Marks</p>
-                  <input
-                    type="number"
-                    value={manualScore}
-                    onChange={e => setManualScore(e.target.value)}
-                    min="0"
-                    max={selectedReview.totalMarks || selectedReview.assignment?.points || undefined}
-                    className="w-24 max-w-full bg-transparent text-center text-2xl font-black accent-text outline-none border-b"
-                    style={{borderColor: 'var(--accent)'}}
-                    placeholder="Enter marks"
-                  />
-                </div>
-              </div>
+              </section>
 
-              {/* Teacher Note */}
-              <div className="space-y-2">
-                <label className="text-slate-500 font-black text-[10px] uppercase tracking-widest block">Teacher's Private Note/Feedback</label>
+              <section className="qc-review-modal__block">
+                <h3 className="qc-review-modal__label">Marks</h3>
+                <p className="qc-review-modal__max">
+                  Maximum Marks:{' '}
+                  <strong>{selectedReview.totalMarks || selectedReview.assignment?.points || 'Not set'}</strong>
+                </p>
+                <div className="qc-review-modal__marks">
+                  <div className="qc-review-modal__mark-card is-ai">
+                    <span className="qc-review-modal__mark-label">AI Marks</span>
+                    <span className="qc-review-modal__mark-value">
+                      {selectedReview.aiScore ?? '—'}
+                      <span className="qc-review-modal__mark-denom">
+                        / {selectedReview.totalMarks || selectedReview.assignment?.points || '—'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="qc-review-modal__mark-card is-teacher">
+                    <label className="qc-review-modal__mark-label" htmlFor="qc-teacher-marks">
+                      Teacher Marks
+                    </label>
+                    <input
+                      id="qc-teacher-marks"
+                      type="number"
+                      value={manualScore}
+                      onChange={(e) => setManualScore(e.target.value)}
+                      min="0"
+                      max={selectedReview.totalMarks || selectedReview.assignment?.points || undefined}
+                      placeholder="Enter marks"
+                      aria-label="Teacher marks"
+                      className="qc-review-modal__mark-input"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="qc-review-modal__block">
+                <label className="qc-review-modal__label block" htmlFor="qc-teacher-feedback">
+                  Teacher Feedback
+                </label>
                 <textarea
+                  id="qc-teacher-feedback"
                   value={teacherNote}
-                  onChange={e => setTeacherNote(e.target.value)}
-                  className="w-full theme-input border rounded-2xl p-4 text-sm h-28 outline-none"
-                  placeholder="Add your own feedback here..."
+                  onChange={(e) => setTeacherNote(e.target.value)}
+                  className="theme-input border qc-review-modal__feedback outline-none"
+                  placeholder="Write clear feedback for the student…"
+                  rows={4}
                 />
-              </div>
+              </section>
             </div>
 
-            <div className="p-4 sm:p-8 theme-surface border-t border-slate-800 flex flex-col sm:flex-row gap-3 shrink-0">
+            <footer className="qc-review-modal__footer">
               <button
                 type="button"
-                onClick={() => handleSaveEvaluation(false)}
+                onClick={handleSaveEvaluation}
                 disabled={savingEval}
-                className="flex-1 border border-slate-600 text-slate-200 font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-slate-800 transition-all disabled:opacity-60"
+                className="qc-btn qc-btn-primary"
               >
-                Save teacher grade
+                {savingEval ? <Loader2 size={14} className="animate-spin" /> : null}
+                Save Teacher Grade
               </button>
               <button
                 type="button"
                 onClick={handlePublishAiResult}
                 disabled={savingEval || selectedReview.aiScore == null}
-                className="flex-1 bg-sky-500 text-black font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-sky-400 transition-all disabled:opacity-60"
+                className="qc-btn qc-btn-primary"
+                title="Publish only AI Marks and AI Feedback to the student"
               >
-                Publish AI result
+                <Send size={14} aria-hidden="true" />
+                Publish AI Result
               </button>
               <button
                 type="button"
-                onClick={() => handleSaveEvaluation(true)}
+                onClick={handlePublishAvailableResults}
                 disabled={savingEval}
-                className="flex-1 bg-emerald-500 text-black font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-emerald-400 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                className="qc-btn qc-btn-primary"
+                title="Publish available AI and entered Teacher results to the student"
               >
-                {savingEval && <Loader2 size={14} className="animate-spin"/>}
-                Save & Publish
+                {savingEval ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} aria-hidden="true" />}
+                Publish
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {aiQuestionFilePrompt?.open && (
+        <div
+          className="qc-modal-backdrop qc-modal-backdrop--elevated"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !aiLoading) setAiQuestionFilePrompt(null);
+          }}
+        >
+          <div
+            className="qc-modal qc-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="qc-ai-qfile-prompt-title"
+          >
+            <h3 id="qc-ai-qfile-prompt-title" className="qc-confirm-dialog__title">
+              Do you want to include the Question File in AI Evaluation?
+            </h3>
+            <p className="qc-confirm-dialog__description">
+              Yes includes each selected submission&apos;s assignment question/reference file (when available).
+              No evaluates using only the student&apos;s submitted work. Extra reference uploads below the instructions
+              are still included only if you already attached them.
+            </p>
+            <div className="qc-confirm-dialog__actions">
+              <button
+                type="button"
+                className="qc-btn qc-btn-secondary"
+                disabled={aiLoading}
+                onClick={() => runAiEvaluation(false)}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="qc-btn qc-btn-primary"
+                disabled={aiLoading}
+                onClick={() => runAiEvaluation(true)}
+              >
+                {aiLoading ? <Loader2 size={14} className="animate-spin" /> : null}
+                Yes
               </button>
             </div>
-
           </div>
         </div>
       )}
 
     </DashboardNavShell>
+    <ConfirmDialog
+      open={Boolean(confirmState)}
+      title={confirmState?.title}
+      description={confirmState?.description}
+      detail={confirmState?.detail}
+      confirmLabel={confirmState?.confirmLabel}
+      danger={Boolean(confirmState?.danger)}
+      busy={confirmBusy}
+      onCancel={closeConfirm}
+      onConfirm={runConfirm}
+    />
+    </>
   );
 }

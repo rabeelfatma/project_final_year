@@ -71,7 +71,8 @@ describe("QC-20 publish and unpublished-grade gates", () => {
   it("teacher publishResults skips already-published rows", () => {
     const src = fs.readFileSync(teacherControllerPath, "utf8");
     assert.match(src, /Already published/);
-    assert.match(src, /submission\.status === ["']PUBLISHED["']/);
+    assert.match(src, /aiPublished/);
+    assert.match(src, /teacherMarksPublished/);
     assert.match(src, /Feedback will appear after your teacher publishes/);
   });
 
@@ -81,7 +82,11 @@ describe("QC-20 publish and unpublished-grade gates", () => {
     assert.match(src, /const PUBLISHED = \["PUBLISHED"\]/);
     assert.match(src, /studentStatus/);
     assert.match(src, /canSubmit/);
-    assert.match(src, /Upload a supported file or provide a short text answer/);
+    assert.match(src, /Upload a file or enter an answer/);
+    assert.match(src, /populate\(/);
+    assert.match(src, /startDate deadline originalFileName file fileUrl/);
+    assert.match(src, /hasFile/);
+    assert.match(src, /assignmentOriginalFileName/);
   });
 
   it("student dashboard only surfaces PUBLISHED checked results", () => {
@@ -90,7 +95,15 @@ describe("QC-20 publish and unpublished-grade gates", () => {
       "utf8"
     );
     assert.match(dash, /s\.status === ['"]PUBLISHED['"]/);
-    assert.match(dash, /answerTextDraft|Submit text answer/);
+    assert.doesNotMatch(dash, /Short text answer \(demo-friendly\)/i);
+    assert.doesNotMatch(dash, /answerTextDraft|Submit text answer/);
+    assert.match(dash, /Already submitted\./);
+    assert.match(dash, /You do not need to submit it again\./);
+    assert.match(dash, /qc-assignment-status-anchor/);
+    assert.match(dash, /qc-assignment-inline-notice/);
+    assert.match(dash, /setTimeout\(\(\) => setDuplicateNoticeId\(null\), 3000\)/);
+    assert.doesNotMatch(dash, /qc-info-toast--float/);
+    assert.match(dash, /canSubmit === true/);
     assert.doesNotMatch(
       dash,
       /\.filter\(\(s\) => \['graded', 'GRADED', 'PUBLISHED', 'AI_GRADED'/

@@ -64,10 +64,20 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Shared top-right Logout for Admin / Teacher / Student (QC-22 isolated contracts).
 - Resend-only transactional email path; stronger signup/reset password policy; protected artifact/download path checks (mocked suites).
 - Password-reset confirm IP rate limit (separate from request limits) + isolated regression coverage.
+- QC-23 rejected-user reapplication (same User ID, history, pending email, Admin re-review) + isolated regressions.
+- QC-24 compact auth/Admin Registration UI + Alert sizing + sanitized Resend diagnostic categories (mocked provider only).
+- Auth card safe-center positioning; Admin Approved/Rejected registration tables sized to fit desktop content width without forced horizontal scroll.
 
 ### ACTIVE
 - Operator three-role Logout click-through on Production.
 - Full Admin → Teacher → Student academic demo walkthrough.
+- Confirm live Resend delivery using operator-approved unused mailbox after reviewing sanitized `TRANSACTIONAL_EMAIL_FAILED` logs (no credential changes in-repo).
+- Visual confirm Admin Registration Approved/Rejected tabs at 1366×768 after UI layout correction.
+- QC-77 LMS viewers: **CODE COMPLETE** for visual PPTX (`pptx-wasm`), XLSX (`exceljs`), DOCX (`mammoth`), PDF/code/image/audio/structured/archive matrix — browser live verification of real sample files still pending (`NOT TESTED` / partial).
+- Teacher assignment Archive/Unarchive (Active/Archived shelves, bulk, ConfirmDialog): **CODE COMPLETE** + isolated tests; Teacher click-through **LIVE VERIFIED** pending.
+- Unarchive Rule 2 (block when Active title already exists for same Teacher): **CODE COMPLETE** + **MOCK TESTED** (isolated suite); **ISOLATED INTEGRATION VERIFIED** via mocked HTTP API; live Teacher rename→retry **NOT TESTED** / **LIVE VERIFIED** pending. No global title unique index added.
+- LMS dashboard redesign (selection mode + AI question-file dialog, Review Publish buttons, Student My Assignments, directory avatar): **CODE COMPLETE** + isolated UI/auth tests; live click-through **NOT TESTED** / **LIVE VERIFIED** pending.
+- JWT malformed console spam: **CODE COMPLETE** (token normalize + Bearer extract before verify + 401 session clear); live three-role login **NOT TESTED**.
 
 ### BLOCKED
 - Preview Mongo isolation vs Production DB `quickcheck_rabeel_demo` — **UNVERIFIED**.
@@ -75,9 +85,10 @@ Production merge (Logout header): `8e9f1c3` on `main`. Intended Vercel projects 
 - Production `PUBLIC_APP_URL` exact value vs FE origin — row present; reveal/`LIVE VERIFIED` pending operator Vercel verification (do not change env).
 - Changing Production `PASSWORD_RESET_FROM_EMAIL` (historically duke-associated) — needs separate approval.
 - Orphan Vercel project `frontend` CI noise — do not modify that project in-repo.
+- True visual preview for legacy `.ppt` / `.doc` / `.xls` and OpenDocument `.odp` / `.ods` — no safe in-browser engine; Download Original only.
 
 ### NEXT
-1. Sign into Production as Admin (`/admin`), Teacher, and Student (`/login`); confirm top-right Logout and protected-route lockout.
+1. Log in as Teacher, Student, and Admin; confirm dashboards load without repeated “jwt malformed” backend logs, then exercise Submissions double-click selection → AI Evaluate Yes/No and the Review modal Publish actions.
 
 ### FUTURE
 - Replace non-desired Resend From domain after a verified sender is ready.

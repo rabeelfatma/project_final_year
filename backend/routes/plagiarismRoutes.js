@@ -1,7 +1,18 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
-const { check } = require("../controllers/plagiarismController");
+const plagiarismController = require("../controllers/plagiarismController");
 
-router.post("/check", protect, authorize("teacher", "admin"), check);
+router.use(protect, authorize("teacher", "admin"));
+
+router.get("/provider-status", plagiarismController.getProviderStatus);
+router.post("/checks", plagiarismController.createChecks);
+router.get("/checks", plagiarismController.listChecks);
+router.get("/checks/:id", plagiarismController.getCheck);
+router.post("/checks/:id/refresh", plagiarismController.refreshCheck);
+router.get("/checks/:id/report", plagiarismController.getReport);
+
+// Legacy alias — same provider architecture (no local Jaccard scores).
+router.post("/check", plagiarismController.check);
+
 module.exports = router;

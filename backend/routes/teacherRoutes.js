@@ -34,6 +34,9 @@ router.get('/list', teacherController.getTeachers);
 // 2. ASSIGNMENT CRUD (Create, Read, Update, Delete)
 // ==========================================
 
+// Validate start/deadline before a slow durable upload (signed schedule intent).
+router.post('/assignments/schedule-intent', teacherController.createScheduleIntent);
+
 // Nayi assignment create karna (File upload support ke saath)
 router.post('/assignments', upload.single('file'), teacherController.createAssignment);
 
@@ -44,8 +47,11 @@ router.put('/assignments/:id', upload.single('file'), teacherController.updateAs
 router.delete('/assignments/:id', teacherController.deleteAssignment);
 router.post('/assignments/bulk-delete', teacherController.deleteAssignmentsBulk);
 
-// Assignment ka status change karna (e.g., active se deactive)
+// Assignment ka status change karna (e.g., active se deactive / archived)
 router.patch('/assignments/:id/status', teacherController.updateAssignmentStatus);
+// Bulk archive / unarchive (ownership validated per id; never deletes files/submissions)
+router.post('/assignments/bulk-archive', teacherController.archiveAssignmentsBulk);
+router.post('/assignments/bulk-unarchive', teacherController.unarchiveAssignmentsBulk);
 
 
 // ==========================================

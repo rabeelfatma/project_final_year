@@ -147,8 +147,12 @@ export default function PortalControls({ role }) {
       >
         <Bell size={18} className="accent-text" />
         {unread > 0 && (
-          <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
-            {unread > 9 ? "9+" : unread}
+          <span
+            className="notification-badge !-right-1 !-top-1"
+            data-digits={String(unread).length}
+            aria-label={`${unread} unread notifications`}
+          >
+            {unread}
           </span>
         )}
       </button>
@@ -168,7 +172,6 @@ export default function PortalControls({ role }) {
           <div className="flex items-center justify-between px-2 pb-3 border-b" style={{ borderColor: "var(--border)" }}>
             <div>
               <p className="font-black text-sm">Notifications</p>
-              <p className="text-[10px] theme-muted">{role} account updates</p>
             </div>
             <button type="button" onClick={markAllRead} className="text-xs accent-text flex items-center gap-1">
               <CheckCheck size={14} /> Mark all read

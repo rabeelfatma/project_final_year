@@ -26,6 +26,15 @@ const teacherService = {
     }
   },
 
+  // Validate start/deadline on the server before a slow durable upload.
+  createScheduleIntent: async ({ startDate, deadline }) => {
+    const response = await api.post('/teacher/assignments/schedule-intent', {
+      startDate,
+      deadline,
+    });
+    return response.data;
+  },
+
   // 3. Create Assignment (File Upload)
   createAssignment: async (formData) => {
     try {
@@ -148,11 +157,15 @@ const teacherService = {
     }
   },
 
-  // 🔥 PUBLISH RESULTS
+  // 🔥 PUBLISH RESULTS — scope: 'ai' | 'full' (default full)
   publishBulkResults: async (data) => {
     try {
       if (!data?.submissionIds?.length) throw new Error("No submission IDs provided");
-      const response = await api.post('/teacher/publish-results', { submissionIds: data.submissionIds });
+      const scope = data.scope === 'ai' ? 'ai' : 'full';
+      const response = await api.post('/teacher/publish-results', {
+        submissionIds: data.submissionIds,
+        scope,
+      });
       return response.data;
     } catch (error) {
       console.error("Publish Error:", error.response?.data || error.message);
@@ -167,6 +180,30 @@ const teacherService = {
 
   deleteAssignmentsBulk: async (ids) => {
     const response = await api.post('/teacher/assignments/bulk-delete', { ids });
+    return response.data;
+  },
+
+  /** Archive selected owned assignments (ownership validated server-side). */
+  archiveAssignmentsBulk: async (ids) => {
+    const response = await api.post('/teacher/assignments/bulk-archive', { ids });
+    return response.data;
+  },
+
+  /** Archive every non-archived assignment owned by the logged-in teacher. */
+  archiveAllAssignments: async () => {
+    const response = await api.post('/teacher/assignments/bulk-archive', { scope: 'all' });
+    return response.data;
+  },
+
+  /** Unarchive selected owned assignments (status → active; dates unchanged). */
+  unarchiveAssignmentsBulk: async (ids) => {
+    const response = await api.post('/teacher/assignments/bulk-unarchive', { ids });
+    return response.data;
+  },
+
+  /** Unarchive every archived assignment owned by the logged-in teacher. */
+  unarchiveAllAssignments: async () => {
+    const response = await api.post('/teacher/assignments/bulk-unarchive', { scope: 'all' });
     return response.data;
   },
   resetSubmissionGradesBulk: async (ids) => {
@@ -186,7 +223,70 @@ const teacherService = {
   deleteSubmissionsBulk: async (ids) => {
     const response = await api.post('/teacher/submissions/bulk-delete', { ids });
     return response.data;
-  }
+  },
+
+  // Turnitin-ready plagiarism / similarity (server provider; no local Jaccard scores).
+  getPlagiarismProviderStatus: async () => {
+    const response = await api.get('/plagiarism/provider-status');
+    return response.data;
+  },
+  listSimilarityChecks: async (params = {}) => {
+    const response = await api.get('/plagiarism/checks', { params });
+    return response.data;
+  },
+  createSimilarityChecks: async ({ submissionIds, mode, assignmentId }) => {
+    try {
+      const response = await api.post('/plagiarism/checks', {
+        submissionIds,
+        mode,
+        assignmentId,
+      });
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        return {
+          ...error.response.data,
+          httpStatus: error.response.status,
+          thrown: true,
+        };
+      }
+      throw error;
+    }
+  },
+  getSimilarityCheck: async (id) => {
+    const response = await api.get(`/plagiarism/checks/${id}`);
+    return response.data;
+  },
+  refreshSimilarityCheck: async (id) => {
+    try {
+      const response = await api.post(`/plagiarism/checks/${id}/refresh`);
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        return {
+          ...error.response.data,
+          httpStatus: error.response.status,
+          thrown: true,
+        };
+      }
+      throw error;
+    }
+  },
+  getSimilarityReport: async (id) => {
+    try {
+      const response = await api.get(`/plagiarism/checks/${id}/report`);
+      return { ...response.data, httpStatus: response.status };
+    } catch (error) {
+      if (error.response?.data) {
+        return {
+          ...error.response.data,
+          httpStatus: error.response.status,
+          thrown: true,
+        };
+      }
+      throw error;
+    }
+  },
 };
 
 // 🔥 SINGLE AI EVALUATION

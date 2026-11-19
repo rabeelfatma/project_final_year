@@ -1,0 +1,583 @@
+/**
+ * QC-24 — Auth/Admin registration UI contracts + Resend fail-closed diagnostics.
+ * Isolated only: no Mongo, no live Resend, no secrets.
+ */
+const { describe, it } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
+
+const root = path.resolve(__dirname, "../..");
+
+function read(rel) {
+  return fs.readFileSync(path.join(root, rel), "utf8");
+}
+
+const {
+  sendTransactionalEmail,
+  recipientDomain,
+  senderDomain,
+  categorizeEmailProviderFailure,
+  getEmailConfig,
+  sanitizeProviderErrorName,
+} = require("../services/transactionalEmail");
+
+const MOCK_EMAIL_ENV = {
+  RESEND_API_KEY: "re_test_key",
+  PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+  PUBLIC_APP_URL: "http://localhost:5173",
+  PUBLIC_API_URL: "http://127.0.0.1:5000/api",
+};
+
+function captureConsoleError(fn) {
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => {
+    lines.push(args.map((a) => String(a)).join(" "));
+  };
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      console.error = original;
+    })
+    .then((result) => ({ result, logText: lines.join("\n") }));
+}
+const {
+  resendVerificationEmail,
+  sendSignupVerificationEmail,
+  issueEmailVerificationToken,
+} = require("../services/emailVerificationService");
+
+describe("QC-24 auth form layout + validation UI contracts", () => {
+  it("keeps compact auth shell/card and password helper text", () => {
+    const css = read("frontend/src/index.css");
+    const signup = read("frontend/src/pages/authentication/PublicSignup.jsx");
+    const login = read("frontend/src/pages/authentication/Login.jsx");
+    const verify = read("frontend/src/pages/authentication/VerifyEmail.jsx");
+
+    assert.match(css, /\.qc-auth-shell\s*\{/);
+    assert.match(css, /\.qc-auth-card\s*\{/);
+    assert.match(css, /align-items:\s*safe center/);
+    assert.match(css, /\.qc-auth-card\s*\{[^}]*max-width:\s*28rem/);
+    assert.doesNotMatch(
+      css,
+      /@media\s*\(max-height:\s*720px\)\s*\{\s*\.qc-auth-shell\s*\{[^}]*align-items:\s*flex-start/
+    );
+    assert.match(css, /\.qc-btn-block\s*\{[\s\S]*?max-width:\s*100%/);
+    assert.match(css, /\.qc-btn-block\s*\{[\s\S]*?display:\s*flex/);
+    assert.doesNotMatch(css, /\.qc-btn-block\s*\{[^}]*text-wrap\s*:/);
+    assert.match(css, /\.qc-auth-submit/);
+    assert.match(signup, /qc-auth-submit/);
+    assert.doesNotMatch(signup, /qc-auth-card max-w-lg/);
+    assert.match(css, /\.qc-field-error/);
+    assert.match(css, /\.qc-field-error-text/);
+    assert.match(css, /\.qc-alert\s*\{/);
+
+    assert.match(
+      signup,
+      /PASSWORD_HINT/
+    );
+    assert.match(
+      read("frontend/src/pages/dashboards/AdminDashboard.jsx"),
+      /qc-table-actions__label/
+    );
+    assert.match(css, /\.qc-table-actions__label/);
+    assert.match(css, /\.qc-auth-card\s+\.qc-btn(?:\.qc-btn-block)?/);
+    assert.match(css, /\.qc-table-actions/);
+    assert.doesNotMatch(
+      read("frontend/src/components/common/DashboardTopBar.jsx"),
+      /\{role\} account updates/
+    );
+    assert.match(signup, /qc-field-error/);
+    assert.match(signup, /qc-field-error-text/);
+    assert.match(signup, /Resubmit Registration Request|Submit Registration Request/);
+    assert.match(signup, /Already have an account\?/);
+    assert.match(signup, /showPass/);
+    assert.match(signup, /confirmPassword/);
+    assert.doesNotMatch(signup, /ring-1 ring-rose-400/);
+
+    assert.match(login, /qc-auth-shell/);
+    assert.match(login, /Forgot Password\?/);
+    assert.match(verify, /Resend Verification Email/);
+    assert.match(verify, /EMAIL_PROVIDER_ERROR|EMAIL_NOT_CONFIGURED/);
+  });
+
+  it("Alert stays compact with role=alert and no oversized padding classes", () => {
+    const alert = read("frontend/src/components/ui/Alert.jsx");
+    assert.match(alert, /role="alert"/);
+    assert.match(alert, /qc-alert/);
+    assert.match(alert, /py-1\.5/);
+    assert.match(alert, /text-xs/);
+    assert.doesNotMatch(alert, /py-4|text-lg|min-h-\[/);
+  });
+
+  it("Admin Registration Requests table fits review tabs without desktop min-width scroll", () => {
+    const css = read("frontend/src/index.css");
+    const admin = read("frontend/src/pages/dashboards/AdminDashboard.jsx");
+
+    assert.match(css, /\.qc-table--registration/);
+    assert.match(css, /\.qc-table-wrap--registration/);
+    assert.match(css, /\.qc-table--registration-review/);
+    assert.match(css, /\.qc-table--registration-pending/);
+    assert.match(css, /\.qc-email-cell/);
+    assert.match(css, /align-items:\s*safe center/);
+    assert.match(css, /word-break:\s*normal/);
+    assert.doesNotMatch(css, /\.qc-table--registration\s*\{[^}]*min-width:\s*68rem/);
+    assert.doesNotMatch(css, /\.qc-email-cell[\s\S]{0,120}break-all/);
+    assert.doesNotMatch(css, /word-break:\s*break-all/);
+
+    assert.match(admin, /qc-table-wrap--registration/);
+    assert.match(admin, /qc-table--registration-review/);
+    assert.match(admin, /qc-table--registration-pending/);
+    assert.match(admin, /qc-email-cell/);
+    assert.match(admin, /Pending Requests/);
+    assert.match(admin, /Approved/);
+    assert.match(admin, /Rejected/);
+    assert.match(admin, /Reapplied/);
+    assert.match(admin, /applicationAttempt/);
+    assert.doesNotMatch(admin, /className="theme-muted break-all"/);
+  });
+});
+
+describe("QC-24 transactional email diagnostics (mocked provider)", () => {
+  it("categorizes provider HTTP and network failures without secrets", () => {
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 400 }),
+      "http_rejected"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 401 }),
+      "auth_rejected"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 403 }),
+      "auth_rejected"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 422 }),
+      "validation_rejected"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 429 }),
+      "rate_limited"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 500 }),
+      "provider_unavailable"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ status: 503 }),
+      "provider_unavailable"
+    );
+    assert.equal(
+      categorizeEmailProviderFailure({ networkError: true }),
+      "network_failure"
+    );
+    assert.equal(recipientDomain("Ada <ada@example.com>"), "example.com");
+    assert.equal(recipientDomain("ada@campus.edu"), "campus.edu");
+    assert.equal(
+      senderDomain("QuickCheck Hub <noreply@duke.com.pk>"),
+      "duke.com.pk"
+    );
+    assert.equal(senderDomain("noreply@example.com"), "example.com");
+  });
+
+  it("maps Resend HTTP 400/401/403/422/429/5xx to EMAIL_PROVIDER_ERROR", async () => {
+    const statuses = [400, 401, 403, 422, 429, 500, 502, 503];
+    const expected = {
+      400: "http_rejected",
+      401: "auth_rejected",
+      403: "auth_rejected",
+      422: "validation_rejected",
+      429: "rate_limited",
+      500: "provider_unavailable",
+      502: "provider_unavailable",
+      503: "provider_unavailable",
+    };
+    for (const status of statuses) {
+      const result = await sendTransactionalEmail(
+        { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+        {
+          env: {
+            RESEND_API_KEY: "re_test_key",
+            PASSWORD_RESET_FROM_EMAIL: "QuickCheck Hub <noreply@example.com>",
+            PUBLIC_APP_URL: "http://localhost:5173",
+            PUBLIC_API_URL: "http://127.0.0.1:5000/api",
+          },
+          fetchImpl: async () => ({
+            ok: false,
+            status,
+            json: async () => ({ message: "should-not-surface" }),
+          }),
+        }
+      );
+      assert.equal(result.ok, false, `status ${status}`);
+      assert.equal(result.code, "EMAIL_PROVIDER_ERROR", `status ${status}`);
+      assert.equal(result.category, expected[status], `status ${status}`);
+      assert.equal(result.providerStatus, status, `status ${status}`);
+      assert.doesNotMatch(
+        JSON.stringify(result),
+        /should-not-surface|re_test_key/
+      );
+    }
+  });
+
+  it("fails closed when unconfigured and does not call fetch", async () => {
+    let called = 0;
+    const result = await sendTransactionalEmail(
+      { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+      {
+        env: {},
+        fetchImpl: async () => {
+          called += 1;
+          return { ok: true, status: 200 };
+        },
+      }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_NOT_CONFIGURED");
+    assert.equal(called, 0);
+    assert.equal(getEmailConfig({}).configured, false);
+  });
+
+  it("maps provider HTTP rejection to EMAIL_PROVIDER_ERROR with sanitized category", async () => {
+    const result = await sendTransactionalEmail(
+      { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+      {
+        env: MOCK_EMAIL_ENV,
+        fetchImpl: async () => ({
+          ok: false,
+          status: 422,
+          json: async () => ({ message: "should-not-surface" }),
+        }),
+      }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.equal(result.category, "validation_rejected");
+    assert.equal(result.providerStatus, 422);
+    assert.equal(result.message, "Email provider rejected the message.");
+    assert.doesNotMatch(JSON.stringify(result), /should-not-surface|re_test_key/);
+  });
+
+  it("logs allowlisted providerErrorName for HTTP 403 without exposing body to clients", async () => {
+    assert.equal(sanitizeProviderErrorName("validation_error"), "validation_error");
+    assert.equal(sanitizeProviderErrorName("not_in_allowlist"), null);
+    assert.equal(sanitizeProviderErrorName("Validation Error"), null);
+    assert.equal(sanitizeProviderErrorName({ name: "validation_error" }), null);
+
+    const { result, logText } = await captureConsoleError(() =>
+      sendTransactionalEmail(
+        { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+        {
+          env: MOCK_EMAIL_ENV,
+          fetchImpl: async () => ({
+            ok: false,
+            status: 403,
+            json: async () => ({
+              name: "validation_error",
+              message: "secret body with user@victim.test must not appear",
+              statusCode: 403,
+            }),
+          }),
+        }
+      )
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.equal(result.category, "auth_rejected");
+    assert.equal(result.providerStatus, 403);
+    assert.equal(result.message, "Email provider rejected the message.");
+    assert.equal(result.providerErrorName, undefined);
+    assert.match(logText, /"providerErrorName":"validation_error"/);
+    assert.match(logText, /"providerStatus":403/);
+    assert.match(logText, /"category":"auth_rejected"/);
+    assert.match(logText, /"fromDomain":"example.com"/);
+    assert.match(logText, /"stage":"resend_http_send"/);
+    assert.doesNotMatch(logText, /user@victim\.test|secret body|re_test_key/);
+    assert.doesNotMatch(JSON.stringify(result), /validation_error|user@victim\.test|secret body/);
+  });
+
+  it("keeps generic EMAIL_PROVIDER_ERROR when HTTP 403 body JSON is malformed", async () => {
+    const { result, logText } = await captureConsoleError(() =>
+      sendTransactionalEmail(
+        { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+        {
+          env: MOCK_EMAIL_ENV,
+          fetchImpl: async () => ({
+            ok: false,
+            status: 403,
+            json: async () => {
+              throw new SyntaxError("Unexpected token");
+            },
+          }),
+        }
+      )
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.equal(result.category, "auth_rejected");
+    assert.equal(result.providerStatus, 403);
+    assert.equal(result.message, "Email provider rejected the message.");
+    assert.match(logText, /"providerErrorName":null/);
+    assert.match(logText, /"providerStatus":403/);
+  });
+
+  it("ignores missing or invalid provider error names on HTTP 403", async () => {
+    const cases = [
+      { name: undefined },
+      { name: "" },
+      { name: "NOT_ALLOWED_CASE" },
+      { name: "free form text with spaces" },
+      { name: "x".repeat(80) },
+      { name: "unknown_resend_code" },
+      { message: "only message, no name" },
+    ];
+
+    for (const body of cases) {
+      const { result, logText } = await captureConsoleError(() =>
+        sendTransactionalEmail(
+          { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+          {
+            env: MOCK_EMAIL_ENV,
+            fetchImpl: async () => ({
+              ok: false,
+              status: 403,
+              json: async () => body,
+            }),
+          }
+        )
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+      assert.equal(result.category, "auth_rejected");
+      assert.equal(result.providerStatus, 403);
+      assert.equal(result.message, "Email provider rejected the message.");
+      assert.match(logText, /"providerErrorName":null/);
+      assert.doesNotMatch(JSON.stringify(result), /providerErrorName/);
+    }
+  });
+
+  it("maps network failure to EMAIL_PROVIDER_ERROR network_failure", async () => {
+    const result = await sendTransactionalEmail(
+      { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+      {
+        env: {
+          RESEND_API_KEY: "re_test_key",
+          PASSWORD_RESET_FROM_EMAIL: "noreply@example.com",
+          PUBLIC_APP_URL: "http://localhost:5173",
+          PUBLIC_API_URL: "http://127.0.0.1:5000/api",
+        },
+        fetchImpl: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+      }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.equal(result.category, "network_failure");
+    assert.equal(result.providerStatus, null);
+  });
+
+  it("succeeds with mocked provider 200 without live send", async () => {
+    let bodies = 0;
+    const result = await sendTransactionalEmail(
+      { to: "ada@example.com", subject: "s", text: "t", html: "<p>t</p>" },
+      {
+        env: {
+          RESEND_API_KEY: "re_test_key",
+          PASSWORD_RESET_FROM_EMAIL: "noreply@example.com",
+          PUBLIC_APP_URL: "http://localhost:5173",
+          PUBLIC_API_URL: "http://127.0.0.1:5000/api",
+        },
+        fetchImpl: async (_url, init) => {
+          bodies += 1;
+          const parsed = JSON.parse(init.body);
+          assert.equal(parsed.to[0], "ada@example.com");
+          assert.ok(!JSON.stringify(parsed).includes("re_test_key"));
+          return { ok: true, status: 200 };
+        },
+      }
+    );
+    assert.equal(result.ok, true);
+    assert.equal(bodies, 1);
+  });
+});
+
+describe("QC-24 resend verification fail-closed (mocked)", () => {
+  it("resend fails closed on provider error and never marks email verified", async () => {
+    const user = {
+      _id: "u1",
+      name: "Ada",
+      email: "ada@example.com",
+      role: "student",
+      approvalStatus: "pending",
+      emailVerified: false,
+      pendingEmail: null,
+    };
+    let verifiedWrites = 0;
+    const tokens = [];
+
+    const result = await resendVerificationEmail(
+      { email: "ada@example.com", ip: "127.0.0.1" },
+      {
+        User: {
+          findOne: async (filter) => {
+            if (filter.email === "ada@example.com") return user;
+            if (filter.pendingEmail === "ada@example.com") return null;
+            return null;
+          },
+          findById: async () => user,
+          findOneAndUpdate: async (_f, update) => {
+            if (update?.$set?.emailVerified === true) verifiedWrites += 1;
+            return user;
+          },
+        },
+        EmailVerificationToken: {
+          updateMany: async () => ({ acknowledged: true }),
+          create: async (doc) => {
+            tokens.push(doc);
+            return doc;
+          },
+        },
+        AuthRateLimit: {
+          findOneAndUpdate: async () => ({ count: 1 }),
+        },
+        getEmailConfig: () => ({
+          configured: true,
+          publicAppUrl: "http://localhost:5173",
+          publicApiUrl: "http://127.0.0.1:5000/api",
+          apiKey: "re_x",
+          fromEmail: "noreply@example.com",
+        }),
+        sendTransactionalEmail: async () => ({
+          ok: false,
+          code: "EMAIL_PROVIDER_ERROR",
+          category: "http_rejected",
+          providerStatus: 403,
+          message: "Email provider rejected the message.",
+        }),
+        env: {},
+        now: () => new Date(),
+        fetchImpl: async () => ({ ok: false, status: 403 }),
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 503);
+    assert.equal(result.code, "EMAIL_PROVIDER_ERROR");
+    assert.match(result.message, /temporarily unavailable/i);
+    assert.equal(user.emailVerified, false);
+    assert.equal(verifiedWrites, 0);
+    assert.ok(tokens.length >= 1);
+  });
+
+  it("resend succeeds with mocked provider and leaves email unverified until token consume", async () => {
+    const user = {
+      _id: "u2",
+      name: "Bea",
+      email: "bea@example.com",
+      role: "teacher",
+      approvalStatus: "pending",
+      emailVerified: false,
+    };
+    let sends = 0;
+
+    const result = await resendVerificationEmail(
+      { email: "bea@example.com", ip: "127.0.0.1" },
+      {
+        User: {
+          findOne: async (filter) =>
+            filter.email === "bea@example.com" ? user : null,
+        },
+        EmailVerificationToken: {
+          updateMany: async () => ({ acknowledged: true }),
+          create: async (doc) => doc,
+        },
+        AuthRateLimit: {
+          findOneAndUpdate: async () => ({ count: 1 }),
+        },
+        getEmailConfig: () => ({
+          configured: true,
+          publicAppUrl: "http://localhost:5173",
+          publicApiUrl: "http://127.0.0.1:5000/api",
+          apiKey: "re_x",
+          fromEmail: "noreply@example.com",
+        }),
+        sendTransactionalEmail: async () => {
+          sends += 1;
+          return { ok: true };
+        },
+        env: {},
+        now: () => new Date(),
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.equal(sends, 1);
+    assert.equal(user.emailVerified, false);
+  });
+
+  it("sendSignupVerificationEmail stays fail-closed when provider returns network failure", async () => {
+    const sent = await sendSignupVerificationEmail(
+      { _id: "u3", name: "Cara", email: "cara@example.com" },
+      "raw-token-value-at-least-32-chars-long!!",
+      {
+        getEmailConfig: () => ({
+          configured: true,
+          publicAppUrl: "http://localhost:5173",
+          publicApiUrl: "http://127.0.0.1:5000/api",
+          apiKey: "re_x",
+          fromEmail: "noreply@example.com",
+        }),
+        sendTransactionalEmail: async () => ({
+          ok: false,
+          code: "EMAIL_PROVIDER_ERROR",
+          category: "network_failure",
+          providerStatus: null,
+        }),
+        env: {},
+        fetchImpl: async () => {
+          throw new Error("network");
+        },
+      }
+    );
+    assert.equal(sent.ok, false);
+    assert.equal(sent.code, "EMAIL_PROVIDER_ERROR");
+  });
+
+  it("issueEmailVerificationToken does not flip emailVerified", async () => {
+    const user = {
+      _id: "u4",
+      email: "dana@example.com",
+      emailVerified: false,
+    };
+    const issued = await issueEmailVerificationToken(user, {
+      EmailVerificationToken: {
+        updateMany: async () => ({ acknowledged: true }),
+        create: async (doc) => doc,
+      },
+      now: () => new Date(),
+    });
+    assert.ok(issued.rawToken);
+    assert.equal(user.emailVerified, false);
+  });
+});
+
+describe("QC-24 QC-23 regression surface still present", () => {
+  it("reapply identity uses accountEmail/accountId and same-details tests remain", () => {
+    const auth = read("backend/controllers/authController.js");
+    const signup = read("frontend/src/pages/authentication/PublicSignup.jsx");
+    const qc23 = read("backend/tests/qc23Reapplication.isolated.test.js");
+
+    assert.match(auth, /accountEmail|lockedAccountEmail|ACCOUNT_EMAIL_REQUIRED/);
+    assert.match(auth, /reapplyPublicSignup/);
+    assert.match(signup, /accountEmail|lockedAccountEmail/);
+    assert.match(qc23, /reapply succeeds with exactly the same details/);
+    assert.match(qc23, /VERIFICATION_EMAIL_FAILED/);
+    assert.match(qc23, /emailVerified, false/);
+  });
+});

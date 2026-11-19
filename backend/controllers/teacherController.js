@@ -18,6 +18,34 @@ const { checkAssignment } = require("../services/geminiService");
 
 const { create: createNotification } = require("./notificationController");
 
+const {
+  validateAssignmentFields,
+  normalizeTitleForComparison,
+} = require("../utils/assignmentFieldValidation");
+
+const {
+  findActiveDuplicateAssignment,
+  findActiveDuplicateTitleForUnarchive,
+  duplicateConflictPayload,
+  unarchiveTitleConflictPayload,
+  isMongoDuplicateKeyError,
+  UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+} = require("../utils/assignmentDuplicate");
+
+const {
+  issueScheduleIntent,
+  verifyScheduleIntent,
+} = require("../utils/assignmentScheduleIntent");
+
+const {
+  hasValidAiScore,
+  hasValidTeacherMarks,
+  hasTeacherFeedbackContent,
+  applyAiPublication,
+  applyTeacherMarksPublication,
+  applyTeacherFeedbackPublication,
+} = require("../utils/publicationVisibility");
+
 
 
 function extractTotalMarks(instructions) {
@@ -166,130 +194,209 @@ exports.getOverviewStats = async (req, res) => {
 
 
 
+/** POST /assignments/schedule-intent — validate schedule before slow durable upload. */
+exports.createScheduleIntent = async (req, res) => {
+  try {
+    const issued = issueScheduleIntent({
+      teacherId: req.user._id,
+      startDate: req.body?.startDate,
+      deadline: req.body?.deadline,
+    });
+    if (!issued.ok) {
+      return res.status(400).json({
+        message: issued.message,
+        code: issued.code || "ASSIGNMENT_VALIDATION",
+        errors: issued.errors,
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      scheduleIntentToken: issued.scheduleIntentToken,
+      expiresIn: issued.expiresIn,
+      startDate: issued.startDate,
+      deadline: issued.deadline,
+      projectTimezone: issued.projectTimezone,
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      message:
+        status >= 500
+          ? "Unable to save assignment. Please try again."
+          : error.message || "Schedule could not be verified.",
+      code: error.code || "SCHEDULE_INTENT_FAILED",
+    });
+  }
+};
+
 exports.createAssignment = async (req, res) => {
 
   try {
 
-    const { title, startDate, deadline, description, points, subject } = req.body;
+    const { subject } = req.body;
 
-    const totalMarks = Number(points);
-
-
-
-    if (
-
-      !title ||
-
-      !String(description || "").trim() ||
-
-      !startDate ||
-
-      !deadline ||
-
-      !Number.isFinite(totalMarks) ||
-
-      totalMarks <= 0
-
-    ) {
-
+    const intentCheck = verifyScheduleIntent(
+      req.body?.scheduleIntentToken,
+      {
+        teacherId: req.user._id,
+        startDate: req.body?.startDate,
+        deadline: req.body?.deadline,
+      }
+    );
+    if (!intentCheck.ok) {
       return res.status(400).json({
-
-        message: "Title, academic instructions, dates, and total marks greater than 0 are required.",
-
-      });
-
-    }
-
-    const start = new Date(startDate);
-    const end = new Date(deadline);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
-      return res.status(400).json({
-        message: "Deadline must be a valid date on or after the start date.",
+        message: intentCheck.message,
+        code: intentCheck.code || "SCHEDULE_INTENT_INVALID",
+        errors: {
+          startDate: intentCheck.message,
+        },
       });
     }
 
+    const validated = validateAssignmentFields(req.body, {
+      mode: "create",
+    });
+    if (!validated.ok) {
+      return res.status(400).json({
+        message: validated.message,
+        code: validated.code,
+        errors: validated.errors,
+      });
+    }
 
+    const { title, description, points: totalMarks, startDate: start, deadline: end } =
+      validated.values;
 
-    const fileUrl = req.file
+    // Preserve existing subject resolution / defaults (do not invent new defaults).
+    const resolvedSubject = subject || req.user.subject || "General";
 
-      ? `uploads/assignments/${req.file.filename}`
+    // Reject missing reference file before durable resolve (avoids needless verify work).
+    // Client-only filename/mime without multipart or a storedFileKey is not accepted.
+    const hasMultipartFile = Boolean(req.file?.filename);
+    const hasPresignedKey = Boolean(
+      String(req.body?.storedFileKey || req.body?.objectKey || "").trim()
+    );
+    const extraFiles = Array.isArray(req.files) ? req.files.length : 0;
+    if (extraFiles > 1 || (hasMultipartFile && hasPresignedKey)) {
+      return res.status(400).json({
+        message: "Upload one reference file.",
+        code: "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: "Upload one reference file.",
+        },
+      });
+    }
+    if (!hasMultipartFile && !hasPresignedKey) {
+      return res.status(400).json({
+        message: "Upload a reference file.",
+        code: "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: "Upload a reference file.",
+        },
+      });
+    }
 
-      : null;
+    // Duplicate check before durable upload / R2 side effects on this request.
+    const duplicate = await findActiveDuplicateAssignment({
+      AssignmentModel: Assignment,
+      teacherId: req.user._id,
+      subject: resolvedSubject,
+      title,
+    });
+    if (duplicate) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
 
+    const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
+    let durable = null;
+    try {
+      durable = await resolveDurableUpload(req, {
+        category: "assignments",
+        folder: "assignments",
+      });
+    } catch (uploadErr) {
+      const status = uploadErr.statusCode || 400;
+      return res.status(status).json({
+        message: uploadErr.message || "Assignment file upload is invalid.",
+        code: uploadErr.code || "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: uploadErr.message || "Assignment file upload is invalid.",
+        },
+      });
+    }
 
+    if (!durable?.storedPath) {
+      return res.status(400).json({
+        message: "Upload a valid reference file.",
+        code: "ASSIGNMENT_VALIDATION",
+        errors: {
+          file: "Upload a valid reference file.",
+        },
+      });
+    }
+
+    const fileUrl = durable.storedPath;
 
     const assignment = await Assignment.create({
 
-      title: title.trim(),
+      title,
 
       startDate: start,
 
       deadline: end,
 
-      description: String(description).trim(),
+      description,
 
       points: totalMarks,
 
-      subject: subject || req.user.subject || "General",
+      subject: resolvedSubject,
 
       file: fileUrl,
 
       fileUrl,
 
-      originalFileName: req.file?.originalname || "",
+      originalFileName: durable.originalFileName || "",
 
-      fileMimeType: req.file?.mimetype || "",
+      fileMimeType: durable.fileMimeType || "",
 
       teacher: req.user._id,
 
       status: "active",
 
+      availabilityNotifiedAt: null,
+
     });
 
-
-
-    const students = await User.find({ role: "student" }).select("_id");
-
-
-
-    await Promise.all(
-
-      students.map((student) =>
-
-        createNotification({
-
-          recipient: student._id,
-
-          title: "New assignment posted",
-
-          message: `${assignment.title} is available. Total marks: ${assignment.points}.`,
-
-          type: "assignment",
-
-          meta: { assignmentId: assignment._id },
-
-          url: "/dashboard/student",
-
-        })
-
-      )
-
-    );
-
-
+    // Future startDate: save only — availability notifications fire when start is reached.
+    // Already-open active assignments keep immediate "New assignment posted" behavior.
+    try {
+      const {
+        notifyAssignmentAvailable,
+      } = require("../services/assignmentAvailabilityNotificationService");
+      const Notification = require("../models/Notification");
+      await notifyAssignmentAvailable(assignment, {
+        Assignment,
+        User,
+        Notification,
+        createNotification,
+        nowMs: Date.now(),
+      });
+    } catch (notifyErr) {
+      console.error("ASSIGNMENT AVAILABILITY NOTIFY ERROR:", notifyErr);
+    }
 
     res.status(201).json(assignment);
 
   } catch (error) {
 
+    if (isMongoDuplicateKeyError(error)) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
+
     console.error("CREATE ASSIGNMENT ERROR:", error);
 
     res.status(500).json({
-
-      message: "Creation failed",
-
-      error: error.message,
-
+      message: "Unable to save assignment. Please try again.",
     });
 
   }
@@ -301,46 +408,6 @@ exports.createAssignment = async (req, res) => {
 exports.updateAssignment = async (req, res) => {
 
   try {
-
-    const updateData = { ...req.body };
-
-
-
-    if (updateData.startDate) {
-
-      updateData.startDate = new Date(updateData.startDate);
-
-    }
-
-
-
-    if (updateData.deadline) {
-
-      updateData.deadline = new Date(updateData.deadline);
-
-    }
-
-
-
-    if (updateData.points !== undefined) {
-
-      updateData.points = Number(updateData.points);
-
-
-
-      if (!Number.isFinite(updateData.points) || updateData.points <= 0) {
-
-        return res.status(400).json({
-
-          message: "Total marks must be greater than 0.",
-
-        });
-
-      }
-
-    }
-
-
 
     const current = await Assignment.findOne({
 
@@ -360,28 +427,89 @@ exports.updateAssignment = async (req, res) => {
 
 
 
-    if (req.file) {
+    const validated = validateAssignmentFields(req.body, {
+      mode: "update",
+      existing: {
+        title: current.title,
+        description: current.description,
+        points: current.points,
+        startDate: current.startDate,
+        deadline: current.deadline,
+      },
+    });
+    if (!validated.ok) {
+      return res.status(400).json({
+        message: validated.message,
+        code: validated.code,
+        errors: validated.errors,
+      });
+    }
 
-      const newPath = `uploads/assignments/${req.file.filename}`;
+    const updateData = {};
+    if (validated.values.title !== undefined) {
+      updateData.title = validated.values.title;
+    }
+    if (validated.values.description !== undefined) {
+      updateData.description = validated.values.description;
+    }
+    if (validated.values.points !== undefined) {
+      updateData.points = validated.values.points;
+    }
+    if (validated.values.startDate !== undefined) {
+      updateData.startDate = validated.values.startDate;
+    }
+    if (validated.values.deadline !== undefined) {
+      updateData.deadline = validated.values.deadline;
+    }
 
+    // Update path does not currently rewrite subject; keep existing stored subject.
+    const effectiveTitle =
+      updateData.title !== undefined ? updateData.title : current.title;
+    const effectiveSubject = current.subject || "General";
 
+    const duplicate = await findActiveDuplicateAssignment({
+      AssignmentModel: Assignment,
+      teacherId: req.user._id,
+      subject: effectiveSubject,
+      title: effectiveTitle,
+      excludeId: current._id,
+    });
+    if (duplicate) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
 
-      updateData.file = newPath;
-
-      updateData.fileUrl = newPath;
-
-      updateData.originalFileName = req.file.originalname || req.file.filename;
-
-      updateData.fileMimeType = req.file.mimetype || "";
-
-
-
-      if (current.file && current.file !== newPath) {
-
-        await removeStoredAcademicFile(current.file);
-
+    {
+      const { resolveDurableUpload } = require("../utils/resolveDurableUpload");
+      let durable = null;
+      try {
+        durable = await resolveDurableUpload(req, {
+          category: "assignments",
+          folder: "assignments",
+        });
+      } catch (uploadErr) {
+        const status = uploadErr.statusCode || 400;
+        return res.status(status).json({
+          message: uploadErr.message || "Assignment file upload is invalid.",
+          code: uploadErr.code || "ASSIGNMENT_VALIDATION",
+          errors: {
+            file: uploadErr.message || "Assignment file upload is invalid.",
+          },
+        });
       }
 
+      // Optional replacement only — keep existing file metadata when no new upload.
+      if (durable?.storedPath) {
+        const newPath = durable.storedPath;
+        updateData.file = newPath;
+        updateData.fileUrl = newPath;
+        updateData.originalFileName =
+          durable.originalFileName || durable.storedPath;
+        updateData.fileMimeType = durable.fileMimeType || "";
+
+        if (current.file && current.file !== newPath) {
+          await removeStoredAcademicFile(current.file);
+        }
+      }
     }
 
 
@@ -402,12 +530,12 @@ exports.updateAssignment = async (req, res) => {
 
   } catch (error) {
 
+    if (isMongoDuplicateKeyError(error)) {
+      return res.status(409).json(duplicateConflictPayload());
+    }
+
     res.status(500).json({
-
-      message: "Update failed",
-
-      error: error.message,
-
+      message: "Unable to save assignment. Please try again.",
     });
 
   }
@@ -468,26 +596,77 @@ exports.updateAssignmentStatus = async (req, res) => {
 
   try {
 
-    const updated = await Assignment.findOneAndUpdate(
-
-      { _id: req.params.id, teacher: req.user._id },
-
-      { status: req.body.status },
-
-      { new: true }
-
-    );
-
-
-
-    if (!updated) {
-
-      return res.status(404).json({ message: "Assignment not found" });
-
+    const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+    const allowed = ["active", "deactive", "archived"];
+    if (!allowed.includes(nextStatus)) {
+      return res.status(400).json({
+        message: "Status must be active, deactive, or archived.",
+      });
     }
 
+    const teacherId = req.user._id;
+    const assignmentId = req.params.id;
 
+    // Load owned row first so we can enforce Rule 2 before any status write.
+    const ownedRows = await Assignment.find({
+      _id: assignmentId,
+      teacher: teacherId,
+    })
+      .select("_id title status teacher startDate deadline")
+      .lean();
+    const existing = Array.isArray(ownedRows) ? ownedRows[0] : null;
 
+    if (!existing) {
+      return res.status(404).json({ message: "Assignment not found" });
+    }
+
+    // Rule 2: unarchive / reactivate blocked when another Active title matches.
+    if (nextStatus === "active" && existing.status !== "active") {
+      const conflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: existing.title,
+        excludeId: existing._id,
+      });
+      if (conflict) {
+        return res.status(409).json(unarchiveTitleConflictPayload({
+          conflictingAssignmentId: String(conflict._id),
+        }));
+      }
+    }
+
+    // Ownership enforced in the filter. Archive/unarchive only flips `status`.
+    // Never mutate startDate, deadline, points, files, or submission/grade data.
+    const updated = await Assignment.findOneAndUpdate(
+      { _id: assignmentId, teacher: teacherId },
+      { $set: { status: nextStatus } },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: "Assignment not found" });
+    }
+
+    // Concurrent unarchive guard: if two restores raced, roll this one back.
+    if (nextStatus === "active" && existing.status !== "active") {
+      const stillConflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: updated.title,
+        excludeId: updated._id,
+      });
+      if (stillConflict) {
+        await Assignment.updateOne(
+          { _id: updated._id, teacher: teacherId, status: "active" },
+          { $set: { status: existing.status } }
+        );
+        return res.status(409).json(unarchiveTitleConflictPayload({
+          conflictingAssignmentId: String(stillConflict._id),
+        }));
+      }
+    }
+
+    // Idempotent: repeating archive/unarchive returns the same owned record.
     res.json(updated);
 
   } catch (error) {
@@ -504,7 +683,275 @@ exports.updateAssignmentStatus = async (req, res) => {
 
 };
 
+/**
+ * Archive many assignments owned by the caller.
+ * - body.scope === "all": archive every non-archived assignment for this teacher
+ * - body.ids: archive only those IDs that are owned; report unowned IDs as failed
+ * Never deletes files, submissions, grades, or R2 objects.
+ */
+exports.archiveAssignmentsBulk = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const scopeAll = String(req.body?.scope || "").toLowerCase() === "all";
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : null;
 
+    if (!scopeAll && (!rawIds || !rawIds.length)) {
+      return res.status(400).json({
+        message: "Select at least one assignment, or use scope=all.",
+      });
+    }
+
+    if (scopeAll) {
+      const owned = await Assignment.find({
+        teacher: teacherId,
+        status: { $ne: "archived" },
+      }).select("_id status file originalFileName");
+
+      if (!owned.length) {
+        return res.json({
+          success: true,
+          archived: 0,
+          archivedIds: [],
+          failed: [],
+          skipped: [],
+          requested: 0,
+        });
+      }
+
+      const ids = owned.map((row) => row._id);
+      const result = await Assignment.updateMany(
+        { _id: { $in: ids }, teacher: teacherId, status: { $ne: "archived" } },
+        { $set: { status: "archived" } }
+      );
+
+      return res.json({
+        success: true,
+        archived: result.modifiedCount || 0,
+        archivedIds: ids.map(String),
+        failed: [],
+        skipped: [],
+        requested: ids.length,
+      });
+    }
+
+    const requestedIds = [
+      ...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    ].slice(0, 200);
+
+    const owned = await Assignment.find({
+      _id: { $in: requestedIds },
+      teacher: teacherId,
+    }).select("_id status");
+
+    const ownedById = new Map(owned.map((row) => [String(row._id), row]));
+    const failed = [];
+    const skipped = [];
+    const toArchive = [];
+
+    for (const id of requestedIds) {
+      const row = ownedById.get(id);
+      if (!row) {
+        failed.push({ id, reason: "not found or not owned" });
+        continue;
+      }
+      if (row.status === "archived") {
+        skipped.push({ id, reason: "already archived" });
+        continue;
+      }
+      toArchive.push(row._id);
+    }
+
+    let modified = 0;
+    if (toArchive.length) {
+      const result = await Assignment.updateMany(
+        {
+          _id: { $in: toArchive },
+          teacher: teacherId,
+          status: { $ne: "archived" },
+        },
+        { $set: { status: "archived" } }
+      );
+      modified = result.modifiedCount || 0;
+    }
+
+    return res.json({
+      success: failed.length === 0,
+      archived: modified,
+      archivedIds: toArchive.map(String),
+      failed,
+      skipped,
+      requested: requestedIds.length,
+      message:
+        failed.length > 0
+          ? `Archived ${modified} of ${requestedIds.length}. ${failed.length} could not be archived.`
+          : undefined,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to archive assignments",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Unarchive many assignments owned by the caller.
+ * - body.scope === "all": unarchive every archived assignment for this teacher
+ * - body.ids: unarchive only those owned archived IDs
+ * Restores status to "active" only — never changes startDate/deadline or academic records.
+ * Rule 2: skip/fail rows whose normalized title already exists on another Active assignment.
+ */
+exports.unarchiveAssignmentsBulk = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const scopeAll = String(req.body?.scope || "").toLowerCase() === "all";
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : null;
+
+    if (!scopeAll && (!rawIds || !rawIds.length)) {
+      return res.status(400).json({
+        message: "Select at least one assignment, or use scope=all.",
+      });
+    }
+
+    let candidates = [];
+    const failed = [];
+    const skipped = [];
+
+    if (scopeAll) {
+      candidates = await Assignment.find({
+        teacher: teacherId,
+        status: "archived",
+      }).select("_id title status startDate deadline");
+    } else {
+      const requestedIds = [
+        ...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)),
+      ].slice(0, 200);
+
+      const owned = await Assignment.find({
+        _id: { $in: requestedIds },
+        teacher: teacherId,
+      }).select("_id title status startDate deadline");
+
+      const ownedById = new Map(owned.map((row) => [String(row._id), row]));
+      for (const id of requestedIds) {
+        const row = ownedById.get(id);
+        if (!row) {
+          failed.push({ id, reason: "not found or not owned" });
+          continue;
+        }
+        if (row.status !== "archived") {
+          skipped.push({ id, reason: "not archived" });
+          continue;
+        }
+        candidates.push(row);
+      }
+    }
+
+    if (!candidates.length && failed.length === 0 && skipped.length === 0) {
+      return res.json({
+        success: true,
+        unarchived: 0,
+        unarchivedIds: [],
+        failed: [],
+        skipped: [],
+        requested: 0,
+      });
+    }
+
+    // Titles accepted in this request — prevents two archived clones both becoming Active.
+    const acceptedTitleKeys = new Set();
+    const unarchivedIds = [];
+
+    for (const row of candidates) {
+      const id = String(row._id);
+      const titleKey = normalizeTitleForComparison(row.title);
+
+      if (titleKey && acceptedTitleKeys.has(titleKey)) {
+        failed.push({
+          id,
+          reason: "title conflict",
+          message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+        });
+        continue;
+      }
+
+      const conflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: row.title,
+        excludeId: row._id,
+      });
+      if (conflict) {
+        failed.push({
+          id,
+          reason: "title conflict",
+          message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+        });
+        continue;
+      }
+
+      const updated = await Assignment.findOneAndUpdate(
+        { _id: row._id, teacher: teacherId, status: "archived" },
+        { $set: { status: "active" } },
+        { new: true }
+      );
+
+      if (!updated) {
+        skipped.push({ id, reason: "not archived" });
+        continue;
+      }
+
+      // Concurrent guard: roll back if another Active title appeared mid-flight.
+      const stillConflict = await findActiveDuplicateTitleForUnarchive({
+        AssignmentModel: Assignment,
+        teacherId,
+        title: updated.title,
+        excludeId: updated._id,
+      });
+      if (stillConflict) {
+        await Assignment.updateOne(
+          { _id: updated._id, teacher: teacherId, status: "active" },
+          { $set: { status: "archived" } }
+        );
+        failed.push({
+          id,
+          reason: "title conflict",
+          message: UNARCHIVE_TITLE_CONFLICT_MESSAGE,
+        });
+        continue;
+      }
+
+      if (titleKey) acceptedTitleKeys.add(titleKey);
+      unarchivedIds.push(id);
+    }
+
+    const requested = scopeAll
+      ? candidates.length
+      : [
+          ...new Set(
+            (rawIds || []).map((id) => String(id || "").trim()).filter(Boolean)
+          ),
+        ].length;
+
+    return res.json({
+      success: failed.length === 0,
+      unarchived: unarchivedIds.length,
+      unarchivedIds,
+      failed,
+      skipped,
+      requested,
+      message:
+        failed.length > 0
+          ? `Unarchived ${unarchivedIds.length} of ${requested}. ${failed.length} could not be unarchived.`
+          : undefined,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to unarchive assignments",
+      error: error.message,
+    });
+  }
+};
 
 exports.getRecentSubmissions = async (req, res) => {
 
@@ -1183,230 +1630,232 @@ exports.evaluateAssignment = async (req, res) => {
 
 
 
-    if (req.body.marks === undefined || req.body.marks === null || String(req.body.marks).trim() === "") {
+    const marksProvided =
+      req.body.marks !== undefined &&
+      req.body.marks !== null &&
+      String(req.body.marks).trim() !== "";
+    const feedbackProvided = Object.prototype.hasOwnProperty.call(req.body, "feedback");
+    const feedbackValue = feedbackProvided ? String(req.body.feedback || "") : undefined;
+
+    if (!marksProvided && !feedbackProvided) {
       return res.status(400).json({
-        message: "Enter Teacher Marks before saving manual grading. AI Marks are stored separately.",
+        message: "Enter Teacher Marks or Teacher Feedback before saving. AI Marks are stored separately.",
       });
     }
-
-    const marks = Number(req.body.marks);
 
     const totalMarks = Number(
-
       submission.totalMarks || submission.assignment?.points
-
     );
 
+    if (marksProvided) {
+      if (!Number.isFinite(totalMarks) || totalMarks <= 0) {
+        return res.status(400).json({
+          message: "Total marks are not set for this assignment.",
+        });
+      }
 
+      const marks = Number(req.body.marks);
+      if (!Number.isFinite(marks) || marks < 0 || marks > totalMarks) {
+        return res.status(400).json({
+          message: `Marks must be between 0 and ${totalMarks}.`,
+        });
+      }
 
-    if (!Number.isFinite(totalMarks) || totalMarks <= 0) {
-
-      return res.status(400).json({
-
-        message: "Total marks are not set for this assignment.",
-
-      });
-
+      submission.marks = marks;
+      submission.totalMarks = totalMarks;
     }
 
-
-
-    if (
-
-      !Number.isFinite(marks) ||
-
-      marks < 0 ||
-
-      marks > totalMarks
-
-    ) {
-
-      return res.status(400).json({
-
-        message: `Marks must be between 0 and ${totalMarks}.`,
-
-      });
-
+    if (feedbackProvided) {
+      submission.feedback = feedbackValue;
     }
 
+    const wantPublish = req.body.status === "PUBLISHED";
+    const now = new Date();
+    const publishedParts = [];
 
-
-    submission.marks = marks;
-
-    submission.totalMarks = totalMarks;
-
-    submission.feedback = String(req.body.feedback || "");
-
-    submission.status =
-
-      req.body.status === "PUBLISHED" ? "PUBLISHED" : "graded";
-
-
+    if (wantPublish) {
+      // Legacy single-call publish: publish each available component independently.
+      if (hasValidAiScore(submission) && submission.aiPublished !== true) {
+        applyAiPublication(submission, now);
+        publishedParts.push("AI Result");
+      }
+      if (hasValidTeacherMarks(submission) && submission.teacherMarksPublished !== true) {
+        applyTeacherMarksPublication(submission, now);
+        publishedParts.push("Teacher Marks");
+      }
+      if (
+        hasTeacherFeedbackContent(submission.feedback) &&
+        submission.teacherFeedbackPublished !== true
+      ) {
+        applyTeacherFeedbackPublication(submission, now);
+        publishedParts.push("Teacher Feedback");
+      }
+      if (!publishedParts.length && !hasValidAiScore(submission) && !hasValidTeacherMarks(submission) && !hasTeacherFeedbackContent(submission.feedback)) {
+        return res.status(400).json({
+          message: "Nothing to publish. Add an AI evaluation or Teacher marks/feedback first.",
+        });
+      }
+    } else if (submission.status !== "PUBLISHED") {
+      submission.status = "graded";
+    }
 
     await submission.save();
 
-
-
-    const published = submission.status === "PUBLISHED";
+    const published = wantPublish && publishedParts.length > 0;
     await createNotification({
-
       recipient: submission.student,
-
       title: published ? "Result published" : "Assignment evaluated",
-
       message: published
         ? `Your ${
             submission.assignment?.title || "assignment"
-          } result is ${marks}/${totalMarks}.`
+          } result was published (${publishedParts.join(", ")}).`
         : `Your ${
             submission.assignment?.title || "assignment"
           } was evaluated. Scores appear after your teacher publishes the result.`,
-
       type: "grade",
-
       meta: { submissionId: submission._id },
-
       url: "/dashboard/student",
-
     });
 
-
-
-    res.json({ success: true, data: submission });
-
+    res.json({ success: true, data: submission, publishedParts });
   } catch (error) {
-
     res.status(500).json({
-
       message: "Grading failed",
-
       error: error.message,
-
     });
-
   }
-
 };
 
 
 
 exports.publishResults = async (req, res) => {
-
   try {
-
     const ids = Array.isArray(req.body.submissionIds)
-
       ? req.body.submissionIds
-
       : [];
-
-
+    const scope = String(req.body.scope || "full").toLowerCase() === "ai" ? "ai" : "full";
 
     if (!ids.length) {
-
       return res.status(400).json({
-
         message: "No submissions selected.",
-
       });
-
     }
 
-
-
     const submissions = await Submission.find({
-
       _id: { $in: ids },
-
       teacherId: req.user._id,
-
     }).populate("assignment", "title points");
 
-
-
     let publishedCount = 0;
+    const details = [];
+
     for (const submission of submissions) {
-
-      // Already published — skip to avoid duplicate student notifications.
-      if (submission.status === "PUBLISHED") continue;
-
-      const hasTeacherMarks =
-        submission.marks !== null &&
-        submission.marks !== undefined &&
-        Number.isFinite(Number(submission.marks)) &&
-        Number(submission.marks) >= 0;
-      const hasAiMarks =
-        submission.aiScore !== null &&
-        submission.aiScore !== undefined &&
-        Number.isFinite(Number(submission.aiScore)) &&
-        Number(submission.aiScore) >= 0;
-
-      // Publishing an AI-only result must never copy AI marks into the teacher field.
-      if (!hasTeacherMarks && !hasAiMarks) continue;
-
-      submission.status = "PUBLISHED";
-
-
+      const now = new Date();
+      const publishedParts = [];
 
       if (!submission.totalMarks) {
-
         submission.totalMarks = submission.assignment?.points || null;
-
       }
 
+      if (scope === "ai") {
+        // Publish AI only — never copy into or require Teacher fields.
+        if (!hasValidAiScore(submission)) {
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "No AI marks available",
+          });
+          continue;
+        }
+        if (submission.aiPublished === true) {
+          // Already published — skip to avoid duplicate student notifications.
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "AI result already published",
+            components: ["AI Result"],
+          });
+          continue;
+        }
+        applyAiPublication(submission, now);
+        publishedParts.push("AI Result");
+      } else {
+        const hasAi = hasValidAiScore(submission);
+        const hasMarks = hasValidTeacherMarks(submission);
+        const hasFeedback = hasTeacherFeedbackContent(submission.feedback);
 
+        if (!hasAi && !hasMarks && !hasFeedback) {
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "No publishable AI or Teacher result",
+          });
+          continue;
+        }
+
+        if (hasAi && submission.aiPublished !== true) {
+          applyAiPublication(submission, now);
+          publishedParts.push("AI Result");
+        }
+        if (hasMarks && submission.teacherMarksPublished !== true) {
+          applyTeacherMarksPublication(submission, now);
+          publishedParts.push("Teacher Marks");
+        }
+        if (hasFeedback && submission.teacherFeedbackPublished !== true) {
+          applyTeacherFeedbackPublication(submission, now);
+          publishedParts.push("Teacher Feedback");
+        }
+
+        if (!publishedParts.length) {
+          // Already published — skip to avoid duplicate student notifications.
+          details.push({
+            id: String(submission._id),
+            skipped: true,
+            reason: "All available results already published",
+          });
+          continue;
+        }
+      }
 
       await submission.save();
       publishedCount += 1;
-
-
-
-      await createNotification({
-
-        recipient: submission.student,
-
-        title: "Result published",
-
-        message: `Your ${
-          submission.assignment?.title || "assignment"
-        } result is ${
-          hasTeacherMarks
-            ? `Teacher Marks ${submission.marks}`
-            : `AI Marks ${submission.aiScore}`
-        }/${submission.totalMarks}.`,
-
-        type: "grade",
-
-        meta: { submissionId: submission._id },
-
-        url: "/dashboard/student",
-
+      details.push({
+        id: String(submission._id),
+        components: publishedParts,
       });
 
+      const scoreLabel = hasValidTeacherMarks(submission) && submission.teacherMarksPublished
+        ? `Teacher Marks ${submission.marks}`
+        : hasValidAiScore(submission) && submission.aiPublished
+          ? `AI Marks ${submission.aiScore}`
+          : publishedParts.join(", ");
+
+      await createNotification({
+        recipient: submission.student,
+        title: "Result published",
+        message: `Your ${
+          submission.assignment?.title || "assignment"
+        } result is ${scoreLabel}${
+          submission.totalMarks != null ? `/${submission.totalMarks}` : ""
+        } (${publishedParts.join(", ")}).`,
+        type: "grade",
+        meta: { submissionId: submission._id },
+        url: "/dashboard/student",
+      });
     }
 
-
-
     res.json({
-
       success: true,
-
       published: publishedCount,
-
+      scope,
+      details,
     });
-
   } catch (error) {
-
     res.status(500).json({
-
       message: "Publishing failed",
-
       error: error.message,
-
     });
-
   }
-
 };
 
 

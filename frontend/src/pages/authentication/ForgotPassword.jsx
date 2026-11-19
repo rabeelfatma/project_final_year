@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail } from "../../utils/validators";
+import { emailValidationMessage } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function ForgotPassword() {
@@ -18,13 +18,8 @@ export default function ForgotPassword() {
     e.preventDefault();
     setMsg("");
 
-    if (!email) {
-      return setMsg("Email is required");
-    }
-
-    if (!validateEmail(email)) {
-      return setMsg("Invalid email format");
-    }
+    const emailMessage = emailValidationMessage(email);
+    if (emailMessage) return setMsg(emailMessage);
 
     setBusy(true);
     try {
@@ -48,17 +43,19 @@ export default function ForgotPassword() {
       }
 
       if (!res.ok && res.status !== 200) {
-        return setMsg(data.message || "Unable to process request");
+        if (res.status >= 500) {
+          return setMsg("Something went wrong. Please try again.");
+        }
+        return setMsg(data.message || "Enter a valid email.");
       }
 
       // Generic confirmation regardless of whether the account exists.
       setSent(true);
       setMsg(
-        data.message ||
-          "If an account exists for that email, password reset instructions will be sent shortly."
+        data.message || "If the account exists, a reset link has been sent."
       );
     } catch (_) {
-      setMsg("Server error. Please try again later.");
+      setMsg("Something went wrong. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -76,7 +73,7 @@ export default function ForgotPassword() {
         </h2>
 
         <p className="qc-auth-subtitle text-center mb-5">
-          Enter your registered email. If an account exists, we will send a reset link.
+          Enter your email. If the account exists, a reset link will be sent.
         </p>
 
         {msg && <Alert message={msg} />}

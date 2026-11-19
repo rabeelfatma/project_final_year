@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Layout, Users, GraduationCap, FileText, Activity, 
-  Trash2, Edit2, X, UserRound, UsersRound, ClipboardList,
+  Trash2, X, UserRound, UsersRound, ClipboardList,
   UserPlus, Check, Ban
 } from 'lucide-react';
 import { 
@@ -16,6 +16,7 @@ import DashboardNavItem from '../../components/common/DashboardNavItem';
 import DashboardTopBar from '../../components/common/DashboardTopBar';
 import AIChatbot from '../../components/common/AIChatbot';
 import MessagePanel from '../../components/common/MessagePanel';
+import OverflowMenu from '../../components/ui/OverflowMenu';
 import ProfilePage from '../account/ProfilePage';
 import SettingsPage from '../account/SettingsPage';
 
@@ -25,9 +26,6 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [shellView, setShellView] = useState('main');
   const [loading, setLoading] = useState(false);
-  
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
 
   const [systemStats, setSystemStats] = useState({ 
     totalUsers: 0, totalTeachers: 0, totalStudents: 0, totalAssignments: 0, 
@@ -41,6 +39,10 @@ export default function AdminDashboard() {
   const [awaitingVerificationCount, setAwaitingVerificationCount] = useState(0);
   const [totalPendingCount, setTotalPendingCount] = useState(0);
   const [registrationActionId, setRegistrationActionId] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectPermanent, setRejectPermanent] = useState(false);
+  const [historyModal, setHistoryModal] = useState(null);
 
   const applyRegistrationCounts = (payload) => {
     const ready = Number(payload?.readyForApprovalCount ?? payload?.pendingCount ?? 0) || 0;
@@ -54,22 +56,6 @@ export default function AdminDashboard() {
   };
 
   const COLORS = ['var(--chart-primary)', 'var(--chart-secondary)', 'var(--chart-tertiary)', 'var(--chart-quaternary)'];
-
-  const SUBJECTS = [
-    "Introduction to IT (CS)", "Programming Fundamentals (CS)", "Object Oriented Programming (CS)",
-    "Data Structures (CS)", "Digital Logic Design (CS)", "Operating Systems (CS)",
-    "Database Systems (CS)", "Software Engineering (CS)", "Computer Networks (CS)",
-    "Analysis of Algorithms (CS)", "Artificial Intelligence (CS)", "Web Engineering (CS)",
-    "Mobile App Development (CS)", "Cyber Security (CS)", "Data Science (CS)",
-    "Cloud Computing (CS)", "Theory of Automata (CS)", "Compiler Construction (CS)",
-    "Human Computer Interaction (CS)", "Digital Image Processing (CS)", "Discrete Structures (SE)",
-    "Software Requirement Eng. (SE)", "Software Design & Architecture (SE)", "Software Quality Assurance (SE)",
-    "Software Project Management (SE)", "Formal Methods (SE)", "Software Re-Engineering (SE)",
-    "Calculus & Analytical Geometry", "Linear Algebra", "Probability & Statistics",
-    "Numerical Computing", "Differential Equations", "Pakistan Studies",
-    "Islamic Studies", "English Composition", "Communication Skills",
-    "Technical Report Writing", "Professional Ethics", "Psychology", "Management"
-  ];
 
   useEffect(() => {
     fetchContent();
@@ -130,21 +116,42 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleRegistrationAction = async (id, action) => {
+  const handleRegistrationAction = async (id, action, rejectOptions = null) => {
     if (!id || registrationActionId) return;
     setRegistrationActionId(id);
     try {
       if (action === 'approve') {
         await adminService.approveRegistrationRequest(id);
       } else {
-        await adminService.rejectRegistrationRequest(id);
+        await adminService.rejectRegistrationRequest(id, {
+          reason: rejectOptions?.reason || undefined,
+          permanent: Boolean(rejectOptions?.permanent),
+        });
       }
+      setRejectModal(null);
+      setRejectReason('');
+      setRejectPermanent(false);
       await fetchContent();
     } catch (err) {
       alert(err?.response?.data?.message || `Failed to ${action} registration request.`);
     } finally {
       setRegistrationActionId(null);
     }
+  };
+
+  const openRejectModal = (item) => {
+    if (!item?.id || registrationActionId) return;
+    setRejectModal(item);
+    setRejectReason('');
+    setRejectPermanent(false);
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModal?.id || registrationActionId) return;
+    await handleRegistrationAction(rejectModal.id, 'reject', {
+      reason: rejectReason.trim(),
+      permanent: rejectPermanent,
+    });
   };
 
   const handleDelete = async (id) => {
@@ -163,23 +170,6 @@ export default function AdminDashboard() {
           alert(err.response?.data?.message || "Delete failed");
         }
       }
-    }
-  };
-
-  const handleEditClick = (item) => {
-    setEditingItem({...item}); // Spread to avoid direct state mutation
-    setIsEditModalOpen(true);
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    try {
-        await adminService.updateUser(editingItem._id, editingItem);
-        setIsEditModalOpen(false);
-        fetchContent();
-        alert("Updated Successfully!");
-    } catch {
-        alert("Update failed");
     }
   };
 
@@ -228,13 +218,6 @@ export default function AdminDashboard() {
         ? 'Settings'
         : pageCopy.title;
 
-  const editEntityLabel =
-    activeTab === 'Students'
-      ? 'Student'
-      : activeTab === 'Teachers'
-        ? 'Teacher'
-        : 'Record';
-
   return (
     <DashboardNavShell
       widthClass="w-64"
@@ -263,7 +246,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <nav className="space-y-1" aria-label="Admin navigation">
+          <nav className="qc-sidebar-nav space-y-1" aria-label="Admin navigation">
             <DashboardNavItem icon={<Layout size={18}/>} label="Dashboard" active={shellView === 'main' && activeTab === 'Dashboard'} onClick={() => openMainTab('Dashboard')} />
             <DashboardNavItem icon={<Users size={18}/>} label="Students" active={shellView === 'main' && activeTab === 'Students'} onClick={() => openMainTab('Students')} />
             <DashboardNavItem icon={<GraduationCap size={18}/>} label="Teachers" active={shellView === 'main' && activeTab === 'Teachers'} onClick={() => openMainTab('Teachers')} />
@@ -297,8 +280,8 @@ export default function AdminDashboard() {
         {loading ? (
           <div className="h-56 flex items-center justify-center text-sm font-semibold accent-text">Loading system data…</div>
         ) : activeTab === 'Dashboard' ? (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="qc-overview">
+            <div className="qc-overview__stats grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <StatBox label="Total Users" value={systemStats.totalUsers} icon={<UsersRound size={18}/>} />
               <StatBox label="Teachers" value={systemStats.totalTeachers} icon={<GraduationCap size={18}/>} />
               <StatBox label="Students" value={systemStats.totalStudents} icon={<UserRound size={18}/>} />
@@ -323,11 +306,11 @@ export default function AdminDashboard() {
               </button>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-              <div className="qc-card">
+            <div className="qc-overview__charts qc-overview__charts--thirds">
+              <div className="qc-card qc-overview__panel">
                 <h3 className="qc-section-title">Total Users</h3>
-                <p className="text-xs theme-muted mb-4">User growth over the latest six months</p>
-                <div style={{ width: '100%', height: 280 }}>
+                <p className="text-xs theme-muted mb-2">User growth over the latest six months</p>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={systemStats.chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -340,10 +323,10 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="qc-card">
+              <div className="qc-card qc-overview__panel">
                 <h3 className="qc-section-title">Total Assignments</h3>
-                <p className="text-xs theme-muted mb-4">Assignments created over the latest six months</p>
-                <div style={{ width: '100%', height: 280 }}>
+                <p className="text-xs theme-muted mb-2">Assignments created over the latest six months</p>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={systemStats.assignmentBarData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false}/>
@@ -356,12 +339,12 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="qc-card lg:col-span-2">
-                <h3 className="qc-section-title mb-4">Department Distribution</h3>
-                <div style={{ width: '100%', height: 280 }}>
+              <div className="qc-card qc-overview__panel">
+                <h3 className="qc-section-title mb-2">Department Distribution</h3>
+                <div className="qc-overview__plot">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={systemStats.pieData} innerRadius={70} outerRadius={100} dataKey="value" paddingAngle={8}>
+                      <Pie data={systemStats.pieData} innerRadius="42%" outerRadius="66%" dataKey="value" paddingAngle={6}>
                         {systemStats.pieData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
                       </Pie>
                       <Tooltip />
@@ -387,15 +370,21 @@ export default function AdminDashboard() {
                 <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{readyForApprovalCount}</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Registration request status">
               {['pending', 'approved', 'rejected'].map((status) => (
                 <button
                   key={status}
                   type="button"
+                  role="tab"
+                  aria-selected={registrationFilter === status}
                   onClick={() => setRegistrationFilter(status)}
                   className={`qc-filter-chip ${registrationFilter === status ? 'is-active' : ''}`}
                 >
-                  {status === 'pending' ? 'Pending Requests' : status}
+                  {status === 'pending'
+                    ? 'Pending Requests'
+                    : status === 'approved'
+                      ? 'Approved'
+                      : 'Rejected'}
                 </button>
               ))}
             </div>
@@ -404,7 +393,8 @@ export default function AdminDashboard() {
               filter={registrationFilter}
               actionId={registrationActionId}
               onApprove={(id) => handleRegistrationAction(id, 'approve')}
-              onReject={(id) => handleRegistrationAction(id, 'reject')}
+              onReject={(item) => openRejectModal(item)}
+              onViewHistory={(item) => setHistoryModal(item)}
             />
           </div>
         ) : (
@@ -412,7 +402,7 @@ export default function AdminDashboard() {
             <div className="flex flex-wrap justify-between items-center gap-3">
                 <p className="text-sm theme-muted">{viewData.length} records</p>
             </div>
-            <DataTable data={viewData} onDelete={handleDelete} onEdit={handleEditClick} type={activeTab} />
+            <DataTable data={viewData} onDelete={handleDelete} type={activeTab} />
           </div>
         )}
         </>
@@ -420,114 +410,274 @@ export default function AdminDashboard() {
         <AIChatbot role="admin" showTrigger={false} />
         <MessagePanel role="admin" showTrigger={false} />
 
-      {isEditModalOpen && editingItem && (
+      {rejectModal && (
         <div className="qc-modal-backdrop">
-          <div className="qc-modal">
-            <button type="button" onClick={() => setIsEditModalOpen(false)} className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]" aria-label="Close edit dialog">
-              <X size={20}/>
+          <div className="qc-modal max-w-md">
+            <button
+              type="button"
+              onClick={() => {
+                if (registrationActionId) return;
+                setRejectModal(null);
+              }}
+              className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]"
+              aria-label="Close reject dialog"
+            >
+              <X size={20} />
             </button>
-            <h2 className="qc-page-title pr-10 mb-5">Edit {editEntityLabel}</h2>
-            
-            <form onSubmit={handleUpdate} className="space-y-4 custom-scrollbar">
-              <div>
-                <label className="qc-label">Full Name</label>
-                <input 
-                  type="text" 
-                  value={editingItem.name || editingItem.title || ''} 
-                  onChange={(e) => setEditingItem({...editingItem, name: e.target.value, title: e.target.value})}
-                  className="qc-input"
-                />
-              </div>
-
-              {(activeTab === 'Students' || activeTab === 'Teachers') && (
-                <div>
-                  <label className="qc-label">Email Address</label>
-                  <input 
-                    type="email" 
-                    value={editingItem.email || ''} 
-                    onChange={(e) => setEditingItem({...editingItem, email: e.target.value})}
-                    className="qc-input"
-                  />
-                </div>
-              )}
-
-              {(activeTab === 'Students' || activeTab === 'Teachers') && (
-                <div>
-                  <label className="qc-label">Department</label>
-                  <select 
-                    value={editingItem.department || 'CS'} 
-                    onChange={(e) => setEditingItem({...editingItem, department: e.target.value})}
-                    className="qc-input"
-                  >
-                    <option value="CS">Computer Science (CS)</option>
-                    <option value="SE">Software Engineering (SE)</option>
-                  </select>
-                </div>
-              )}
-
-              {activeTab === 'Teachers' && (
-                <div>
-                  <label className="qc-label">Assigned Subject</label>
-                  <select 
-                    value={editingItem.subject || ''} 
-                    onChange={(e) => setEditingItem({...editingItem, subject: e.target.value})}
-                    className="qc-input"
-                  >
-                    <option value="">Select Subject</option>
-                    {SUBJECTS.map((sub, idx) => (
-                      <option key={idx} value={sub}>{sub}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {activeTab === 'Students' && (
-                <div>
-                  <label className="qc-label">Registration Number</label>
-                  <input 
-                    type="text" 
-                    value={editingItem.registrationNumber || ''} 
-                    readOnly
-                    className="qc-input opacity-70 cursor-not-allowed"
-                  />
-                </div>
-              )}
-
-              <button type="submit" className="qc-btn qc-btn-primary qc-btn-block mt-2">
-                Update Record
+            <h2 className="qc-page-title pr-10 mb-2">Reject Registration</h2>
+            <p className="text-sm theme-muted mb-4">
+              {rejectModal.name} · {rejectModal.email}
+            </p>
+            <label className="qc-label" htmlFor="reject-reason">
+              Rejection reason (shown to applicant)
+            </label>
+            <textarea
+              id="reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value.slice(0, 500))}
+              rows={4}
+              className="qc-input mb-3"
+              placeholder="Briefly explain what needs to be corrected…"
+              maxLength={500}
+            />
+            <label className="flex items-start gap-2 text-sm mb-5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="qc-check mt-1"
+                checked={rejectPermanent}
+                onChange={(e) => setRejectPermanent(e.target.checked)}
+              />
+              <span>
+                Permanently reject — disable reapplication for this account
+                (policy or security only).
+              </span>
+            </label>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                className="qc-btn qc-btn-secondary"
+                disabled={Boolean(registrationActionId)}
+                onClick={() => setRejectModal(null)}
+              >
+                Cancel
               </button>
-            </form>
+              <button
+                type="button"
+                className="qc-btn qc-btn-danger"
+                disabled={Boolean(registrationActionId)}
+                onClick={confirmReject}
+              >
+                {registrationActionId === rejectModal.id ? 'Rejecting…' : 'Confirm Reject'}
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {historyModal && (
+        <div className="qc-modal-backdrop">
+          <div className="qc-modal max-w-lg">
+            <button
+              type="button"
+              onClick={() => setHistoryModal(null)}
+              className="absolute top-3 right-3 p-2 theme-muted hover:text-[var(--text)]"
+              aria-label="Close application history"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="qc-page-title pr-10 mb-2">Application Details</h2>
+            <p className="text-sm theme-muted mb-4 break-all">
+              {historyModal.name} · {historyModal.email}
+              {historyModal.reapplied ? ' · Reapplied' : ''}
+            </p>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
+              <div>
+                <dt className="qc-stat-label">Current name</dt>
+                <dd className="font-semibold">{historyModal.name || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Previous name</dt>
+                <dd>{historyModal.previousName || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Current email</dt>
+                <dd className="break-all">
+                  {historyModal.pendingEmail || historyModal.currentEmail || historyModal.email || 'N/A'}
+                  {historyModal.pendingEmail ? (
+                    <span className="block text-[10px] theme-muted mt-0.5">
+                      Pending verification (prior: {historyModal.currentEmail || historyModal.previousEmail || 'N/A'})
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Previous email</dt>
+                <dd className="break-all">{historyModal.previousEmail || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Current role</dt>
+                <dd className="font-semibold uppercase">{historyModal.role}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Previous role</dt>
+                <dd className="uppercase">{historyModal.previousRole || 'N/A'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Attempt</dt>
+                <dd className="font-semibold">{historyModal.applicationAttempt || 1}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Email verified</dt>
+                <dd>{historyModal.emailVerified === true ? 'Verified' : 'Unverified'}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Status</dt>
+                <dd className="uppercase font-semibold">{historyModal.approvalStatus}</dd>
+              </div>
+              <div>
+                <dt className="qc-stat-label">Last submitted</dt>
+                <dd>
+                  {historyModal.lastSubmittedAt
+                    ? new Date(historyModal.lastSubmittedAt).toLocaleString()
+                    : 'N/A'}
+                </dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="qc-stat-label">Current / previous rejection reason</dt>
+                <dd className="whitespace-pre-wrap">
+                  {historyModal.rejectionReason ||
+                    historyModal.previousRejectionReason ||
+                    'None recorded'}
+                </dd>
+              </div>
+            </dl>
+            <p className="qc-stat-label mb-2">Previous decisions</p>
+            {Array.isArray(historyModal.applicationHistory) &&
+            historyModal.applicationHistory.length > 0 ? (
+              <ul className="space-y-2 max-h-56 overflow-y-auto text-sm">
+                {historyModal.applicationHistory.map((entry, idx) => (
+                  <li
+                    key={`${entry.attempt || idx}-${entry.decidedAt || idx}`}
+                    className="rounded-lg border border-[var(--border)] px-3 py-2"
+                  >
+                    <p className="font-semibold uppercase tracking-wide text-xs">
+                      Attempt {entry.attempt || '?'} · {entry.decision || 'n/a'}
+                    </p>
+                    <p className="theme-muted text-xs mt-1">
+                      {entry.name || entry.email || entry.role
+                        ? `${entry.name || '—'} · ${entry.email || '—'} · ${entry.role || '—'}`
+                        : null}
+                    </p>
+                    <p className="theme-muted text-xs mt-1">
+                      Submitted:{' '}
+                      {entry.submittedAt
+                        ? new Date(entry.submittedAt).toLocaleString()
+                        : 'N/A'}
+                      {' · '}
+                      Decided:{' '}
+                      {entry.decidedAt
+                        ? new Date(entry.decidedAt).toLocaleString()
+                        : 'N/A'}
+                    </p>
+                    {entry.rejectionReason ? (
+                      <p className="mt-1 whitespace-pre-wrap">{entry.rejectionReason}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm theme-muted">No prior decisions recorded.</p>
+            )}
+          </div>
+        </div>
+      )}
+
     </DashboardNavShell>
   );
 }
 
-function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject }) {
-  const colSpan = filter === 'pending' ? 7 : 6;
+function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject, onViewHistory }) {
+  const isPending = filter === 'pending';
+  const colSpan = isPending ? 8 : 7;
   return (
-    <div className="qc-table-wrap">
-      <table className="qc-table min-w-[780px]">
+    <div
+      className={`qc-table-wrap qc-table-wrap--registration ${isPending ? 'is-pending' : 'is-review'}`}
+      role="region"
+      aria-label="Registration requests table"
+    >
+      <table
+        className={`qc-table qc-table--registration ${
+          isPending ? 'qc-table--registration-pending' : 'qc-table--registration-review'
+        }`}
+      >
+        <colgroup>
+          {isPending ? (
+            <>
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '25%' }} />
+            </>
+          ) : (
+            <>
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '8%' }} />
+            </>
+          )}
+        </colgroup>
         <thead>
           <tr>
-            <th>Full Name</th>
-            <th>Email</th>
-            <th>Requested Role</th>
-            <th>Registration Date</th>
-            <th>Email Verified</th>
-            <th>Status</th>
-            {filter === 'pending' && <th className="text-right">Actions</th>}
+            <th scope="col">Name</th>
+            <th scope="col">Email</th>
+            <th scope="col">Role</th>
+            <th scope="col">Registered</th>
+            <th scope="col">Verified</th>
+            <th scope="col">Status</th>
+            <th scope="col">Attempt</th>
+            {isPending && (
+              <th scope="col" className="qc-table-actions">
+                <span className="qc-table-actions__label">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
           {data.length > 0 ? data.map((item) => (
             <tr key={item.id}>
-              <td className="font-semibold">{item.name}</td>
-              <td className="theme-muted break-all">{item.email}</td>
-              <td className="accent-text text-xs font-semibold uppercase tracking-wide">{item.role}</td>
+              <td className="font-semibold">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="break-words">{item.name}</span>
+                  {item.reapplied ? (
+                    <span
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0"
+                      style={{
+                        color: 'var(--warning)',
+                        background: 'color-mix(in srgb, var(--warning) 16%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+                      }}
+                    >
+                      Reapplied
+                    </span>
+                  ) : null}
+                </div>
+              </td>
+              <td className="theme-muted qc-email-cell">{item.email}</td>
+              <td className="accent-text text-xs font-semibold uppercase tracking-wide whitespace-nowrap">{item.role}</td>
               <td className="theme-muted whitespace-nowrap">
-                {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+                {item.lastSubmittedAt
+                  ? new Date(item.lastSubmittedAt).toLocaleDateString()
+                  : item.createdAt
+                    ? new Date(item.createdAt).toLocaleDateString()
+                    : 'N/A'}
               </td>
               <td className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
                 {item.emailVerified === true ? (
@@ -538,31 +688,46 @@ function RegistrationRequestsTable({ data, filter, actionId, onApprove, onReject
                   <span className="theme-muted">Not recorded</span>
                 )}
               </td>
-              <td className="theme-muted text-xs font-semibold uppercase tracking-wide">
+              <td className="theme-muted text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
                 {item.approvalStatus}
+                {item.reapplicationDisabled ? (
+                  <span className="block text-[10px] normal-case tracking-normal mt-0.5" style={{ color: 'var(--danger)' }}>
+                    Reapply disabled
+                  </span>
+                ) : null}
               </td>
-              {filter === 'pending' && (
-                <td className="text-right whitespace-nowrap">
-                  <div className="inline-flex items-center gap-2 justify-end">
+              <td className="theme-muted text-xs whitespace-nowrap">
+                <button
+                  type="button"
+                  className="underline-offset-2 hover:underline accent-text"
+                  onClick={() => onViewHistory?.(item)}
+                  aria-label={`View application history for ${item.name}`}
+                >
+                  #{item.applicationAttempt || 1}
+                </button>
+              </td>
+              {isPending && (
+                <td className="qc-table-actions">
+                  <div className="qc-table-actions__btns">
                     <button
                       type="button"
-                      disabled={actionId === item.id || item.emailVerified !== true}
+                      disabled={Boolean(actionId) || item.emailVerified !== true}
                       onClick={() => onApprove(item.id)}
-                      className="qc-btn qc-btn-secondary !min-h-8 !px-2.5 !text-xs"
+                      className="qc-btn qc-btn-secondary !min-h-7 !px-2 !text-[11px] !gap-1"
                       style={{ color: 'var(--success)' }}
                       aria-label={`Approve ${item.name}`}
                       title={item.emailVerified !== true ? 'Email must be verified first' : 'Approve'}
                     >
-                      <Check size={14} /> Approve
+                      <Check size={13} /> Approve
                     </button>
                     <button
                       type="button"
-                      disabled={actionId === item.id}
-                      onClick={() => onReject(item.id)}
-                      className="qc-btn qc-btn-danger !min-h-8 !px-2.5 !text-xs"
+                      disabled={Boolean(actionId)}
+                      onClick={() => onReject(item)}
+                      className="qc-btn qc-btn-danger !min-h-7 !px-2 !text-[11px] !gap-1"
                       aria-label={`Reject ${item.name}`}
                     >
-                      <Ban size={14} /> Reject
+                      <Ban size={13} /> Reject
                     </button>
                   </div>
                 </td>
@@ -604,7 +769,7 @@ function StatBox({ label, value, icon }) {
   );
 }
 
-function DataTable({ data, onDelete, onEdit, type }) {
+function DataTable({ data, onDelete, type }) {
   const isAssignment = type === 'Assignments';
   const isStudent = type === 'Students';
 
@@ -616,7 +781,7 @@ function DataTable({ data, onDelete, onEdit, type }) {
             <th>{isAssignment ? 'Title' : 'Full Name'}</th>
             <th>{isStudent ? 'Reg #' : (isAssignment ? 'Teacher' : 'Subject')}</th>
             <th>{isAssignment ? 'Due Date' : 'Dept'}</th>
-            <th className="text-right">Actions</th>
+            <th className="text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -632,16 +797,18 @@ function DataTable({ data, onDelete, onEdit, type }) {
               <td className="theme-muted text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
                 {isAssignment ? (item.deadline ? new Date(item.deadline).toLocaleDateString() : 'N/A') : (item.department || 'CS')}
               </td>
-              <td className="text-right whitespace-nowrap">
-                <div className="inline-flex items-center gap-2 justify-end">
-                  {!isAssignment && (
-                    <button type="button" onClick={() => onEdit(item)} className="qc-btn qc-btn-secondary !min-h-8 !px-2 !py-1.5" aria-label="Edit record">
-                      <Edit2 size={15}/>
-                    </button>
-                  )}
-                  <button type="button" onClick={() => onDelete(item._id)} className="qc-btn qc-btn-danger !min-h-8 !px-2 !py-1.5" aria-label="Delete record">
-                    <Trash2 size={15}/>
-                  </button>
+              <td className="text-center whitespace-nowrap">
+                <div className="inline-flex items-center justify-center">
+                  <OverflowMenu
+                    label={`More actions for ${isAssignment ? (item.title || 'assignment') : (item.name || 'record')}`}
+                    items={[{
+                      id: `delete-${item._id}`,
+                      label: isAssignment ? 'Delete assignment' : 'Delete record',
+                      danger: true,
+                      icon: <Trash2 size={14} />,
+                      onSelect: () => onDelete(item._id),
+                    }]}
+                  />
                 </div>
               </td>
             </tr>

@@ -3,7 +3,12 @@ import { Link } from "react-router-dom";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail, validatePassword } from "../../utils/validators";
+import {
+  emailValidationMessage,
+  passwordValidationMessage,
+  confirmPasswordMessage,
+  PASSWORD_HINT,
+} from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
 
 export default function AdminSignup() {
@@ -26,27 +31,17 @@ export default function AdminSignup() {
     e.preventDefault();
 
     // 1. Basic Fields Validation
-    if (!form.name || !form.email || !form.password || !form.confirmPassword) {
-      return setMsg("All fields required ❌");
-    }
-
-    // 2. Email & Password Validation
-    if (!validateEmail(form.email)) {
-      return setMsg("Invalid Email ❌");
-    }
-
-    if (!validatePassword(form.password)) {
-      return setMsg("Weak password ❌");
-    }
-
-    // 3. Confirm Password Match
-    if (form.password !== form.confirmPassword) {
-      return setMsg("Passwords do not match ❌");
-    }
+    if (!form.name.trim()) return setMsg("Full name is required.");
+    const emailMessage = emailValidationMessage(form.email);
+    if (emailMessage) return setMsg(emailMessage);
+    const passwordMessage = passwordValidationMessage(form.password);
+    if (passwordMessage) return setMsg(passwordMessage);
+    const confirmMessage = confirmPasswordMessage(form.password, form.confirmPassword);
+    if (confirmMessage) return setMsg(confirmMessage);
 
     const token = localStorage.getItem("token");
     if (!token) {
-      return setMsg("Admin login required to add administrators ❌");
+      return setMsg("Admin login is required.");
     }
 
     try {
@@ -67,15 +62,19 @@ export default function AdminSignup() {
       const data = await res.json();
 
       if (!res.ok) {
-        return setMsg(data.message || data.error || "Unable to add admin ❌");
+        return setMsg(
+          res.status >= 500
+            ? "Something went wrong. Please try again."
+            : data.message || "Something went wrong. Please try again."
+        );
       }
 
-      setMsg("Admin added successfully ✅");
+      setMsg("Account created successfully.");
       setForm({ name: "", email: "", password: "", confirmPassword: "" });
 
     } catch (err) {
       console.error("Signup Fetch Error:", err);
-      setMsg("Server error ❌");
+      setMsg("Something went wrong. Please try again.");
     }
   };
 
@@ -118,6 +117,7 @@ export default function AdminSignup() {
             {showPassword ? "Hide" : "Show"}
           </span>
         </div>
+        <p className="qc-auth-password-hint">{PASSWORD_HINT}</p>
 
         {/* CONFIRM PASSWORD */}
         <div className="relative">

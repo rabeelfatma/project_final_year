@@ -123,6 +123,7 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
       plagiarismPath,
       notifyPath,
       uploadsPathUtil,
+      path.resolve(__dirname, "../utils/resolveDurableUpload.js"),
     ].forEach((p) => delete require.cache[p]);
   }
 
@@ -406,6 +407,15 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
           },
         };
       }
+      if (is("utils/resolveDurableUpload") || is("utils/resolveDurableUpload.js")) {
+        return {
+          resolveDurableUpload: async () => ({
+            storedPath: "uploads/assignments/qc21.pdf",
+            originalFileName: "qc21.pdf",
+            fileMimeType: "application/pdf",
+          }),
+        };
+      }
       if (is("utils/uploadsPath") || is("utils/uploadsPath.js")) {
         return {
           getUploadsRoot: () => uploadsRoot,
@@ -425,13 +435,15 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
       return originalLoad(request, parent, isMain);
     };
 
-    try {
-      const teacherRoutes = require(teacherRoutesPath);
-      const studentRoutes = require(studentRoutesPath);
-      return { teacherRoutes, studentRoutes };
-    } finally {
-      Module._load = originalLoad;
-    }
+    const teacherRoutes = require(teacherRoutesPath);
+    const studentRoutes = require(studentRoutesPath);
+    return {
+      teacherRoutes,
+      studentRoutes,
+      restore() {
+        Module._load = originalLoad;
+      },
+    };
   }
 
   before(() => {
@@ -443,8 +455,9 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
     assignments = [];
     submissions = [];
     notifications = [];
-    const { teacherRoutes, studentRoutes } = loadAppRouters();
+    const { teacherRoutes, studentRoutes, restore } = loadAppRouters();
 
+    try {
     await withServer(
       (app) => {
         app.use("/api/teacher", teacherRoutes);
@@ -459,21 +472,38 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
           subject: "SE",
         };
 
-        // 3. Teacher creates assignment
+        // 3. Teacher creates assignment with a strictly future schedule.
+        // The fixture then moves the stored start into the past so the student
+        // steps can run without weakening the create-time future rule.
+        const previousSecret = process.env.JWT_SECRET;
+        process.env.JWT_SECRET = process.env.JWT_SECRET || "qc21-isolated-schedule-secret";
+        const startDate = new Date(Date.now() + 60_000).toISOString();
+        const deadline = new Date(Date.now() + 7 * 86400_000).toISOString();
+        const intent = await request(port, "POST", "/api/teacher/assignments/schedule-intent", {
+          body: { startDate, deadline },
+        });
+        assert.equal(intent.status, 200, intent.text);
         const created = await request(port, "POST", "/api/teacher/assignments", {
           body: {
             title: "QC21 Sample",
             description: "Explain unit testing in one short paragraph.",
-            startDate: new Date(Date.now() - 3600_000).toISOString(),
-            deadline: new Date(Date.now() + 7 * 86400_000).toISOString(),
+            startDate,
+            deadline,
             points: 20,
             subject: "SE",
+            scheduleIntentToken: intent.json.scheduleIntentToken,
+            storedFileKey: "uploads/assignments/qc21.pdf",
+            originalFileName: "qc21.pdf",
+            fileSize: "32",
           },
         });
+        if (previousSecret === undefined) delete process.env.JWT_SECRET;
+        else process.env.JWT_SECRET = previousSecret;
         assert.equal(created.status, 201, created.text);
         assert.equal(created.json.title, "QC21 Sample");
         assert.equal(created.json.points, 20);
         assert.equal(created.json.status, "active");
+        assignments[0].startDate = new Date(Date.now() - 3600_000);
         const assignmentId = created.json._id;
 
         // 4. Assignment is available (active)
@@ -511,7 +541,7 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
         assert.match(submissions[0].answerText, /Unit testing/i);
         const submissionId = submissions[0]._id;
 
-        // Duplicate blocked
+        // Duplicate blocked (resubmission not supported)
         const dup = await request(
           port,
           "POST",
@@ -519,6 +549,9 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
           { body: { answerText: "duplicate attempt should fail" } }
         );
         assert.equal(dup.status, 400);
+        assert.equal(dup.json.code, "ALREADY_SUBMITTED");
+        assert.match(String(dup.json.message || ""), /already submitted/i);
+        assert.equal(submissions.length, 1);
 
         // 8. Teacher retrieves submission
         authedUser = {
@@ -597,16 +630,18 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
         });
         assert.equal(republish.json.published, 0);
 
-        // 14-15. Student retrieves published marks/feedback; dashboards align
+        // 14-15. Student retrieves published AI result; Teacher marks stay unpublished/null
         authedUser = {
           _id: studentId,
           role: "student",
           name: "Student One",
         };
         const visible = await request(port, "GET", "/api/student/assignments");
-        assert.equal(visible.json[0].marks, 16);
+        assert.equal(visible.json[0].aiScore, 16);
+        assert.equal(visible.json[0].marks, null);
+        assert.equal(visible.json[0].feedback, "");
         assert.equal(visible.json[0].totalMarks, 20);
-        assert.match(String(visible.json[0].aiFeedback || visible.json[0].feedback), /Solid/i);
+        assert.match(String(visible.json[0].aiFeedback || ""), /Solid/i);
         assert.equal(visible.json[0].resultStatus, "PUBLISHED");
         assert.deepEqual(visible.json[0].aiStrengths, ["Explained the concept"]);
 
@@ -630,5 +665,8 @@ describe("QC-21 full academic workflow (isolated HTTP)", () => {
         assert.match(content.json.extractedText || content.json.answerText, /Unit testing/i);
       }
     );
+    } finally {
+      restore();
+    }
   });
 });

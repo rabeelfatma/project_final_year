@@ -4,8 +4,9 @@ import { BookOpen, GraduationCap, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import InputField from "../../components/ui/InputField";
 import Button from "../../components/ui/Button";
 import Alert from "../../components/ui/Alert";
-import { validateEmail } from "../../utils/validators";
+import { emailValidationMessage } from "../../utils/validators";
 import { getApiBaseUrl } from "../../utils/apiBase";
+import { setAuthToken } from "../../utils/authToken";
 
 const ROLES = [
   {
@@ -92,9 +93,14 @@ export default function Login() {
     if (!selectedRole || selectedRole === "admin") {
       return setMsg("Select Teacher or Student to continue.");
     }
-    if (!form.email) return setMsg("Email address is required.");
-    if (!validateEmail(form.email)) return setMsg("Enter a valid email address.");
-    if (!form.password) return setMsg("Password is required.");
+    const emailEmpty = !String(form.email || "").trim();
+    const passwordEmpty = !form.password || !String(form.password).trim();
+    if (emailEmpty && passwordEmpty) {
+      return setMsg("Complete all required fields.");
+    }
+    const emailMessage = emailValidationMessage(form.email);
+    if (emailMessage) return setMsg(emailMessage);
+    if (passwordEmpty) return setMsg("Password is required.");
 
     setSubmitting(true);
     try {
@@ -102,7 +108,7 @@ export default function Login() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: form.email.trim(),
+          email: form.email,
           password: form.password,
           role: selectedRole,
         }),
@@ -116,6 +122,9 @@ export default function Login() {
       }
 
       if (!res.ok) {
+        if (res.status >= 500) {
+          return setMsg("Something went wrong. Please try again.");
+        }
         return setMsg(data.message || "Invalid email or password.");
       }
 
@@ -125,7 +134,12 @@ export default function Login() {
         return setMsg("Use the Administration Portal for administrator access.");
       }
 
-      localStorage.setItem("token", data.token);
+      try {
+        setAuthToken(data.token);
+      } catch {
+        localStorage.clear();
+        return setMsg("Login succeeded but the session token was invalid. Please try again.");
+      }
       localStorage.setItem("role", authenticatedRole);
       localStorage.setItem("userName", data.name || "");
       localStorage.setItem("userRegNo", data.regNo || "");
@@ -133,7 +147,7 @@ export default function Login() {
       setMsg("Login successful.");
       navigate(`/dashboard/${authenticatedRole}`);
     } catch {
-      setMsg("Server unavailable. Check that the backend is running and try again.");
+      setMsg("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -141,8 +155,8 @@ export default function Login() {
 
   return (
     <div className="qc-auth-shell">
-      <div className="qc-auth-card max-w-lg">
-        <div className="text-center mb-7">
+      <div className="qc-auth-card">
+        <div className="text-center mb-4">
           <p className="qc-auth-brand">QuickCheck Hub</p>
           <h1 className="qc-auth-title">Welcome Back</h1>
           <p className="qc-auth-subtitle">
@@ -194,7 +208,7 @@ export default function Login() {
 
         {showForm && (
           <form onSubmit={handleSubmit} noValidate>
-            <div className="mb-4">
+            <div className="mb-1">
               <label className="sr-only" htmlFor="login-email">
                 Email Address
               </label>
@@ -207,7 +221,7 @@ export default function Login() {
               />
             </div>
 
-            <div className="relative mb-2">
+            <div className="relative mb-1">
               <label className="sr-only" htmlFor="login-password">
                 Password
               </label>
@@ -229,7 +243,7 @@ export default function Login() {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-6 text-[11px] font-bold">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[11px] font-bold">
               <p className="text-[var(--text-faint)] uppercase tracking-widest">
                 Don&apos;t have an account?{" "}
                 <Link to="/signup" className="accent-text hover:underline">
@@ -257,7 +271,7 @@ export default function Login() {
             <button
               type="button"
               onClick={backToRoles}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em] hover:text-[var(--accent)] transition-colors"
+              className="mt-4 w-full inline-flex items-center justify-center gap-2 text-[var(--text-faint)] text-[11px] font-bold uppercase tracking-[0.2em] hover:text-[var(--accent)] transition-colors"
             >
               <ArrowLeft size={14} aria-hidden="true" />
               Change Role

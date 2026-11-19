@@ -3,6 +3,8 @@ const router = express.Router();
 const { protect } = require("../middleware/authMiddleware");
 const ctrl = require("../controllers/fileController");
 router.use(protect);
+router.post("/presign", ctrl.presign);
+router.post("/verify-upload", ctrl.verifyUpload);
 router.get("/assignment/:id", ctrl.assignment);
 router.get("/assignment/:id/preview", ctrl.assignmentPreview);
 router.get("/submission/:id", ctrl.submission);
